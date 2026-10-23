@@ -29,3 +29,4 @@ lsl_asts.json
 # Operating system metadata.
 # Metadonnees du systeme.
 .DS_Store
+Hud/[Tt]ests/

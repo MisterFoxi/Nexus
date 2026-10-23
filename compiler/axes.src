@@ -53,8 +53,8 @@ axis fab.stability               # inert -> explosive
     range   volatile   6 .. 7
     range   explosive  8 .. 10
 
-axis fab.grind                   # grind fineness
-    range   0 .. 10
+axis fab.grind                   # grind fineness                 # grind fineness
+    range   0 .. 50
     range   light  0 .. 3
     range   fine   5 .. 7
     range   over   8 .. 10
