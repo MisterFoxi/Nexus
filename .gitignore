@@ -1,0 +1,31 @@
+
+# LSL sources, notecards (.nc), configuration and HUD assets stay tracked.
+# Projet LSL / Second Life
+# Conserver les sources .lsl, les notecards .nc, les definitions .src,
+# ids.lock, les textures, les modeles et la configuration partagee.
+# Generated data from the Second Life VS Code extension.
+# Keep shared .vscode/settings.json and other project settings.
+# Donnees locales generees par l'extension Second Life de VS Code.
+# Les autres fichiers .vscode restent versionnables.
+.vscode/sl-vscode-plugin/
+# Local compiler/build outputs.
+# Sorties de compilation et de construction locales.
+/build/
+# Python compiler and test caches / local environments.
+# Dependances JavaScript des outils et tests.
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+# Environnements et caches Python.
+__pycache__/
+# Generated ASTs used by the HUD test harness.
+Hud/tests/lsl_asts.json
+# AST generes par les outils de verification, a toute profondeur.
+lsl_asts.json
+# Editor backups, temporary files and logs.
+# Sauvegardes d'editeur, fichiers temporaires et journaux.
+*~
+# Operating system metadata.
+# Metadonnees du systeme.
+.DS_Store
