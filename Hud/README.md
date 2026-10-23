@@ -10,6 +10,7 @@ The root contains only the **current HUD scripts**, to install in the linkset's 
 | Craft page and rotation | MC_P1_Controller, MC_Turn_Z |
 | Animation | MC_Atlas_Player, MC_P1_Animation |
 | Button textures (connected to animation controller) | MC_Playback_Buttons |
+| Chopping progress on P1_PROGRESS | MC_Chop_Progress |
 
 ## Current installation
 
@@ -17,6 +18,7 @@ The root contains only the **current HUD scripts**, to install in the linkset's 
 - [Craft page, returns, and Discard](docs/README_P1.md)
 - [Atlas player and Cut/Stop integration](docs/README_Atlas.md)
 - [Playback button atlas and visual library API](docs/README_playback_buttons.md)
+- [Chopping progression, 10-second active clock and used-component latch](docs/README_chop_progress.md)
 
 The atlas player, button texture library, and both atlas textures belong in the root prim's inventory; the display prim is **P1_DISPLAY**. HUD buttons contain no scripts. Diagnostic scripts, fixtures, and old controllers are not part of this installation.
 
@@ -38,4 +40,8 @@ From PowerShell, run `./tests/run_hud_checks.ps1`. It covers selection, the craf
 
 **Review:** the runner currently references `../Tools/MC_Memory_Probe.lsl`, which is absent from this checkout. Restore that optional tool or remove its entry from the runner before using the complete command. The runtime paths and VS Code parser path are specific to the development machine.
 
-Animation is visually connected; crafting consumption, finesse, and output still need implementation.
+The chopping controller now commits the existing craft_started latch before first
+playback, tracks 10-second active-time progress and never reoffers START for a used
+preparation. CONT resumes; confirmed Discard releases the latch. Source reservations
+and discard remain with the existing basket/transaction owners; final craft output
+and any additional quality/result rules still need implementation.

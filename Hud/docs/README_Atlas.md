@@ -16,21 +16,23 @@ script**). P1_DISPLAY requires no script or atlas in its own inventory.
 6. Import the button atlas as `atlas_buttons` in ROOT and set the button faces in `MC_Playback_Buttons`. See `README_playback_buttons.md`.
 7. Remove `MC_Chop_Atlas_Test` and `MC_Atlas_Touch_Test` from the HUD.
 
-The left button starts the A/B sequence or resumes it from pause. The right
-button pauses during playback and stops from pause. Discard, Later, Continue,
-and DISCARD_DONE restore rest. The button atlas is loaded automatically; labels
-follow acknowledged player states: START/STOP, START/PAUSE, CONT/STOP.
-Other users' clicks and unrelated buttons are ignored. Stop during initial LOAD
-cancels pending Start. A button-library reset redraws the latest state without
-restarting the animation. A player reset reloads its atlas and starts a new session
-if playback was requested; a paused session returns to rest. A controller reset
-returns to rest.
+The first left-button click requests the existing basket's CRAFT_STARTED
+commitment before starting A/B playback. The left button then permanently becomes
+CONT for that preparation. The right button suspends; CONT resumes without
+resetting active time. Later and ingredient-page navigation also suspend.
+Only a confirmed DISCARD_DONE permits a fresh preparation. An explicit new
+START on an already used preparation spoils it. No button, controller reset or
+player reset returns the same used preparation to START.
 
-This step connects animation only. It changes neither the basket, stock,
-`craft_started` flag, finesse, nor output. Later/Take crafting behavior remains
-to be implemented. The future crafting engine must wait for the
-`918317 / CRAFT_STARTED` acknowledgement before actually starting. The supplied
-visual controller will then need integration with that crafting cycle.
+Install `MC_Chop_Progress` and texture `atlas_progress` in ROOT to drive the
+P1_PROGRESS prim. Its active-time progression reaches Over the top at 10 seconds
+by default, excluding interruptions. Configure the visible face in that renderer.
+See `README_chop_progress.md` for thresholds, persistence and the preparation API.
+
+The player below remains a generic visual library: PLAY can reset its own session
+clock, but cannot authorize a new preparation or reset the controller's progress.
+Stock reservation and final discard remain owned by the basket/transaction scripts.
+Take/output crafting behavior is still separate.
 
 ## API from another root script
 
@@ -76,8 +78,8 @@ A valid LOAD or texture removal ends the session and retains its final duration.
 A script reset clears elapsedTime. ELAPSED can be queried even before LOAD and
 returns `ELAPSED:<seconds>` on 918333 with the request ticket in `id`.
 Timing uses differences of [llGetTime](https://wiki.secondlife.com/wiki/LlGetTime),
-independently of animation ticks. The HUD controller now uses PLAY/PAUSE/RESUME/REST according to the
-confirmed state and drives the button texture library after acknowledgements.
+independently of animation ticks. The HUD controller uses PAUSE/RESUME for interruptions, reserves REST for visual
+cleanup, and keeps the preparation clock and used-component latch separately.
 
 At startup, the player announces `918333 / READY` with null id in the root.
 The controller resends LOAD. If the texture disappears from root inventory,

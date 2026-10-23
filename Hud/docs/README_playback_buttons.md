@@ -12,8 +12,8 @@ resolution in Second Life (for example 1024 x 512), preserving the 2:1 ratio.
 | 2 | PAUSE | 0 | 1 | <0.5, 0.5, 0.0> | <-0.25, -0.25, 0.0> | 918334 PAUSE |
 | 3 | STOP | 1 | 1 | <0.5, 0.5, 0.0> | <0.25, -0.25, 0.0> | 918332 REST |
 
-Use START when stopped, PAUSE while running, and CONT while paused. STOP ends
-the current session. CONT here means resume playback; it is distinct from the
+Use START only for an unused preparation. After first commitment, use CONT.
+PAUSE and STOP both suspend the preparation without clearing elapsed time. CONT here means resume playback; it is distinct from the
 ingredient page's CONTINUE navigation message (918310).
 
 Visuals match `hud_p2.png`: beveled dark metal, bronze edges, ivory serif labels,
@@ -39,7 +39,7 @@ assembly setting; choose an appropriate mode for the transparent margins.
 |---|---|---|---|
 | 918340 | LOAD | Exact inventory texture name, or empty for default | LOADED |
 | 918341 | SHOW | JSON `["primName", face, "label"]` | SHOWN:label |
-| 918342 | STATE | STOPPED, PLAYING, or PAUSED | STATE:state |
+| 918342 | STATE | STOPPED, PLAYING, PAUSED, USED, or SPOILED | STATE:state |
 | 918343 | STATUS | Library responses | READY, UNLOADED, or ERROR:reason |
 
 All command responses echo the request ticket in `id`. The library accepts
@@ -71,44 +71,31 @@ supported by configuration).
 | STATE | START_PRIM label | STOP_PRIM label |
 |---|---|---|
 | STOPPED | START | STOP |
-| PLAYING | START | PAUSE |
+| PLAYING | CONT | PAUSE |
 | PAUSED | CONT | STOP |
+| USED | CONT | STOP |
+| SPOILED | CONT (dimmed) | STOP (dimmed) |
 
-`MC_P1_Animation` now loads this atlas at startup using an empty LOAD name,
-which uses the library's DEFAULT_ATLAS (`atlas_buttons`). On LOADED, the controller
-replays the latest confirmed player state. It requests STATE after REST, PLAYING,
-or PAUSED acknowledgements; speculative clicks do not update button textures.
-The left button starts from rest and resumes from pause. The right button pauses
-while playing and stops while paused. START while already playing is idempotent.
-Discard, Later, CONTINUE navigation, and DISCARD_DONE stop the session.
-Commands are serialized, retaining the latest intent while awaiting an ack.
-Stop during initial LOAD cancels a pending Start.
+`MC_P1_Animation` loads this atlas at startup using an empty LOAD name,
+which uses DEFAULT_ATLAS (`atlas_buttons`). It drives confirmed visual states
+and replays them after library reset. STOPPED is only for an unused preparation;
+after the first committed START, the controller sends PLAYING or USED, so START
+cannot reappear. Both normal paused and stopped-used preparations display CONT.
+The right button suspends playback; repeated STOP preserves active time.
 
-The texture library remains visual-only and does not consume 918333 messages
-itself; the controller performs that connection. SHOW remains available for custom
-arrangements. Use the same button prim names in the library and controller.
-A button-library reset reloads and redraws the current state without restarting
-playback. A player reset starts a new session if playing was requested; a paused
-session returns to STOPPED because its frame/time no longer exists. A controller
-reset starts from STOPPED. Button-atlas errors are logged independently and do
-not stop the animation. Restore a missing button atlas to ROOT inventory to retry
-its load automatically.
+Explicit START on an already used preparation spoils it. SPOILED draws dimmed
+CONT/STOP; the preparation controller ignores resume attempts. Only confirmed
+DISCARD_DONE unlocks a new preparation. Later/navigation/reset never unlock it.
+The texture library remains visual-only; the preparation controller owns this
+lifetime policy. SHOW remains available for custom arrangements.
 
-At script startup/reset or owner/link change, READY is sent with null id; reload
-the texture and replay the desired display. Texture removal sends UNLOADED with
-null id and leaves the last images visible. Further SHOW/STATE commands fail
-until a texture is loaded again. All unsolicited statuses are root-local.
+Use the same button names in the library and controller. A library reset reloads
+and redraws without resetting the preparation clock. Removing/restoring an atlas
+retries loading without permitting a second preparation START. See
+`README_chop_progress.md` for session timing, persistence and installation.
 
 ## Library verification
 
-Run `./tests/run_playback_buttons_checks.ps1` from the Hud directory. The runner
-parses `MC_Playback_Buttons.lsl`, `MC_Atlas_Player.lsl`, and `MC_P1_Animation.lsl`
-and executes their real ASTs with deterministic UV,
-inventory, and link-message mocks. The parser and bundled runtime paths match
-this development machine. Twelve tests cover all four UV cells, state pairs,
-request tickets, face isolation, invalid inputs, duplicate/missing targets,
-failed LOAD, texture removal, custom faces, relinking, and caller filtering.
-Ten additional integration tests cover startup loading, the full Start/Pause/Cont/Stop
-click cycle, elapsed time excluding pauses, queued clicks, library reset, texture
-restoration, navigation/discard, external player commands, and acknowledgement
-ordering. These checks do not replace Mono compilation and visual validation in SL.
+Run `./tests/run_playback_buttons_checks.ps1` from Hud. It parses the player,
+controller, button library and progress renderer, then executes 47 AST behavior
+tests. See `README_chop_progress.md` for coverage and Second Life validation limits.

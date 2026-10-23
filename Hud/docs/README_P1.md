@@ -63,10 +63,10 @@ the HUD page number does not identify a prim's texture face. Use the
   generic interface. P1's own pagination is not persisted.
 - Visual Cut/Stop integration with the `P1_DISPLAY` atlas is described in
   `README_Atlas.md`: `MC_Atlas_Player`, `MC_P1_Animation`, `MC_Playback_Buttons`,
-  and both textures belong in the root. The right button pauses while playing
-  and stops from pause. Discard, Later, and Continue restore the rest frame.
-  The crafting engine, `+` buttons, Take, and Later's crafting behavior still
-  need integration.
+  plus MC_Chop_Progress and all three atlas textures belong in ROOT. STOP,
+  Later and page navigation suspend without clearing progress or the used latch.
+  Only confirmed Discard releases the preparation. Final craft output, `+`
+  buttons and Take behavior still need integration.
 
 ## Discard and the craft flag
 
@@ -74,10 +74,10 @@ the HUD page number does not identify a prim's texture face. Use the
 true after Stop, Continue, and resets. It is saved in the small
 `mc:simple:craft_started` value (0/1), without JSON or a global registry.
 
-The future crafting engine must request `918315 / CRAFT_STARTED`, with a UUID
-in `id`, and wait for `918317 / CRAFT_STARTED` carrying that same UUID before
-starting. The controller persists the flag first. Clicking Cut does not prove
-that crafting started: no HUD crafting engine is connected yet.
+MC_P1_Animation now requests `918315 / CRAFT_STARTED`, with a UUID in `id`,
+and waits for matching `918317 / CRAFT_STARTED` before starting playback and its
+active-time clock. The basket controller persists the flag first. Subsequent CONT
+never sends another start request. This does not add another source stock debit.
 
 `P1_DISCARD` requests `918315 / DISCARD` with a ticket in `id`:
 
@@ -111,7 +111,8 @@ that crafting started: no HUD crafting engine is connected yet.
   finishes Discard even without a relay IDLE message. Loss after crafting also
   does not depend on the relay. Confirmed returns continue to use it.
 
-User messages are in English. No extra Progress/result display is cleared:
+User messages are in English. The chop progress display is now reset on confirmed
+DISCARD_DONE; no additional result display is cleared:
 there is currently no visual crafting table.
 
 ### Former Discard blocking behavior
@@ -169,11 +170,13 @@ snapshot transaction, and P1's closed state is not persisted. Pending rows are
 intentionally visible without a distinct uncertainty indicator. The animation
 remains separate from actual crafting and does not set the craft-start flag.
 
-## Playback controls and button textures
+## Playback controls, progress and used preparations
 
-`MC_P1_Animation` connects `MC_Atlas_Player` to `MC_Playback_Buttons` in ROOT.
-The left P1_CUT surface shows START/CONT and starts/resumes. The right P1_STOP
-surface shows PAUSE during playback and STOP during pause. Discard, Later,
-CONTINUE navigation, and DISCARD_DONE stop. Import the button texture as
-`atlas_buttons` in ROOT and set visible button faces in MC_Playback_Buttons.
-See `README_playback_buttons.md` for installation, protocol, and tests.
+`MC_P1_Animation` connects the player, button library and progress renderer in ROOT.
+P1_CUT becomes CONT immediately after the first committed start and never reverts
+to START for that preparation. P1_STOP suspends, including repeated clicks. CONT
+resumes the same active time. Later and page CONTINUE navigation also suspend.
+Only confirmed DISCARD_DONE clears the used latch. Explicit restart marks Spoiled.
+Import `atlas_buttons` and `atlas_progress` into ROOT, configure visible faces,
+and use the unique prim P1_PROGRESS. Full timing/installation details are in
+`README_chop_progress.md`; its default duration to Over the top is 10 active seconds.

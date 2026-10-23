@@ -1,8 +1,9 @@
 // ROOT-only visual library for atlas_playback_buttons_2x2_v1.
 // 918340 LOAD: exact texture inventory name, or empty for DEFAULT_ATLAS.
 // 918341 SHOW: JSON [primName, face, label], label START/CONT/PAUSE/STOP.
-// 918342 STATE: STOPPED/PLAYING/PAUSED, using configured button pair below.
+// 918342 STATE: STOPPED (unused), PLAYING, PAUSED, USED or SPOILED.
 // 918343 STATUS: READY/LOADED/SHOWN:label/STATE:state/UNLOADED/ERROR:reason.
+// Also follows confirmed player status 918333 directly for texture updates.
 // Replies echo request id. No touches, playback commands, or timers are owned here.
 integer LOAD = 918340;
 integer SHOW = 918341;
@@ -11,12 +12,19 @@ integer STATUS = 918343;
 string DEFAULT_ATLAS = "atlas_buttons";
 string START_PRIM = "P1_CUT";
 string STOP_PRIM = "P1_STOP";
-integer START_FACE = 0;
-integer STOP_FACE = 0;
+integer START_FACE = 2;
+integer STOP_FACE = 2;
 string gAtlas;
+integer gUsed;
+string gLastError;
 
 reply(string text, key ticket)
 {
+    if (llSubStringIndex(text, "ERROR:") == 0 && text != gLastError)
+    {
+        llOwnerSay("[Button textures] " + text);
+        gLastError = text;
+    }
     llMessageLinked(LINK_THIS, STATUS, text, ticket);
 }
 
@@ -93,12 +101,14 @@ showButton(string payload, key ticket)
 showState(string value, key ticket)
 {
     value = llToUpper(llStringTrim(value, STRING_TRIM));
+    if (value == "PLAYING" || value == "PAUSED" || value == "USED" || value == "SPOILED") gUsed = TRUE;
+    if (value == "STOPPED" && gUsed) value = "USED";
     integer left = 0; // START
     integer right = 3; // STOP
-    if (value == "PLAYING") right = 2; // PAUSE
-    else if (value == "PAUSED") left = 1; // CONT
+    if (value == "PLAYING") left = 2; // PAUSE / STOP; visual selection only.
+    else if (value == "PAUSED" || value == "USED" || value == "SPOILED") left = 1;
     else if (value != "STOPPED")
-    { reply("ERROR:STATE expects STOPPED, PLAYING or PAUSED", ticket); return; }
+    { reply("ERROR:Unknown button state", ticket); return; }
     integer startLink = findPrim(START_PRIM);
     integer stopLink = findPrim(STOP_PRIM);
     // Validate both before writing either; duplicate surface configuration is invalid.
@@ -107,16 +117,53 @@ showState(string value, key ticket)
     { reply("ERROR:Invalid button pair names or faces", ticket); return; }
     showFrame(startLink, START_FACE, left);
     showFrame(stopLink, STOP_FACE, right);
+    if (value == "SPOILED")
+    {
+        llSetLinkPrimitiveParamsFast(startLink, [PRIM_COLOR, START_FACE, <0.4, 0.4, 0.4>, 1.0]);
+        llSetLinkPrimitiveParamsFast(stopLink, [PRIM_COLOR, STOP_FACE, <0.4, 0.4, 0.4>, 1.0]);
+    }
     reply("STATE:" + value, ticket);
 }
 
 default
 {
-    state_entry() { reply("READY", NULL_KEY); }
+    state_entry()
+    {
+        list session = llJson2List(llLinksetDataRead("mc:chop:session"));
+        gUsed = llList2Integer(session, 0) || llLinksetDataRead("mc:simple:craft_started") == "1";
+        reply("READY", NULL_KEY);
+    }
 
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber()) return;
+        // Observe CONFIRMED animation states directly. Never send playback/touch commands.
+        if (number == 918333 && (text == "PLAYING" || text == "PAUSED" || text == "REST"))
+        {
+            if (gAtlas == "")
+            {
+                string name = DEFAULT_ATLAS;
+                if (llGetInventoryType(name) != INVENTORY_TEXTURE) name = "atlas_playback_buttons_2x2_v1";
+                if (llGetInventoryType(name) != INVENTORY_TEXTURE) name = "atlas_playback_buttons_2x2_v1.png";
+                if (llGetInventoryType(name) != INVENTORY_TEXTURE)
+                { reply("ERROR:Missing button atlas in ROOT inventory", ticket); return; }
+                gAtlas = name;
+            }
+            if (text == "REST")
+            {
+                if (gUsed) showState("USED", ticket);
+                else showState("STOPPED", ticket);
+            }
+            else showState(text, ticket);
+            return;
+        }
+        if (number == 918317 && text == "DISCARD_DONE" && ticket != NULL_KEY
+            && llLinksetDataRead("mc:simple:craft_started") != "1")
+        {
+            gUsed = FALSE;
+            if (gAtlas != "") showState("STOPPED", ticket);
+            return;
+        }
         if (number == LOAD)
         {
             if (text == "") text = DEFAULT_ATLAS;

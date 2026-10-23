@@ -1,0 +1,112 @@
+{
+  "asset": "atlas_chop_progress_v1.png",
+  "width": 1536,
+  "height": 1024,
+  "logical_grid": [
+    3,
+    2
+  ],
+  "note": "Use per-frame UVs: painted row boundary is y=496; bottom 28px are unused. Frame 5 is empty.",
+  "frames": [
+    {
+      "index": 0,
+      "label": "Light",
+      "rect_px": [
+        0,
+        0,
+        512,
+        496
+      ],
+      "repeats": [
+        0.3333333333333333,
+        0.484375,
+        0
+      ],
+      "offset": [
+        -0.3333333333333333,
+        0.2578125,
+        0
+      ]
+    },
+    {
+      "index": 1,
+      "label": "Coarse",
+      "rect_px": [
+        512,
+        0,
+        512,
+        496
+      ],
+      "repeats": [
+        0.3333333333333333,
+        0.484375,
+        0
+      ],
+      "offset": [
+        0,
+        0.2578125,
+        0
+      ]
+    },
+    {
+      "index": 2,
+      "label": "Fine",
+      "rect_px": [
+        1024,
+        0,
+        512,
+        496
+      ],
+      "repeats": [
+        0.3333333333333333,
+        0.484375,
+        0
+      ],
+      "offset": [
+        0.3333333333333333,
+        0.2578125,
+        0
+      ]
+    },
+    {
+      "index": 3,
+      "label": "Extra",
+      "rect_px": [
+        0,
+        496,
+        512,
+        500
+      ],
+      "repeats": [
+        0.3333333333333333,
+        0.48828125,
+        0
+      ],
+      "offset": [
+        -0.3333333333333333,
+        -0.228515625,
+        0
+      ]
+    },
+    {
+      "index": 4,
+      "label": "Over the top",
+      "rect_px": [
+        512,
+        496,
+        512,
+        500
+      ],
+      "repeats": [
+        0.3333333333333333,
+        0.48828125,
+        0
+      ],
+      "offset": [
+        0,
+        -0.228515625,
+        0
+      ]
+    }
+  ]
+}

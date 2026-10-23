@@ -54,14 +54,12 @@ axis fab.stability               # inert -> explosive
     range   explosive  8 .. 10
 
 axis fab.grind                   # grind fineness                 # grind fineness
-    range   0 .. 50
-   axis fab.grind                 # grind fineness
-    domain  0 .. 50
-    band    light   <= 8
-    band    coarse  >= 12
-    band    fine    >= 22
-    band    extra   >= 32
-    band    over    >= 42
+  range   0 .. 10
+    range   light   0 .. 2
+    range   coarse  3 .. 4
+    range   fine    5 .. 6
+    range   extra   7 .. 8
+    range   over    9 .. 10
 
 # ===== body-effect axes (quantified result; scaled by eff) =====
 axis act.thermal                 # cools / warms the body
