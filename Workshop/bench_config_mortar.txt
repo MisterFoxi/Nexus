@@ -1,0 +1,61 @@
+# Mortar config -- OWNER-ONLY notecard.
+# IN-WORLD: rename this notecard to EXACTLY "bench_config" inside the
+# mortar's prim (the Workshop script only looks for that name).
+# Blank lines and # are ignored.
+
+# Genre decides which laws this workshop resolves. REQUIRED.
+# A mortar runs the mortar laws ('grind' : leaf -> powder, and 'over').
+Genre = mortar
+
+# -- Action axis (grinding) --------------------------------------------
+# The mortar's craft action is GRINDING, fed on the 'fab.grind' axis.
+# Modality 'hold' = measured by TIME: at Cook the player touches to START
+# grinding, touches again to STOP; the duration becomes the intensity.
+# (Modality 'hud' would use the stub stepper dialog instead -- phase 2.)
+Action = fab.grind : hold
+
+# hold -> intensity = round(duration_seconds * GrindScale), capped at GrindMax.
+# With GrindScale = 1.0 : ~8 s of grinding reaches fab.grind >= 8 = band
+# 'over' -> law 'over' fires (eff *0.5 ^ qty *0.5) = "over-ground".
+GrindScale = 1.0        # seconds -> intensity multiplier
+GrindMax   = 10         # intensity ceiling (fab.grind domain is 0..10)
+# ----------------------------------------------------------------------
+
+# REVIEW: Channel is fixed in the scripts; this legacy setting is ignored.
+Channel = -918273
+MaxEffect = 50
+FluxAbs = 1              # natural per-axis variation (+/-), 0 = fixed axes
+
+# ============================================================
+# -- Batch curve : m(n) for DUPLICATES of the same ingredient --
+#    Several copies of the SAME name/stage in the basket follow this
+#    bell curve instead of summing x N. Distinct ingredients are not
+#    affected. Values are [min,max] PAIRS, per-mille (1000 = x1.0):
+#    pair #1 = n=1 copy, pair #2 = n=2, ... one pair per count.
+#    At cook, a random draw in the pair's [min,max] scales the group's
+#    axis contribution (the spread = natural fuzz). Shape rises to a
+#    sweet spot then falls. Keep an EVEN count of values.
+#    n >= NMax => batch spoiled: potency collapses to a draw in
+#    [SpoilMin..SpoilMax] per-mille. "Too much kills the mix."
+# ------------------------------------------------------------
+NMax = 7                 # n >= NMax -> batch spoiled
+SpoilMin = 0             # spoil draw, per-mille (effect multiplier)
+SpoilMax = 150
+#        n=1        n=2        n=3(peak)  n=4(peak)  n=5        n=6
+Batch = 950,1050, 1200,1300, 1400,1500, 1350,1500, 950,1150, 550,800
+# ============================================================
+
+# REVIEW: MaxQuantity and MinLifetime are not read by the current Workshop/Eval scripts.
+MaxQuantity = 20
+MinLifetime = 1h
+ShowHover = 1
+
+CookTime = 5s            # grinding is quick -- shorter than a cauldron
+# REVIEW: CollectWindow is ignored; output waits for manual collection without this timeout.
+CollectWindow = 15s      # time to click to collect the output
+
+# Sounds: names of sounds present in the mortar's inventory.
+# Swap for grind/pestle clips; leave as-is if those sounds are loaded.
+CookSound = cook_sound   # looping sound while grinding
+ReadySound = ready_sound # looping sound when ready to collect
+FailSound = fail_sound   # one-shot on failure

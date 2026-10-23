@@ -1,0 +1,59 @@
+# Bench config -- OWNER-ONLY notecard, name it "bench_config"
+# Guardrail B (value bounds) + options. Blank lines and # are ignored.
+
+# Genre decides which laws this workshop resolves. REQUIRED -- without it
+# the workshop resolves NOTHING ("no Genre set"). Valid: cutting_board,
+# mortar, alambic, cauldron, crafter. Several allowed, comma-separated
+# (multi-genre bench = union of their laws). Set this to match THIS prim.
+Genre = cauldron
+
+# REVIEW: Channel is fixed in the scripts; this legacy setting is ignored.
+Channel = -918273
+MaxEffect = 50
+FluxAbs = 1              # natural per-axis variation (+/-), 0 = fixed axes
+
+# ============================================================
+# -- Batch curve : m(n) for DUPLICATES of the same ingredient --
+#    "Duplicates" = several copies of the SAME name/stage in the basket
+#    (e.g. 4x Kanda leaf/leaf). Distinct ingredients are NOT affected:
+#    they still sum normally (diversity concentrates). Stacking the same
+#    thing does NOT multiply x N -- it follows the bell curve below.
+#
+#    HOW TO READ 'Batch': a flat list of [min,max] PAIRS, per-mille
+#    (1000 = x1.0 = unchanged). Pair #1 is for n=1 copy, pair #2 for
+#    n=2, ... one pair per count. 6 pairs here => n = 1..6.
+#    At each cook, for a group of n copies the engine draws ONE random
+#    value inside that pair's [min,max] and multiplies the group's axis
+#    contribution by it. The min..max spread IS the natural fuzz: two
+#    identical batches are never exactly the same.
+#
+#    SHAPE (bell): rises to a sweet spot (~n=3-4, peak ~x1.5), then
+#    falls back (too many copies = diminishing, then worse). Edit the
+#    numbers to reshape; keep an EVEN count of values (min,max pairs).
+#    Beyond the last pair the last one is reused (but NMax caps first).
+#
+#    OVER-SATURATION: n >= NMax => batch SPOILED. Instead of the curve,
+#    potency collapses: a draw in [SpoilMin..SpoilMax] per-mille is
+#    applied to the output effect (sibling of 'overcooked'). Matter is
+#    still consumed. "Too much kills the mix."
+#
+#    (The per-axis natural variation is a SEPARATE knob: FluxAbs above.)
+# ------------------------------------------------------------
+NMax = 7                 # n >= NMax -> batch spoiled (potency collapses)
+SpoilMin = 0             # spoil draw, per-mille: effect multiplier in [SpoilMin..SpoilMax]
+SpoilMax = 150           #   e.g. 0..150 = output effect falls to 0%..15%
+# m(n) table, per-mille, [min,max] pairs for n=1..6.  NO inline # on this line.
+#        n=1        n=2        n=3(peak)  n=4(peak)  n=5        n=6
+Batch = 950,1050, 1200,1300, 1400,1500, 1350,1500, 950,1150, 550,800
+# ============================================================
+
+# REVIEW: MaxQuantity and MinLifetime are not read by the current Workshop/Eval scripts.
+MaxQuantity = 20
+MinLifetime = 1h
+ShowHover = 1
+CookTime = 20s          # cooking duration after Cook (< 1 min)
+# REVIEW: CollectWindow is ignored; output waits for manual collection without this timeout.
+CollectWindow = 15s     # time to click the bench to collect the potion
+CookSound = cook_sound   # looping sound during cooking (sound name in bench inventory)
+ReadySound = ready_sound # looping sound when ready to collect
+FailSound = fail_sound   # one-shot sad trombone on any failure
