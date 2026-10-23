@@ -1,6 +1,6 @@
 # Development HUD
 
-The root contains only the **12 current HUD scripts**, to install in the linkset's root prim alongside FURWARE (supplied separately).
+The root contains only the **current HUD scripts**, to install in the linkset's root prim alongside FURWARE (supplied separately).
 
 | Function | Scripts |
 |---|---|
@@ -9,14 +9,16 @@ The root contains only the **12 current HUD scripts**, to install in the linkset
 | Rendering | MC_Render, MC_Render_Selected, MC_Render_P1 |
 | Craft page and rotation | MC_P1_Controller, MC_Turn_Z |
 | Animation | MC_Atlas_Player, MC_P1_Animation |
+| Button textures (connected to animation controller) | MC_Playback_Buttons |
 
 ## Current installation
 
 - [Selection and basket](docs/README_simple.md)
 - [Craft page, returns, and Discard](docs/README_P1.md)
 - [Atlas player and Cut/Stop integration](docs/README_Atlas.md)
+- [Playback button atlas and visual library API](docs/README_playback_buttons.md)
 
-The atlas player and atlas texture belong in the root prim's inventory; the display prim is **P1_DISPLAY**. HUD buttons contain no scripts. Diagnostic scripts, fixtures, and old controllers are not part of this installation.
+The atlas player, button texture library, and both atlas textures belong in the root prim's inventory; the display prim is **P1_DISPLAY**. HUD buttons contain no scripts. Diagnostic scripts, fixtures, and old controllers are not part of this installation.
 
 ## Organization
 

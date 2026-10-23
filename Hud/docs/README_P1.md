@@ -62,8 +62,9 @@ the HUD page number does not identify a prim's texture face. Use the
 - After reset, P1 rebuilds its view and retrieves P0's page through the existing
   generic interface. P1's own pagination is not persisted.
 - Visual Cut/Stop integration with the `P1_DISPLAY` atlas is described in
-  `README_Atlas.md`: `MC_Atlas_Player`, `MC_P1_Animation`, and the texture belong
-  in the root. Stop, Discard, Later, and Continue restore the rest frame.
+  `README_Atlas.md`: `MC_Atlas_Player`, `MC_P1_Animation`, `MC_Playback_Buttons`,
+  and both textures belong in the root. The right button pauses while playing
+  and stops from pause. Discard, Later, and Continue restore the rest frame.
   The crafting engine, `+` buttons, Take, and Later's crafting behavior still
   need integration.
 
@@ -167,3 +168,12 @@ craft flags are written separately, views share persistent records without a
 snapshot transaction, and P1's closed state is not persisted. Pending rows are
 intentionally visible without a distinct uncertainty indicator. The animation
 remains separate from actual crafting and does not set the craft-start flag.
+
+## Playback controls and button textures
+
+`MC_P1_Animation` connects `MC_Atlas_Player` to `MC_Playback_Buttons` in ROOT.
+The left P1_CUT surface shows START/CONT and starts/resumes. The right P1_STOP
+surface shows PAUSE during playback and STOP during pause. Discard, Later,
+CONTINUE navigation, and DISCARD_DONE stop. Import the button texture as
+`atlas_buttons` in ROOT and set visible button faces in MC_Playback_Buttons.
+See `README_playback_buttons.md` for installation, protocol, and tests.

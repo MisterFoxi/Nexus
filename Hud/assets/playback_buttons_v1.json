@@ -1,0 +1,28 @@
+{
+  "asset": "atlas_playback_buttons_2x2_v1.png",
+  "columns": 2,
+  "rows": 2,
+  "index_order": "left-to-right, then top-to-bottom",
+  "frames": [
+    {
+      "index": 0,
+      "label": "START",
+      "command": 918331
+    },
+    {
+      "index": 1,
+      "label": "CONT",
+      "command": 918335
+    },
+    {
+      "index": 2,
+      "label": "PAUSE",
+      "command": 918334
+    },
+    {
+      "index": 3,
+      "label": "STOP",
+      "command": 918332
+    }
+  ]
+}

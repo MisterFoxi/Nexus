@@ -3,12 +3,17 @@
 // Owns the display prim's texture animation and this script's timer.
 // 918330 LOAD: text = exact inventory texture name. Shows REST immediately.
 // 918331 PLAY: text ignored. 918332 REST: text ignored.
+// 918334 PAUSE / 918335 RESUME / 918336 ELAPSED: text ignored.
 // 918333 replies: LOADED / PLAYING / REST / ERROR:reason; id echoes request.
+// Also PAUSED / ELAPSED:seconds (active time only, frozen after REST).
 // READY is sent to ROOT on startup; caller resends LOAD after player reset.
 integer LOAD = 918330;
 integer PLAY = 918331;
 integer REST = 918332;
 integer STATUS = 918333;
+integer PAUSE = 918334;
+integer RESUME = 918335;
+integer ELAPSED = 918336;
 string DISPLAY_PRIM = "P1_DISPLAY";
 integer gDisplayLink;
 
@@ -24,6 +29,9 @@ float FPS = 4.0;
 
 string gAtlas = "";
 integer gRunning = FALSE;
+integer gPaused = FALSE;
+float gElapsed = 0.0;
+float gStartedAt;
 integer gFrame;
 integer gController = LINK_THIS;
 
@@ -74,10 +82,18 @@ showFrame(integer frame)
     ]);
 }
 
+float elapsedTime()
+{
+    if (gRunning) return gElapsed + llGetTime() - gStartedAt;
+    return gElapsed;
+}
+
 stopPlayback()
 {
+    gElapsed = elapsedTime();
     llSetTimerEvent(0.0);
     gRunning = FALSE;
+    gPaused = FALSE;
     // Clear any native animation from the old standalone test as well.
     if (gDisplayLink > 0)
         llSetLinkTextureAnim(gDisplayLink, 0, ALL_SIDES, 1, 1, 0.0, 0.0, 0.0);
@@ -126,10 +142,47 @@ default
         // Only root-local clients may control this face; all scripts in the root share this authority.
         if (sender != llGetLinkNumber()) return;
         if (number == LOAD) { loadAtlas(sender, text, ticket); return; }
-        if (number != PLAY && number != REST) return;
+        if (number == ELAPSED)
+        {
+            reply(sender, "ELAPSED:" + (string)elapsedTime(), ticket);
+            return;
+        }
+        if (number != PLAY && number != REST && number != PAUSE && number != RESUME) return;
         if (gAtlas == "" || llGetInventoryType(gAtlas) != INVENTORY_TEXTURE)
         {
-            reply(sender, "ERROR:LOAD an inventory texture before PLAY or REST", ticket);
+            reply(sender, "ERROR:LOAD an inventory texture before playback commands", ticket);
+            return;
+        }
+        if (number == PAUSE)
+        {
+            if (!gRunning && !gPaused)
+            {
+                reply(sender, "ERROR:PAUSE requires active playback", ticket);
+                return;
+            }
+            if (gRunning)
+            {
+                stopPlayback();
+                gPaused = TRUE;
+            }
+            reply(sender, "PAUSED", ticket);
+            return;
+        }
+        if (number == RESUME)
+        {
+            if (!gRunning && !gPaused)
+            {
+                reply(sender, "ERROR:RESUME requires paused playback", ticket);
+                return;
+            }
+            if (gPaused)
+            {
+                gStartedAt = llGetTime();
+                gPaused = FALSE;
+                gRunning = TRUE;
+                llSetTimerEvent(1.0 / FPS);
+            }
+            reply(sender, "PLAYING", ticket);
             return;
         }
         if (number == REST)
@@ -143,6 +196,9 @@ default
         // Repeated PLAY acknowledges without restarting the current cycle.
         if (!gRunning)
         {
+            gElapsed = 0.0;
+            gStartedAt = llGetTime();
+            gPaused = FALSE;
             gFrame = FIRST_FRAME;
             showFrame(gFrame);
             gRunning = TRUE;
