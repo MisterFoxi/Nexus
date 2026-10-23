@@ -1,0 +1,176 @@
+# Laws & transformations -- BLOCK grammar, one action per line.
+#   law <name>
+#       when <cond>            (repeatable ; all required)
+#       react | danger         (verdict)
+#       set <dim> = <val> | scale <axis>|eff|qty x<f> | add <label> | remove <label> | give | cap <n>
+#   cond : <axis> = <val> | <axis> >= <n> | <axis> <= <n> | <axis> is <band> | <axis> (presence)
+# Law order sets the tie-break on equal elaboration (seq) -- do not reorder without reason.
+
+
+@cutting_board
+law harvest
+    when  meta.stage is plant
+    when  meta.taxonomy is cuttable
+    react
+    give
+
+law chop
+    when  meta.taxonomy is leaf_plant
+    when  meta.stage is leaf
+    react
+    set   meta.stage = chopped
+    scale qty x5
+
+law choptatoes
+    when meta.taxonomy is potato
+    when meta.stage is harvested
+    react
+    set meta.stage = sliced
+
+law mince
+    when  meta.taxonomy is leaf_plant
+    when  meta.stage is chopped
+    react
+    set   meta.stage = minced      # refine only (no x qty) ; minced = terminal on the board
+
+
+
+@mortar
+law grind
+    when  meta.taxonomy is leaf_plant
+    when  meta.stage is leaf
+    react
+    set   meta.stage = powder
+    scale act.nervous x2
+    scale qty x0.6
+
+law over
+    when  meta.taxonomy is leaf_plant
+    when  meta.stage is leaf
+    when  fab.grind is over
+    react
+    set   meta.stage = powder
+    scale act.nervous x2
+    scale eff x0.5
+    scale qty x0.5
+
+law grind_fine
+    when  meta.taxonomy is leaf_plant
+    when  meta.stage is chopped
+    react
+    set   meta.stage = powder
+    scale act.nervous x2.5      # better concentrated than the whole leaf (x2)
+    scale qty x0.9              # less loss than starting from the leaf (x0.6)
+
+law over_fine
+    when  meta.taxonomy is leaf_plant
+    when  meta.stage is chopped
+    when  fab.grind is over
+    react
+    set   meta.stage = powder
+    scale act.nervous x2.5
+    scale eff x0.5
+    scale qty x0.5
+
+law grind_ultra
+    when  meta.taxonomy is leaf_plant
+    when  meta.stage is minced
+    react
+    set   meta.stage = powder
+    scale act.nervous x3           # the finest = the best extracted
+
+law over_ultra
+    when  meta.taxonomy is leaf_plant
+    when  meta.stage is minced
+    when  fab.grind is over
+    react
+    set   meta.stage = powder
+    scale act.nervous x3
+    scale eff x0.5
+    scale qty x0.5
+
+law poultice
+    when  meta.taxonomy is leaf_plant
+    when  meta.stage is powder           
+    when  meta.taxonomy is liquid       # a liquid is required in the basket
+    react
+    set   meta.stage = poultice
+    scale act.fluidifying x1.5         # the liquid "binds" the paste, e.g.
+
+
+@cauldron
+law overcooked
+    when  fab.thermal is boiling
+    react
+    scale eff x0.5
+
+law cooked_ok
+    when  fab.thermal is simmer
+    react
+    keep
+
+law corrosif
+    when  fab.acidity is acidic
+    when  fab.stability is explosive
+    danger
+    add   act.toxic
+    cap   10
+
+law vomitif
+    when  org.bitter is bitter
+    react
+    add   act.vomiting
+
+law purifiedwater
+    when fab.thermal is boiling
+    when meta.taxonomy is water
+    react
+    set meta.stage = purified
+
+
+law perf
+    when meta.stage is purified
+    when org.salty <= 2          # pincee -> isotonique
+    react
+    set meta.stage = saline_iv
+
+law brine
+    when meta.stage is purified
+    when org.salty >= 3          # beaucoup -> saumure
+    react
+    set meta.stage = brine
+
+law fry
+    when fab.thermal is frying        # > ~160C, hors d'atteinte pour l'eau
+    when org.viscosity is thick
+    react
+    add act.todo
+
+law makefries 
+    when meta.taxonomy is potato
+    when fab.thermal is frying
+    when org.viscosity is thick
+    when meta.stage is sliced 
+    react
+    set meta.stage = fried
+    scale eff x1.5
+
+
+@field
+law sprout
+    when meta.stage is seed
+    when meta.elapsed_time >= 60       # 1h depuis la plantation
+    react
+    set  meta.stage = sprout
+
+law mature
+    when meta.stage is sprout
+    when meta.elapsed_time >= 240      # 4h
+    react
+    set  meta.stage = mature
+
+law harvest
+    when meta.stage is mature
+    react
+    give
+

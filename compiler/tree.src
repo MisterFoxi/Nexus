@@ -1,0 +1,64 @@
+# ==========================================================================
+#  tree.src — taxonomy of CLASSES (not species). Fixed roots, 3 levels max.
+#
+#  class block:
+#     class <node> [: <parent>]       optional parent on the header: "is a"
+#         aka  <alias> , ...          optional; the alias shares the canonical id
+#         axis <axis> = <delta>       class trait (intensity), summed down the tree
+#
+#  group block:
+#     group <name>
+#         member <class>              one member per line; "contains"
+#
+#  A group is inherited by the descendants of its members.
+#  The = 0 deltas are documentary (neutral): they state that a class has the
+#  axis; the compiler sums them with no effect.
+# ==========================================================================
+
+class leaf_plant
+    axis org.smell = -1
+
+class mint : leaf_plant
+    aka  menthe
+    axis act.nervous = -2
+
+class bark                    # bark (no traits yet)
+
+class root
+    axis org.sweet = 1            # was org.taste=-1 (faintly sweet) before the taste refactor
+
+class potato: root 
+    aka sul
+
+
+# --- liquids -----------------------------------------------------------
+class liquid                  # base class for liquids
+    axis org.viscosity = 0    # ordinary liquid (doc)
+
+class water : liquid
+    axis org.smell = 0
+    axis org.viscosity = -4   # runny (0 + -4 via inheritance)
+
+class oil : liquid
+    axis org.viscosity = 5    # thick (0 + 5 via inheritance)
+
+class mineral
+    inert fab.thermal
+
+class salt : mineral 
+    axis org.salty = 5
+
+class sugar : mineral
+    axis org.sweet = 5
+
+
+
+
+group salad
+    member leaf_plant
+    member root
+
+group cuttable                # classes harvestable at the cutting_board
+    member leaf_plant
+    member bark
+    member root

@@ -1,0 +1,130 @@
+# ==========================================================================
+#  axes.src — vocabulary (ids are managed in ids.lock, do not edit)
+#
+#  An axis = <prefix>.<name>. The prefix is only a READING group, not an
+#  engine-wired category (feel free to add more). Current prefixes:
+#     fab.<x>  fabrication / process — measured at the station (heat, pH, grind...)
+#     org.<x>  organic — intrinsic properties of the matter (taste, smell, texture)
+#     act.<x>  quantified result — the effect on the body; the ONLY prefix with a
+#              runtime meaning: eff multiplies every act.* axis at output.
+#  The only rule: every axis used (tree.src / laws.src / a component NC) must
+#  be declared here.
+#
+#  axis block (one piece of info per line):
+#     axis <prefix>.<name>
+#         unit  <u>                optional (pH, C, %...); absent => no unit
+#         range <pmin> .. <pmax>   measured physical domain (required)
+#         maps  <imin> .. <imax>   -> gameplay intensity; absent => domain is intensity
+#         range <zone> <lo> .. <hi>  named EXCLUSIVE zone (physical units), used by 'when X is <zone>'
+#  Zones on an axis must not overlap once mapped to intensity; the compiler clamps + warns if they do.
+# ==========================================================================
+
+# ===== stations (closed vocabulary) =====
+station cutting_board
+station mortar
+station alambic
+station cauldron
+station crafter
+station field
+
+# ===== fabrication axes (measured at the station) =====
+axis fab.thermal                 # cooking heat (water boils ~100C, oil fries ~180C)
+    unit    C
+    range   5 .. 200
+    maps    0 .. 30
+    range   cold     5 .. 25
+    range   warm     40 .. 69
+    range   simmer   70 .. 94
+    range   boiling  95 .. 159
+    range   frying   160 .. 200
+
+axis fab.acidity                 # acid / base
+    unit    pH
+    range   0 .. 14
+    maps    -7 .. 7
+    range   acidic    0 .. 4
+    range   neutral   5 .. 9
+    range   alkaline  10 .. 14
+
+axis fab.stability               # inert -> explosive
+    range   0 .. 10
+    range   inert      0 .. 2
+    range   stable     3 .. 5
+    range   volatile   6 .. 7
+    range   explosive  8 .. 10
+
+axis fab.grind                   # grind fineness
+    range   0 .. 10
+    range   light  0 .. 3
+    range   fine   5 .. 7
+    range   over   8 .. 10
+
+# ===== body-effect axes (quantified result; scaled by eff) =====
+axis act.thermal                 # cools / warms the body
+    unit    C
+    range   30 .. 42
+    maps    -7 .. 7
+    range   cooling  30 .. 35
+    range   neutral  36 .. 38
+    range   warming  39 .. 42
+
+axis act.fluidifying             # coagulant <-> thinning
+    range   -7 .. 7
+    range   coagulating  -7 .. -3
+    range   neutral      -2 .. 2
+    range   thinning     3 .. 7
+
+axis act.nervous                 # sedative <-> stimulant
+    range   -7 .. 7
+    range   sedative   -7 .. -3
+    range   neutral    -2 .. 2
+    range   stimulant  3 .. 7
+
+# ===== organic axes (intrinsic properties of the matter) =====
+# taste channels: 5 INDEPENDENT intensities (0 = absent, up = pronounced).
+axis org.sweet
+    range   0 .. 7
+    range   sweet  3 .. 7
+
+axis org.sour
+    range   0 .. 7
+    range   sour   3 .. 7
+
+axis org.salty
+    range   0 .. 7
+    range   salty  3 .. 7
+
+axis org.bitter
+    range   0 .. 7
+    range   bitter 3 .. 7
+
+axis org.umami                   # savourness
+    range   0 .. 7
+    range   umami  3 .. 7
+
+axis org.smell                   # fragrant <-> putrid
+    range   -7 .. 7
+    range   fragrant  -7 .. -3
+    range   neutral   -2 .. 2
+    range   putrid    3 .. 7
+
+axis org.viscosity               # thin <-> thick (middle = ordinary)
+    range   -7 .. 7
+    range   thin   -7 .. -3
+    range   thick  3 .. 7
+
+# ===== output labels =====
+act.toxic    label
+act.vomiting label
+act.todo    label
+
+# ===== identity dimensions =====
+meta.stage    cat : plant,chopped ,minced ,twig, leaf , powder , essence, pils, poultice, seed, sprout, mature, withered,harvested,sliced,fried
+meta.taxonomy taxonomy
+
+# ===== time gates (injected by the station, never authored, excluded from output) =====
+axis meta.elapsed_time           # EFFECTIVE growth minutes (only advances on fed cycles)
+    range   0 .. 10080
+
+axis meta.wall_time              # WALL-CLOCK minutes since planting (age; for spoilage/quality)
+    range   0 .. 100000
