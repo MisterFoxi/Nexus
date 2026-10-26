@@ -25,7 +25,7 @@ default
     link_message(integer sender, integer number, string payload, key ticket)
     {
         if (sender == llGetLinkNumber() && number == 918317
-            && payload == "DISCARD_DONE" && ticket != NULL_KEY && ticket != gLastDiscard)
+            && (payload == "DISCARD_DONE" || payload == "CRAFT_DONE") && ticket != NULL_KEY && ticket != gLastDiscard)
         {
             gLastDiscard = ticket;
             pageZero();

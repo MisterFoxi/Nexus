@@ -11,6 +11,7 @@ The root contains only the **current HUD scripts**, to install in the linkset's 
 | Animation | MC_Atlas_Player, MC_P1_Animation |
 | Button textures (connected to animation controller) | MC_Playback_Buttons |
 | Chopping progress on P1_PROGRESS | MC_Chop_Progress |
+| Workshop HUD endpoint (Workshop wiring pending) | MC_Workshop_Link |
 
 ## Current installation
 
@@ -19,6 +20,7 @@ The root contains only the **current HUD scripts**, to install in the linkset's 
 - [Atlas player and Cut/Stop integration](docs/README_Atlas.md)
 - [Playback button atlas and visual library API](docs/README_playback_buttons.md)
 - [Chopping progression, 10-second active clock and used-component latch](docs/README_chop_progress.md)
+- [Workshop HUD endpoint, installation and whisper contract](docs/README_workshop_link.md)
 
 The atlas player, button texture library, and both atlas textures belong in the root prim's inventory; the display prim is **P1_DISPLAY**. HUD buttons contain no scripts. Diagnostic scripts, fixtures, and old controllers are not part of this installation.
 

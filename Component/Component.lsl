@@ -38,13 +38,9 @@
 //   workshop -> all   : PING
 //   elem     -> ws    : HERE|key|name|qty|use|life|taxonomy|stage|propsPacked|proto|eff|mesh|organ
 //   blank    -> ws    : BLANK|key|capacity       (available container, on PING)
-//   ws       -> elem  : CONSUME|key|units
-//   ws       -> elem  : COMMIT|key               (final consumption: empty -> die)
-//   elem     -> ws    : OK|key|remaining  /  NO|key
 //   ws       -> blank : CONFIG|key|name|qty|use|life|taxonomy|stage|propsPacked|med[|eff]
-//   ws       -> elem  : REFUND|key|units          (restore reserved stock)
 //   ws       -> elem  : CUT|key|avatarKey                 (record recipient)
-//   ws       -> elem  : GIVE|key            (legacy: give single Mesh)
+//   ws       -> elem  : GIVE|key            (give single Mesh)
 //   ws       -> elem  : GIVE|key|leaf^root  (harvest: give each listed organ's mesh)
 //   ws       -> all   : HOVER|0/1
 //   propsPacked: "act.thermal=-6^act.fluidifying=5^org.sweet=4" (empty if none)
@@ -80,7 +76,7 @@ string  gTaxonomy;
 string  gStage;
 string  gProps;             // "name=val^..."
 string  gMed;
-string  gMesh;              // Inventory object (mesh + script + NC) to give at the next step (legacy single give).
+string  gMesh;              // Inventory object (mesh + script + NC) to give at the next step (single-mesh delivery).
 string  gOrgan;            // This component's organ identity (e.g. "leaf"); empty = not an organ.
 list    gOrganMesh;        // Harvest map, stride 2: [organName, meshName, ...] — a whole plant's organs to hand out.
 integer gQuantity;
@@ -368,28 +364,6 @@ hudRequest(integer channel, key client, list fields){
     lifecycle();
 }
 
-// Transitional legacy Workshop support uses the same stock and per-client holds.
-// No legacy mutation may release another client's reservation.
-integer legacyStock(key client, string verb, integer units){
-    if(gStockFault) return FALSE;
-    integer index=heldIndex(client);
-    integer held=0;
-    if(index >= 0) held=llList2Integer(gHeld,index+1);
-    integer stock=gQuantity;
-    if(verb == "COMMIT") held=0;
-    else if(verb == "CONSUME"){
-        if(units < 1 || expired() || gDying || stock < units || held > 2147483647-units) return FALSE;
-        stock -= units; held += units;
-    } else {
-        if(units < 1 || held < units || stock > 2147483647-units) return FALSE;
-        stock += units; held -= units;
-    }
-    if(!storeStock(stock,clientRows(client,index,held,NULL_KEY,verb,units,"OK",stock))) return FALSE;
-    if(verb == "CONSUME") playEffect();
-    setStats(); lifecycle();
-    return TRUE;
-}
-
 boot(){
     gRole = ROLE_NONE; gReady = FALSE;
     gTaxonomy = ""; gStage = ""; gProps = ""; gMed = ""; gExpiry = 0;
@@ -527,27 +501,6 @@ default{
             if(gReady){ if(gQuantity > 0 && !expired()) announce(); }   // Do not advertise empty stock.
             else if(gRole == ROLE_BLANK) llWhisper(CRAFT_CHANNEL, "BLANK"+SEP+(string)llGetKey()+SEP+(string)gCapacity);
         }
-        else if(verb == "CONSUME"){
-            if(!gReady) return;
-            if(llList2String(p,1) != (string)llGetKey()) return;
-            if(llGetListLength(p) != 3) return;
-            integer units = (integer)llList2String(p,2);
-            if(!legacyStock(id,"CONSUME",units)){ llWhisper(CRAFT_CHANNEL,"NO"+SEP+(string)llGetKey()); return; }
-            llWhisper(CRAFT_CHANNEL, "OK"+SEP+(string)llGetKey()+SEP+(string)gQuantity);
-        }
-        else if(verb == "REFUND"){
-            if(!gReady) return;
-            if(llList2String(p,1) != (string)llGetKey()) return;
-            if(llGetListLength(p) != 3 || !legacyStock(id,"REFUND",(integer)llList2String(p,2))) return;
-            announce();
-        }
-        else if(verb == "COMMIT"){
-            // The reaction completed: consumption is final; empty stock skips the refund grace period.
-            if(!gReady) return;
-            if(llList2String(p,1) != (string)llGetKey()) return;
-            if(llGetListLength(p) != 2) return;
-            legacyStock(id,"COMMIT",0);
-        }
         else if(verb == "CUT"){                 // Record the player receiving the harvested object.
             if(!gReady) return;
             if(llList2String(p,1) != (string)llGetKey()) return;
@@ -572,7 +525,7 @@ default{
                 gCutter = NULL_KEY;
                 return;
             }
-            // Legacy single-mesh give (GIVE|key).
+            // Single-mesh delivery (GIVE|key).
             if(gMesh == ""){ llOwnerSay("[Component] GIVE requested, but no Mesh is defined."); return; }
             if(llGetInventoryType(gMesh) == INVENTORY_NONE){ llOwnerSay("[Component] Mesh '"+gMesh+"' is missing from the inventory."); return; }
             if(gCutter != NULL_KEY) llGiveInventory(gCutter, gMesh);

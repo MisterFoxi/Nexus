@@ -22,6 +22,15 @@ integer gDiscardSweep; // Clear pre-existing pending rows before returning confi
 integer gDiscardHasUnits;
 key gDiscardRun;
 key gDiscardTicket;
+key gCompletionTicket = NULL_KEY;
+key gExportTicket = NULL_KEY;
+integer gExportIndex;
+integer gExportCheck;
+integer gExportCount;
+string gExportType;
+key gTypeSource = NULL_KEY;
+string gTypeHere;
+integer gTypeIndex;
 
 integer validKey(key value)
 {
@@ -141,6 +150,8 @@ pump()
 
 start(string verb, key source, string here)
 {
+    if (verb != "COMMIT" && !gDiscard && (workshopBlocked() || gExportTicket != NULL_KEY || gTypeSource != NULL_KEY))
+    { llOwnerSay("[Selected] Workshop treatment pending. Basket retained."); return; }
     if (gCraftStarted && verb != "COMMIT")
     { llOwnerSay("[Selected] Craft has started. Ingredients cannot be returned or added."); return; }
     if (verb == "COMMIT" && (!gCraftStarted || gDiscard != 2)) return;
@@ -161,6 +172,129 @@ start(string verb, key source, string here)
     render(); memory();
 }
 
+
+// Workshop state is owned exclusively by MC_Workshop_Link.
+list workshopSession()
+{
+    return llJson2List(llLinksetDataRead("mc:workshop:session"));
+}
+
+integer workshopBlocked()
+{
+    string saved = llLinksetDataRead("mc:workshop:session");
+    if (saved == "") return FALSE; // Preserve the standalone DEV basket.
+    list session = llJson2List(saved);
+    return llGetListLength(session) != 13 || llList2Key(session, 0) != llGetKey()
+        || llList2String(session, 5) != "IDLE";
+}
+
+string ingredientType(string text)
+{
+    list here = llParseStringKeepNulls(text, ["|"], []);
+    // Type is independent of source UUID, stock, freshness and property variation.
+    return llList2Json(JSON_ARRAY, [llList2String(here, 2), llList2String(here, 6),
+        llList2String(here, 7), llList2String(here, 12)]);
+}
+
+typePump()
+{
+    if (gTypeSource == NULL_KEY) return;
+    if (gDiscard || gCraftStarted) { gTypeSource = NULL_KEY; gTypeHere = ""; return; }
+    if (workshopBlocked()) { gTypeSource = NULL_KEY; return; }
+    list keys = llLinksetDataFindKeys("^mc:simple:row:", gTypeIndex, 1);
+    if (llGetListLength(keys))
+    {
+        ++gTypeIndex;
+        key source = (key)llGetSubString(llList2String(keys, 0), llStringLength(PREFIX), -1);
+        list row = readRow(source);
+        if (gFault) { gTypeSource = NULL_KEY; return; }
+        if ((llList2Integer(row, 0) > 0 || llList2String(row, 2) != "")
+            && ingredientType(llUnescapeURL(llList2String(row, 5))) != ingredientType(gTypeHere))
+        {
+            gTypeSource = NULL_KEY;
+            llOwnerSay("[Selected] This workshop accepts one ingredient type. Multiple sources and units of that type are allowed.");
+            return;
+        }
+        llMessageLinked(LINK_THIS, 918384, "", gTypeSource);
+        return;
+    }
+    key source = gTypeSource; string here = gTypeHere;
+    gTypeSource = NULL_KEY; gTypeHere = "";
+    start("TAKE", source, here);
+}
+
+exportError(string reason)
+{
+    key ticket = gExportTicket; gExportTicket = NULL_KEY;
+    llMessageLinked(LINK_THIS, 918381, "ERROR|" + reason, ticket);
+}
+
+exportPump()
+{
+    if (gExportTicket == NULL_KEY || gFault) return;
+    list session = workshopSession();
+    if (llList2Key(session, 6) != gExportTicket) { gExportTicket = NULL_KEY; return; }
+    list keys = llLinksetDataFindKeys("^mc:simple:row:", gExportIndex, 1);
+    if (llGetListLength(keys))
+    {
+        ++gExportIndex;
+        key source = (key)llGetSubString(llList2String(keys, 0), llStringLength(PREFIX), -1);
+        list row = readRow(source);
+        if (gFault) return;
+        if (llList2String(row, 2) != "") { exportError("A source request is unresolved."); return; }
+        if (llList2Integer(row, 0) > 0)
+        {
+            string here = llUnescapeURL(llList2String(row, 5));
+            if (gExportCheck)
+            {
+                string kind = ingredientType(here);
+                if (gExportCount && llList2Integer(session, 3) && kind != gExportType)
+                { exportError("The basket contains different ingredient types."); return; }
+                gExportType = kind; ++gExportCount;
+            }
+            else
+            {
+                llMessageLinked(LINK_THIS, 918381, "ROW|" + (string)gExportIndex + "|"
+                    + (string)source + "|" + llList2String(row, 0) + "|" + llEscapeURL(here), gExportTicket);
+                return; // Wait for the remote row acknowledgement through the link controller.
+            }
+        }
+        llMessageLinked(LINK_THIS, 918382, "", gExportTicket);
+        return;
+    }
+    if (gExportCheck)
+    {
+        if (!gExportCount) { exportError("The basket is empty."); return; }
+        gExportCheck = FALSE; gExportIndex = 0;
+        llMessageLinked(LINK_THIS, 918381, "BEGIN", gExportTicket);
+    }
+    else llMessageLinked(LINK_THIS, 918381, "END", gExportTicket);
+}
+
+exportRequest(string text, key ticket)
+{
+    list session = workshopSession();
+    if (ticket == NULL_KEY || ticket != llList2Key(session, 6)) return;
+    if (text == "CANCEL") { gExportTicket = NULL_KEY; return; }
+    if (text == "EXPORT")
+    {
+        if (llList2String(session, 5) != "SNAPSHOT") return;
+        gExportTicket = ticket;
+        if (!gCraftStarted || gDiscard || gBusy || gActive != NULL_KEY || gTypeSource != NULL_KEY)
+        { exportError("Basket update pending or preparation not started."); return; }
+        gExportCheck = TRUE; gExportIndex = 0; gExportCount = 0; gExportType = "";
+        llMessageLinked(LINK_THIS, 918382, "", ticket);
+        return;
+    }
+    list fields = llParseStringKeepNulls(text, ["|"], []);
+    if (llList2String(fields, 0) != "NEXT" || llGetListLength(fields) != 2
+        || llList2String(session, 5) != "ROWS") return;
+    integer index = llList2Integer(fields, 1);
+    if (index < 0 || (string)index != llList2String(fields, 1)) return;
+    gExportTicket = ticket; gExportCheck = FALSE; gExportIndex = index;
+    llMessageLinked(LINK_THIS, 918382, "", ticket);
+}
+
 // REVIEW: discard and craft_started are separate writes. A reset/write failure between them can leave a partially finalized basket state.
 finishDiscard()
 {
@@ -168,8 +302,19 @@ finishDiscard()
     gCraftStarted = FALSE; gDiscard = 0;
     gDiscardRun = NULL_KEY;
     render();
-    llMessageLinked(LINK_THIS, 918317, "DISCARD_DONE", gDiscardTicket);
-    llOwnerSay("[Selected] Discard complete.");
+    gExportTicket = NULL_KEY;
+    if (gCompletionTicket != NULL_KEY)
+    {
+        integer result = llLinksetDataWrite("mc:simple:completed", (string)gCompletionTicket);
+        if (result != 0 && result != 5) { fault("Cannot save craft closure."); return; }
+        llMessageLinked(LINK_THIS, 918317, "CRAFT_DONE", gCompletionTicket);
+        llOwnerSay("[Selected] Craft stock closure complete.");
+    }
+    else
+    {
+        llMessageLinked(LINK_THIS, 918317, "DISCARD_DONE", gDiscardTicket);
+        llOwnerSay("[Selected] Discard complete.");
+    }
 }
 
 discardPump()
@@ -234,10 +379,36 @@ discardPump()
 basketAction(string action, key ticket)
 {
     if (!validKey(ticket)) return;
+    list workshop = workshopSession();
+    if (action == "COMPLETE")
+    {
+        if (ticket != llList2Key(workshop, 6) || llList2String(workshop, 5) != "SETTLING") return;
+        if (llLinksetDataRead("mc:simple:completed") == (string)ticket)
+        { llMessageLinked(LINK_THIS, 918317, "CRAFT_DONE", ticket); return; }
+        if (gDiscard) return;
+        // A reset after all balances were closed can finish without a new source request.
+        if (!gCraftStarted)
+        {
+            gCompletionTicket = ticket;
+            finishDiscard();
+            return;
+        }
+        integer saved = llLinksetDataWrite("mc:simple:completion", (string)ticket);
+        if (saved != 0 && saved != 5) { fault("Cannot save craft closure."); return; }
+        gCompletionTicket = ticket;
+        if (!saveFlag("discard", 2)) return;
+        gDiscard = 2; gDiscardIndex = 0; gDiscardSweep = TRUE; gDiscardHasUnits = FALSE;
+        gExportTicket = NULL_KEY;
+        queueDiscard();
+        return;
+    }
+    if (workshopBlocked() && !(action == "DISCARD" && llList2String(workshop, 5) == "EXITING"
+        && ticket == llList2Key(workshop, 6)))
+    { llOwnerSay("[Selected] Workshop treatment pending. Basket retained."); return; }
     // This is the engine handshake, independent of visual Cut/Stop; wait for its persisted ACK.
     if (action == "CRAFT_STARTED")
     {
-        if (gDiscard || gBusy || gActive != NULL_KEY || gScanning || !gCanContinue)
+        if (gDiscard || gBusy || gActive != NULL_KEY || gTypeSource != NULL_KEY || gScanning || !gCanContinue)
         { llOwnerSay("[Selected] Cannot start craft during a basket update or with no available ingredients."); return; }
         // The craft engine must request this before starting and wait for this ACK.
         if (!saveFlag("craft_started", TRUE)) return;
@@ -246,11 +417,15 @@ basketAction(string action, key ticket)
         return;
     }
     if (action != "DISCARD") return;
+    gTypeSource = NULL_KEY; gTypeHere = "";
     if (gDiscard)
     {
         llOwnerSay("[Selected] Discard is in progress. Please wait.");
         return;
     }
+    integer cleared = llLinksetDataDelete("mc:simple:completion");
+    if (cleared != 0 && cleared != 4) { fault("Cannot initialize discard."); return; }
+    gCompletionTicket = NULL_KEY;
     integer mode = 1;
     if (gCraftStarted) mode = 2;
     if (!saveFlag("discard", mode)) return;
@@ -306,6 +481,8 @@ default
         }
         if (llLinksetDataRead("mc:simple:owner") != (string)llGetKey())
         { fault("HUD identity changed. Existing ingredients need review."); return; }
+        gCompletionTicket = (key)llLinksetDataRead("mc:simple:completion");
+        if (!validKey(gCompletionTicket)) gCompletionTicket = NULL_KEY;
         string savedCraft = llLinksetDataRead("mc:simple:craft_started");
         string savedDiscard = llLinksetDataRead("mc:simple:discard");
         if ((savedCraft != "" && savedCraft != "0" && savedCraft != "1")
@@ -338,6 +515,9 @@ default
                 + " bytes; observed minimum: " + (string)gMinFree + "."); return;
         }
         if (gFault) return;
+        if (number == 918380) { exportRequest(text, request); return; }
+        if (number == 918382 && request == gExportTicket) { exportPump(); return; }
+        if (number == 918384 && request == gTypeSource) { typePump(); return; }
         if (number == 918315) { basketAction(text, request); return; }
         if (number == 918316 && request == gDiscardRun) { discardPump(); return; }
         if (number == 918307 && request == gRender) { pump(); return; }
@@ -365,8 +545,16 @@ default
             list fields = llParseStringKeepNulls(text, ["|"], []);
             if (!validKey(request) || llGetListLength(fields) < 10 || llList2String(fields, 0) != "HERE"
                 || llList2Key(fields, 1) != request || llList2Integer(fields, 3) < 1
-                || llList2Integer(fields, 9) != 4) return;
-            start("TAKE", request, text); return;
+                || llList2Integer(fields, 9) != 5) return;
+            if (workshopBlocked() || gTypeSource != NULL_KEY || gCraftStarted || gBusy || gActive != NULL_KEY) return;
+            list session = workshopSession();
+            if (llList2Integer(session, 3))
+            {
+                gTypeSource = request; gTypeHere = text; gTypeIndex = 0;
+                llMessageLinked(LINK_THIS, 918384, "", request);
+            }
+            else start("TAKE", request, text);
+            return;
         }
         if (number != 918303 || !validKey(request)) return;
         // verb | source | OK/NO | stock. Source authenticity checked by relay.

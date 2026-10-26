@@ -48,11 +48,10 @@ source calls `die()` on the next timer (the existing two-second mesh-delivery
 window is retained). A nonexpired source with remaining stock stays available.
 An expired source with no craft in progress still dies normally.
 
-Legacy production CONSUME/REFUND/COMMIT remain supported using the same stock
-and held balances, keyed by the actual sending workshop object. REFUND cannot
-restore more than that workshop holds. Legacy requests have no request UUID.
-Replacing the script during an already-open legacy reservation cannot recover
-the old reservation owner: migrate components with no craft in progress.
+Stock operations use only the identified HUD `MC` protocol. Bare
+`CONSUME|...`, `REFUND|...` and `COMMIT|...` messages are ignored.
+Discovery, container CONFIG, CUT/GIVE mesh delivery and HOVER remain available.
+The Workshop stock path must be connected through the HUD before it can craft.
 
 ## Remaining integration
 

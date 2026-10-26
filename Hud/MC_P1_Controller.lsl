@@ -93,6 +93,15 @@ pump()
 
 button(string name)
 {
+    if (name == "p1_take" || name == "p1_later" || name == "p1_exit" || name == "p1_retry")
+    {
+        string choice = "CONTAINER";
+        if (name == "p1_later") choice = "KEEP";
+        else if (name == "p1_exit") choice = "EXIT";
+        else if (name == "p1_retry") choice = "RETRY";
+        llMessageLinked(LINK_THIS, 918370, choice, llGenerateKey());
+        return;
+    }
     if (name == "p1_discard")
     {
         if (!gClosed) llMessageLinked(LINK_THIS, 918315, "DISCARD", llGenerateKey());
@@ -139,7 +148,7 @@ default
             return;
         }
         if (number == 918313 && id == gRender) { pump(); return; }
-        if (number == 918317 && text == "DISCARD_DONE" && id != NULL_KEY)
+        if (number == 918317 && (text == "DISCARD_DONE" || text == "CRAFT_DONE") && id != NULL_KEY)
         {
             gClosed = TRUE; gPage = 0;
             render(); return;

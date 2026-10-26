@@ -119,7 +119,7 @@ default
         {
             // REVIEW: numeric fields and payload lengths are not fully validated; bound metadata before it enters the HUD snapshots.
             if (count < 10) return;
-            if (llList2Integer(fields, 9) != 4) return;
+            if (llList2Integer(fields, 9) != 5) return;
             if (llList2Integer(fields, 3) <= 0)
                 gItems = removeSource(gItems, source);
             else

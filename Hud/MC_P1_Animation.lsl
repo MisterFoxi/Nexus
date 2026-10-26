@@ -15,6 +15,7 @@ key gLastContinue;
 key gLastDiscard;
 key gLastAction;
 integer gStarted;
+integer gFinalizing;
 integer gSpoiled;
 float gElapsed;
 integer gClockActive;
@@ -72,6 +73,9 @@ restoreSession()
     // A previously consumed preparation with no timing checkpoint cannot be restarted.
     if (llLinksetDataRead("mc:simple:craft_started") == "1" && !gStarted)
     { gStarted = TRUE; gSpoiled = TRUE; }
+    list workshop = llJson2List(llLinksetDataRead("mc:workshop:session"));
+    string phase = llList2String(workshop, 5);
+    gFinalizing = phase != "" && phase != "IDLE";
     gClockAt = llGetTime(); // On reset, remain suspended; offline time is never counted.
 }
 
@@ -175,6 +179,7 @@ spoil()
 
 startPreparation()
 {
+    if (gFinalizing) return;
     if (gSpoiled || gStarted || llLinksetDataRead("mc:simple:craft_started") == "1")
     { spoil(); return; }
     if (gStartTicket != NULL_KEY) return; // Same in-flight first start is idempotent.
@@ -190,7 +195,7 @@ startPreparation()
 
 continuePreparation()
 {
-    if (!gStarted || gSpoiled) return;
+    if (!gStarted || gSpoiled || gFinalizing) return;
     gWanted = "PLAYING";
     if (gLoaded) applyDesired();
     else if (gLoadTicket == NULL_KEY) loadAtlas();
@@ -254,6 +259,28 @@ default
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber()) return;
+        if (number == 918372 && ticket != NULL_KEY)
+        {
+            list session = llJson2List(llLinksetDataRead("mc:workshop:session"));
+            if (llList2Key(session, 6) != ticket) return;
+            if (text == "UNFREEZE") { gFinalizing = FALSE; return; }
+            if (text != "SNAPSHOT") return;
+            if (!gStarted || gStartTicket != NULL_KEY)
+            { llMessageLinked(LINK_THIS, 918373, "NO|0|0", ticket); return; }
+            clock(); gClockActive = FALSE; gFinalizing = TRUE;
+            gWanted = "PAUSED";
+            applyDesired();
+            if (!saveSession()) return;
+            showVisuals(); updateTimer();
+            llMessageLinked(LINK_THIS, 918373, "OK|" + (string)gElapsed + "|" + (string)gSpoiled, ticket);
+            return;
+        }
+        if (number == 918371)
+        {
+            gFinalizing = text != "" && text != "IDLE";
+            if (gFinalizing) { clock(); gClockActive = FALSE; suspend(); }
+            return;
+        }
         if (number == 918343 || number == 918353) { visualStatus(number, text, ticket); return; }
         if (number == 918360 && ticket != NULL_KEY && ticket != gLastAction)
         {
@@ -277,7 +304,7 @@ default
             updateTimer();
             return;
         }
-        if (number == 918317 && text == "DISCARD_DONE" && ticket != NULL_KEY && ticket != gLastDiscard)
+        if (number == 918317 && (text == "DISCARD_DONE" || text == "CRAFT_DONE") && ticket != NULL_KEY && ticket != gLastDiscard)
         {
             if (llLinksetDataRead("mc:simple:craft_started") == "1") return;
             gLastDiscard = ticket;
@@ -285,6 +312,7 @@ default
             clock();
             gClockActive = FALSE;
             gStarted = FALSE;
+            gFinalizing = FALSE;
             gSpoiled = FALSE;
             gElapsed = 0.0;
             gStartTicket = NULL_KEY;
@@ -315,7 +343,7 @@ default
             clock();
             gState = text;
             if (text == "REST") gState = "STOPPED";
-            gClockActive = gStarted && !gSpoiled && gState == "PLAYING";
+            gClockActive = gStarted && !gSpoiled && !gFinalizing && gState == "PLAYING";
             integer ownCommand = ticket == gCommandTicket && ticket != NULL_KEY;
             if (ownCommand) gCommandTicket = NULL_KEY;
             else if (gCommandTicket == NULL_KEY) gWanted = gState;
