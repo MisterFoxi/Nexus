@@ -1,5 +1,5 @@
 // ROOT. Simple source relay; filename retained for installation compatibility.
-// No TX2, session, journal, automatic retry, basket or craft operation.
+// TAKE/RETURN/COMMIT transport only. No basket, automatic retry or product evaluation.
 integer CHANNEL = -918274;
 key gRequest = NULL_KEY;
 integer gUntil;
@@ -44,17 +44,19 @@ default
         list fields = llParseStringKeepNulls(text, ["|"], []);
         string verb = llList2String(fields, 0);
         key source = llList2Key(fields, 1);
-        if (llGetListLength(fields) != 3 || (verb != "TAKE" && verb != "RETURN")
-            || !validKey(source) || llList2String(fields, 2) != "1") return;
+        integer amount = llList2Integer(fields, 2);
+        if (llGetListLength(fields) != 3 || (verb != "TAKE" && verb != "RETURN" && verb != "COMMIT")
+            || !validKey(source) || amount < 1 || (string)amount != llList2String(fields, 2)) return;
+        if (verb != "COMMIT" && amount != 1) return;
         // Only transmit the exact request already saved by Selected.
         list row = llParseStringKeepNulls(llLinksetDataRead("mc:simple:row:" + (string)source), ["|"], []);
         if (llGetListLength(row) != 6 || llList2Key(row, 2) != request
-            || llList2String(row, 3) != verb || llList2Integer(row, 4) != 1) return;
+            || llList2String(row, 3) != verb || llList2Integer(row, 4) != amount) return;
         // Set the transport lock only after matching the exact persisted request; timeouts never resend it.
         gRequest = request;
         gUntil = llGetUnixTime() + 15;
         announce();
-        llRegionSayTo(source, CHANNEL, "MC|" + verb + "|" + (string)source + "|" + (string)request + "|1");
+        llWhisper(CHANNEL, "MC|" + verb + "|" + (string)source + "|" + (string)request + "|" + (string)amount);
     }
     listen(integer channel, string name, key source, string text)
     {
@@ -67,7 +69,7 @@ default
         string verb = llList2String(fields, 4);
         string status = llList2String(fields, 5);
         integer stock = llList2Integer(fields, 6);
-        if (!validKey(request) || (verb != "TAKE" && verb != "RETURN") || (status != "OK" && status != "NO")
+        if (!validKey(request) || (verb != "TAKE" && verb != "RETURN" && verb != "COMMIT") || (status != "OK" && status != "NO")
             || stock < 0 || (string)stock != llList2String(fields, 6)) return;
         // Selected performs pending UUID/verb matching; forwarding a late reply does not confirm it by itself.
         // Late replies can resolve a saved row, including after a script reset.

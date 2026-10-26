@@ -1,5 +1,5 @@
 // ROOT. One persistent row per source; only four display rows in script memory.
-// TAKE puts ingredients aside now. RETURN puts them back before craft starts.
+// TAKE sets units aside; RETURN restores unused units; COMMIT closes used units after OK.
 string PREFIX = "mc:simple:row:";
 integer gFault;
 integer gPage;
@@ -16,7 +16,7 @@ key gRender;
 key gActive = NULL_KEY;
 integer gMinFree = 65536;
 integer gCraftStarted;
-integer gDiscard; // 0 idle, 1 return all, 2 lose all.
+integer gDiscard; // 0 idle, 1 return all, 2 commit used units (loss, no product).
 integer gDiscardIndex;
 integer gDiscardSweep; // Clear pre-existing pending rows before returning confirmed rows.
 integer gDiscardHasUnits;
@@ -41,7 +41,7 @@ fault(string reason)
     llOwnerSay("[Selected] " + reason + " Ingredients retained; storage is locked.");
 }
 
-// Row: held quantity | last applied request | pending request | TAKE/RETURN |
+// Row: held quantity | last applied request | pending request | TAKE/RETURN/COMMIT |
 // amount | URL-escaped HERE. No session, take ledger or batch.
 // Persist one source balance and its pending operation together; URL-escape nested HERE data.
 list readRow(key source)
@@ -56,7 +56,7 @@ list readRow(key source)
     {
         key request = llList2Key(row, 2);
         string verb = llList2String(row, 3);
-        if (!validKey(request) || (verb != "TAKE" && verb != "RETURN")
+        if (!validKey(request) || (verb != "TAKE" && verb != "RETURN" && verb != "COMMIT")
             || llList2Integer(row, 4) < 1)
         { fault("Invalid pending request."); return []; }
     }
@@ -80,7 +80,7 @@ integer saveFlag(string name, integer value)
 queueDiscard()
 {
     if (!gDiscard || gFault) return;
-    if (!gDiscardSweep && gDiscard == 1 && (gBusy || gActive != NULL_KEY)) return;
+    if ((!gDiscardSweep || gDiscard == 2) && (gBusy || gActive != NULL_KEY)) return;
     gDiscardRun = llGenerateKey();
     llMessageLinked(LINK_THIS, 918316, "", gDiscardRun);
 }
@@ -141,19 +141,23 @@ pump()
 
 start(string verb, key source, string here)
 {
-    if (gCraftStarted) { llOwnerSay("[Selected] Craft has started. Ingredients cannot be returned or added."); return; }
+    if (gCraftStarted && verb != "COMMIT")
+    { llOwnerSay("[Selected] Craft has started. Ingredients cannot be returned or added."); return; }
+    if (verb == "COMMIT" && (!gCraftStarted || gDiscard != 2)) return;
     if (gBusy || gActive != NULL_KEY) { llOwnerSay("[Selected] Please wait for the source."); return; }
     list row = readRow(source);
     if (gFault) return;
     if (llList2String(row, 2) != "")
     { llOwnerSay("[Selected] This source has an unresolved request. Nothing sent."); return; }
-    if (verb == "RETURN" && llList2Integer(row, 0) < 1) return;
+    if ((verb == "RETURN" || verb == "COMMIT") && llList2Integer(row, 0) < 1) return;
+    integer amount = 1;
+    if (verb == "COMMIT") amount = llList2Integer(row, 0);
     gActive = llGenerateKey();
-    row = llListReplaceList(row, [gActive, verb, 1, llEscapeURL(here)], 2, 5);
+    row = llListReplaceList(row, [gActive, verb, amount, llEscapeURL(here)], 2, 5);
     if (!writeRow(source, row)) { gActive = NULL_KEY; return; }
     gBusy = TRUE;
     // The pending marker is saved first. Never resend it on reset or timeout.
-    llMessageLinked(LINK_THIS, 918301, verb + "|" + (string)source + "|1", gActive);
+    llMessageLinked(LINK_THIS, 918301, verb + "|" + (string)source + "|" + (string)amount, gActive);
     render(); memory();
 }
 
@@ -171,7 +175,7 @@ finishDiscard()
 discardPump()
 {
     if (!gDiscard) return;
-    if (!gDiscardSweep && gDiscard == 1 && (gBusy || gActive != NULL_KEY)) return;
+    if ((!gDiscardSweep || gDiscard == 2) && (gBusy || gActive != NULL_KEY)) return;
     // REVIEW: zero rows are never collected. Unique sources accumulate persistent records and increase every full traversal cost.
     // Never delete row keys: zero rows keep stable progressive offsets.
     list keys = llLinksetDataFindKeys("^mc:simple:row:", gDiscardIndex, 1);
@@ -183,7 +187,10 @@ discardPump()
         if (gFault) return;
         if (llList2String(row, 2) != "")
         {
-            // Explicit Discard abandons uncertainty, including invisible zero rows.
+            // Used units must remain recorded until the component confirms closure.
+            // Includes a pending COMMIT restored after reset. Never resend automatically.
+            if (gDiscard == 2) return;
+            // Before Start, preserve the existing explicit-Discard uncertainty policy.
             // Clear the pending UUID before releasing the relay: late replies are ignored.
             key pending = llList2Key(row, 2);
             row = llListReplaceList(row, [0, llList2String(row, 1), "", "", 0], 0, 4);
@@ -202,9 +209,9 @@ discardPump()
                 start("RETURN", source, llUnescapeURL(llList2String(row, 5)));
                 return;
             }
-            row = llListReplaceList(row, [0], 0, 0);
-            if (!writeRow(source, row)) return;
-            ++gDiscardIndex;
+            // Commit all confirmed units from this source; no second stock debit.
+            start("COMMIT", source, llUnescapeURL(llList2String(row, 5)));
+            return;
         }
         else
         {
@@ -383,7 +390,15 @@ default
             else quantity -= amount;
             if (quantity < 0) { fault("Invalid returned quantity."); return; }
         }
-        if (status == "NO" && gDiscard)
+        if (status == "NO" && llList2String(row, 3) == "COMMIT")
+        {
+            // A refusal is not closure. Keep the exact saved request and used latch.
+            if (gActive == request) gActive = NULL_KEY;
+            llMessageLinked(LINK_THIS, 918304, "", request);
+            llOwnerSay("[Selected] COMMIT refused. Used units retained; Discard is not complete.");
+            return;
+        }
+        if (status == "NO" && gDiscard == 1)
         {
             quantity = 0;
             llOwnerSay("[Selected] Source refused the return. Remaining units discarded.");
