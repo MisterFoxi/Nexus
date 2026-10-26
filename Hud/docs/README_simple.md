@@ -37,8 +37,8 @@ Once created, new data survives ordinary resets.
 - A reset preserves pending requests without resending them. A late reply can
   still confirm a request. There is no recovery button or invented refund.
 
-**Explicit exception - P1 Discard:** abandoning the basket clears unresolved
-requests and abandons the units in those rows. They no longer prevent Discard
+**Explicit exception - P1 Discard before Start:** abandoning the basket clears
+unresolved requests and abandons the units in those rows. They no longer prevent Discard
 completion or the HUD's return to page 0. Late replies to cleared requests are
 ignored. See `README_P1.md`. Ordinary resets outside Discard continue to preserve
 pending requests.
@@ -60,12 +60,16 @@ The fixture stores `mc:simple:source` (UUID, profile, base stock) and a small
 recalculates stock from those balances at startup. This is not a journal: only
 the last identifier per HUD detects an immediate repeat; no history is rebuilt.
 
-Radio: `MC|TAKE|sourceUUID|requestUUID|1`, `MC|RETURN|sourceUUID|requestUUID|1`;
-reply: `MC|RESULT|sourceUUID|requestUUID|TAKE/RETURN|OK/NO|stock`.
-The unchanged production Component does not understand this development format.
+Radio (whisper): `MC|TAKE|sourceUUID|requestUUID|1`,
+`MC|RETURN|sourceUUID|requestUUID|1`, and after Start/Discard
+`MC|COMMIT|sourceUUID|requestUUID|heldQuantity`;
+reply: `MC|RESULT|sourceUUID|requestUUID|TAKE/RETURN/COMMIT|OK/NO|stock`.
+Component v0.6 understands this format on the development channel. COMMIT closes
+held units without a second debit. Selected clears them only after matching OK;
+missing/refused COMMIT keeps the pending request and blocks Discard completion.
 
-Linked messages: 918301 requests `TAKE/RETURN|source|1`; 918302 reports BUSY/IDLE;
-918303 returns `TAKE/RETURN|source|OK/NO|stock`; 918304 acknowledges persistence;
+Linked messages: 918301 requests `TAKE/RETURN|source|1` or `COMMIT|source|heldQuantity`; 918302 reports BUSY/IDLE;
+918303 returns `TAKE/RETURN/COMMIT|source|OK/NO|stock`; 918304 acknowledges persistence;
 918305 reports `source|stock`. The request identifier is in id, except BUSY/IDLE.
 918307 drives Selected's incremental traversal; 918308 drives fixture startup.
 918309 requests memory measurements. 918311 is no longer handled.

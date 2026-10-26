@@ -21,32 +21,52 @@
 //     Mesh     = my_leaf_object ; OPTIONAL: inventory object to give the player
 //                               ; at the next step. This object carries its own
 //                               ; script and NC, and initializes when rezzed.
+//     Organ    = leaf           ; OPTIONAL identity: this component IS that organ
+//                               ; (matched by 'meta.organ is ...'); vanishes after
+//                               ; the first transformation.
+//     Organ    = leaf : KandaLeaf ; OPTIONAL, repeatable: a WHOLE plant hands out
+//                               ; this organ's mesh at harvest (feature B).
 //     Quantity = 5              ; total stock (units)
 //     Use      = 1              ; units per application
 //     Lifetime = 7d             ; d/h/m/s; 0 or absent = unlimited
 //     MED      = heal/30/wound   ; OPTIONAL: effect if THIS object is already a potion
 //     Axis     = act.thermal -6 ; repeatable: <axis> <signed intensity>
 //     Axis     = act.fluidifying 5
-//     Axis     = org.taste 4
+//     Axis     = org.sweet 4     ; vocabulary: compiler/axes.src
 //
 //  PROTOCOL (whisper on CRAFT_CHANNEL, fields separated by "|")
 //   workshop -> all   : PING
-//   elem     -> ws    : HERE|key|name|qty|use|life|taxonomy|stage|propsPacked|proto|eff|mesh
+//   elem     -> ws    : HERE|key|name|qty|use|life|taxonomy|stage|propsPacked|proto|eff|mesh|organ
 //   blank    -> ws    : BLANK|key|capacity       (available container, on PING)
 //   ws       -> elem  : CONSUME|key|units
 //   ws       -> elem  : COMMIT|key               (final consumption: empty -> die)
 //   elem     -> ws    : OK|key|remaining  /  NO|key
 //   ws       -> blank : CONFIG|key|name|qty|use|life|taxonomy|stage|propsPacked|med[|eff]
 //   ws       -> elem  : REFUND|key|units          (restore reserved stock)
-//   ws       -> elem  : CUT|key|avatarKey / GIVE|key (record recipient / give Mesh)
+//   ws       -> elem  : CUT|key|avatarKey                 (record recipient)
+//   ws       -> elem  : GIVE|key            (legacy: give single Mesh)
+//   ws       -> elem  : GIVE|key|leaf^root  (harvest: give each listed organ's mesh)
 //   ws       -> all   : HOVER|0/1
-//   propsPacked: "act.thermal=-6^act.fluidifying=5^org.taste=4" (empty if none)
+//   propsPacked: "act.thermal=-6^act.fluidifying=5^org.sweet=4" (empty if none)
 // ============================================================
 
+// Production remains -918273; the current HUD uses DEV_CHANNEL.
 integer CRAFT_CHANNEL = -918273;
+integer DEV_CHANNEL = -918274;
+// HUD on either channel: MC|TAKE/RETURN/COMMIT|source|request|units.
+// TAKE/RETURN use exactly one unit; COMMIT finalizes held units (no second debit).
+// Reply: MC|RESULT|source|request|verb|OK/NO|remaining, whispered on the request channel.
+// A client record retains its latest request/reply, not a historical request journal.
+// The HUD must COMMIT used/discarded units, or RETURN unused units, to close a craft.
+string STOCK_KEY = "mc:component:stock";
+// One atomic record: stock | repeated [client,held,lastRequest,verb,units,status,replyStock].
+// rz_qty is a compatibility mirror; this record is authoritative once created.
+list gHeld;
+integer HS = 7;
+integer gStockFault;
 string  SEP = "|";
-integer PROTO = 4;          // v4 adds freshness in parts per thousand (eff in HERE/CONFIG).
-string  VERSION = "Component v0.5 (2026-10-20)";
+integer PROTO = 5;          // v5 adds the organ field in HERE and organ->mesh harvest delivery.
+string  VERSION = "Component v0.7 (2026-10-24)";
 
 integer ROLE_NONE  = 0;
 integer ROLE_NC    = 1;     // Defined by a notecard.
@@ -60,24 +80,27 @@ string  gTaxonomy;
 string  gStage;
 string  gProps;             // "name=val^..."
 string  gMed;
-string  gMesh;              // Inventory object (mesh + script + NC) to give at the next step.
+string  gMesh;              // Inventory object (mesh + script + NC) to give at the next step (legacy single give).
+string  gOrgan;            // This component's organ identity (e.g. "leaf"); empty = not an organ.
+list    gOrganMesh;        // Harvest map, stride 2: [organName, meshName, ...] — a whole plant's organs to hand out.
 integer gQuantity;
 integer gUse;
 integer gLifeSecs;
 integer gExpiry;
 integer gShowHover = TRUE;
-integer gEmptyAt;              // Time stock reached zero; refunds are allowed during the grace period.
 integer gCapacity;            // Container capacity (0 = unlimited).
 key     gCutter;              // Player who should receive the Mesh inventory object.
-integer gDying;               // Empty COMMIT: defer deletion to allow a pending GIVE.
+integer gDying;               // Closed empty/expired source: defer deletion to allow a pending GIVE.
 
 string  gNc;
 integer gLine;
 key     gQuery;
 string  tName; string tTax; string tStage; string tMed; string tMesh;
 integer tQty; integer tUse; integer tLife; string tProps; integer tCapacity;
+string  tOrgan; list tOrganMesh;
 
 integer gListen = -1;
+integer gDevListen = -1;
 
 string trim(string s){ return llStringTrim(s, STRING_TRIM); }
 
@@ -110,6 +133,19 @@ addAxis(string v){
     tProps += ax + "=" + val;
 }
 
+// 'Organ = leaf'              -> this component IS a leaf (identity, matched by 'meta.organ is ...').
+// 'Organ = leaf : KandaLeaf'  -> a whole plant that hands out a 'leaf' mesh at harvest (repeatable).
+addOrgan(string v){
+    v = trim(v);
+    if(v == "") return;
+    integer c = llSubStringIndex(v, ":");
+    if(c == -1){ tOrgan = v; return; }
+    string o = trim(llGetSubString(v, 0, c-1));
+    string m = trim(llGetSubString(v, c+1, -1));
+    if(o == "") return;
+    tOrganMesh += [o, m];
+}
+
 // Linkset data survives script resets and take/re-rez. Keys are shared by the whole linkset.
 // REVIEW: write failures are unchecked; rz_ready is not an atomic commit marker.
 saveKVP(){
@@ -119,6 +155,8 @@ saveKVP(){
     llLinksetDataWrite("rz_props", gProps);
     llLinksetDataWrite("rz_med",   gMed);
     llLinksetDataWrite("rz_mesh",  gMesh);
+    llLinksetDataWrite("rz_organ", gOrgan);
+    llLinksetDataWrite("rz_organmesh", llDumpList2String(gOrganMesh, "^"));
     llLinksetDataWrite("rz_qty",   (string)gQuantity);
     llLinksetDataWrite("rz_use",   (string)gUse);
     llLinksetDataWrite("rz_life",  (string)gLifeSecs);
@@ -133,6 +171,9 @@ integer restoreKVP(){
     gProps    = llLinksetDataRead("rz_props");
     gMed      = llLinksetDataRead("rz_med");
     gMesh     = llLinksetDataRead("rz_mesh");
+    gOrgan    = llLinksetDataRead("rz_organ");
+    string om = llLinksetDataRead("rz_organmesh");
+    if(om == "") gOrganMesh = []; else gOrganMesh = llParseStringKeepNulls(om, ["^"], []);
     gQuantity = (integer)llLinksetDataRead("rz_qty");
     gUse      = (integer)llLinksetDataRead("rz_use");
     gLifeSecs = (integer)llLinksetDataRead("rz_life");
@@ -167,8 +208,7 @@ integer effPerMille(){
     if(gLifeSecs <= 0 || gExpiry <= 0) return 1000;
     integer rem = gExpiry - llGetUnixTime();
     if(rem <= 0) return 0;
-    // REVIEW: integer multiplication can overflow above about 24.9 days remaining.
-    integer e = rem * 1000 / gLifeSecs;
+    integer e = (integer)((float)rem * 1000.0 / (float)gLifeSecs);
     if(e > 1000) e = 1000;
     return e;
 }
@@ -190,17 +230,19 @@ setStats(){
 }
 
 announce(){
+    if(!gReady || gQuantity <= 0 || expired()) return;
     llWhisper(CRAFT_CHANNEL, "HERE"+SEP+(string)llGetKey()+SEP+gName+SEP+(string)gQuantity
-        +SEP+(string)gUse+SEP+(string)gLifeSecs+SEP+gTaxonomy+SEP+gStage+SEP+gProps+SEP+(string)PROTO+SEP+(string)effPerMille()+SEP+gMesh);
+        +SEP+(string)gUse+SEP+(string)gLifeSecs+SEP+gTaxonomy+SEP+gStage+SEP+gProps+SEP+(string)PROTO+SEP+(string)effPerMille()+SEP+gMesh+SEP+gOrgan);
 }
 
 // Publish the identity after loading a notecard, restoring state, or receiving CONFIG.
 finalize(){
     if(gLifeSecs > 0 && gExpiry == 0) gExpiry = llGetUnixTime() + gLifeSecs;
     llSetObjectName(gName);
+    if(!restoreStock()) return;
     saveKVP();
     gReady = TRUE;
-    if(gExpiry > 0) llSetTimerEvent(30.0);
+    lifecycle();
     setStats();
     announce();
     string meshNote = " mesh=(none)";
@@ -212,19 +254,140 @@ finalize(){
 die(){
     llParticleSystem([]);
     llWhisper(CRAFT_CHANNEL, "GONE"+SEP+(string)llGetKey());
+    llWhisper(DEV_CHANNEL, "GONE"+SEP+(string)llGetKey());
     llDie();
 }
 
-// Reserve stock immediately; REFUND can undo it until COMMIT or grace-period expiry.
-consume(integer units){
-    if(units < 1) units = 1;
-    if(gQuantity < units) return;
-    gQuantity -= units;
-    playEffect();
+integer expired(){ return gExpiry > 0 && llGetUnixTime() >= gExpiry; }
+
+integer validClientKey(key value){
+    if(value) return TRUE;
+    return FALSE;
+}
+
+integer heldIndex(key client){
+    integer i;
+    for(i=0; i<llGetListLength(gHeld); i+=HS)
+        if(llList2Key(gHeld,i) == client) return i;
+    return -1;
+}
+
+integer hasHeld(){
+    integer i;
+    for(i=0; i<llGetListLength(gHeld); i+=HS)
+        if(llList2Integer(gHeld,i+1) > 0) return TRUE;
+    return FALSE;
+}
+
+// Keep the original expiry ticking. Only deletion waits for outstanding crafts.
+lifecycle(){
+    gDying = !hasHeld() && (gQuantity <= 0 || expired());
+    if(gDying) llSetTimerEvent(2.0); // Preserve the existing CUT/GIVE delivery window.
+    else if(gExpiry > 0 || hasHeld()) llSetTimerEvent(30.0);
+    else llSetTimerEvent(0.0);
+}
+
+integer restoreStock(){
+    string saved = llLinksetDataRead(STOCK_KEY);
+    if(saved == "") return TRUE; // First migration inherits rz_qty, never the NC's initial stock.
+    list fields = llParseStringKeepNulls(saved, [SEP], []);
+    integer quantity = llList2Integer(fields,0);
+    integer count = llGetListLength(fields);
+    if((count-1)%HS != 0 || quantity < 0 || (string)quantity != llList2String(fields,0)){
+        gStockFault=TRUE; llOwnerSay("[Component] Invalid saved stock; source locked."); return FALSE;
+    }
+    list held = [];
+    if(count > 1) held = llList2List(fields,1,-1);
+    integer i;
+    for(i=0; i<llGetListLength(held); i+=HS){
+        if(!validClientKey(llList2Key(held,i)) || llList2Integer(held,i+1) < 0
+            || (string)llList2Integer(held,i+1) != llList2String(held,i+1)){
+            gStockFault=TRUE; llOwnerSay("[Component] Invalid saved holds; source locked."); return FALSE;
+        }
+    }
+    gQuantity=quantity; gHeld=held;
+    return TRUE;
+}
+
+// Quantity, held units and the latest receipt commit together before any OK.
+integer storeStock(integer quantity, list held){
+    integer result = llLinksetDataWrite(STOCK_KEY, llDumpList2String([quantity]+held,SEP));
+    if(result != 0 && result != 5){
+        llOwnerSay("[Component] Cannot persist stock; request not applied or acknowledged."); return FALSE;
+    }
+    gQuantity=quantity; gHeld=held;
     llLinksetDataWrite("rz_qty", (string)gQuantity);
+    return TRUE;
+}
+
+list clientRows(key client, integer index, integer held, key request, string verb,
+    integer units, string status, integer stock){
+    list row = [client,held,request,verb,units,status,stock];
+    if(index < 0) return gHeld+row;
+    return llListReplaceList(gHeld,row,index,index+HS-1);
+}
+
+hudResult(integer channel, key request, string verb, string status, integer stock){
+    llWhisper(channel,"MC|RESULT|"+(string)llGetKey()+"|"+(string)request
+        +"|"+verb+"|"+status+"|"+(string)stock);
+}
+
+hudRequest(integer channel, key client, list fields){
+    if(!gReady || gStockFault || llGetOwnerKey(client) != llGetOwner()) return;
+    if(llGetListLength(fields) != 5 || llList2Key(fields,2) != llGetKey()) return;
+    string verb = llList2String(fields,1);
+    key request = llList2Key(fields,3);
+    integer units = llList2Integer(fields,4);
+    if(!validClientKey(request) || units <= 0 || (string)units != llList2String(fields,4)) return;
+    if(verb != "TAKE" && verb != "RETURN" && verb != "COMMIT") return;
+    if(verb != "COMMIT" && units != 1) return;
+    integer index = heldIndex(client);
+    integer held = 0;
+    if(index >= 0){
+        held = llList2Integer(gHeld,index+1);
+        if(llList2Key(gHeld,index+2) == request){
+            if(llList2String(gHeld,index+3) == verb && llList2Integer(gHeld,index+4) == units)
+                hudResult(channel,request,verb,llList2String(gHeld,index+5),llList2Integer(gHeld,index+6));
+            return; // A conflicting reuse of the same request is never applied.
+        }
+    }
+    integer stock = gQuantity;
+    string status = "NO";
+    if(verb == "TAKE"){
+        if(!expired() && !gDying && stock >= units && held < 2147483647){
+            stock -= units; held += units; status="OK";
+        }
+    } else if(held >= units){
+        if(verb == "COMMIT"){ held -= units; status="OK"; }
+        else if(stock <= 2147483647-units){ stock += units; held -= units; status="OK"; }
+    }
+    if(!storeStock(stock,clientRows(client,index,held,request,verb,units,status,stock))) return;
+    if(status == "OK" && verb == "TAKE") playEffect();
     setStats();
-    // At zero stock, allow 600 seconds for REFUND before automatic deletion.
-    if(gQuantity <= 0){ gEmptyAt = llGetUnixTime(); llSetTimerEvent(30.0); }  // Check every 30 seconds; delete after 600 seconds without a refund.
+    hudResult(channel,request,verb,status,stock);
+    lifecycle();
+}
+
+// Transitional legacy Workshop support uses the same stock and per-client holds.
+// No legacy mutation may release another client's reservation.
+integer legacyStock(key client, string verb, integer units){
+    if(gStockFault) return FALSE;
+    integer index=heldIndex(client);
+    integer held=0;
+    if(index >= 0) held=llList2Integer(gHeld,index+1);
+    integer stock=gQuantity;
+    if(verb == "COMMIT") held=0;
+    else if(verb == "CONSUME"){
+        if(units < 1 || expired() || gDying || stock < units || held > 2147483647-units) return FALSE;
+        stock -= units; held += units;
+    } else {
+        if(units < 1 || held < units || stock > 2147483647-units) return FALSE;
+        stock += units; held -= units;
+    }
+    if(!storeStock(stock,clientRows(client,index,held,NULL_KEY,verb,units,"OK",stock))) return FALSE;
+    if(verb == "CONSUME") playEffect();
+    setStats(); lifecycle();
+    return TRUE;
 }
 
 boot(){
@@ -247,6 +410,7 @@ boot(){
             return;
         }
         tName=""; tTax=""; tStage=""; tMed=""; tMesh=""; tQty=0; tUse=1; tLife=0; tProps=""; tCapacity=0;
+        tOrgan=""; tOrganMesh=[];
         gLine = 0;
         gQuery = llGetNotecardLine(gNc, 0);
         return;
@@ -270,6 +434,8 @@ default{
         llOwnerSay("[Nexus] "+VERSION);
         if(gListen != -1) llListenRemove(gListen);
         gListen = llListen(CRAFT_CHANNEL, "", "", "");
+        if(gDevListen != -1) llListenRemove(gDevListen);
+        gDevListen = llListen(DEV_CHANNEL, "", "", "");
         boot();
     }
 
@@ -282,7 +448,11 @@ default{
     dataserver(key q, string data){
         if(q != gQuery) return;
         if(data == EOF){
-            // REVIEW: configured containers with a Capacity NC become blank on reset; restore saved product first.
+            if(tCapacity > 0 && llLinksetDataRead("rz_ready") == "1"){
+                gRole=ROLE_BLANK; gCapacity=tCapacity;
+                if(restoreKVP()) finalize();
+                return;
+            }
             if(tCapacity > 0){
                 // Container notecard: remain blank and advertise the maximum capacity.
                 gRole = ROLE_BLANK; gCapacity = tCapacity; gReady = FALSE;
@@ -292,6 +462,7 @@ default{
             }
             gName=tName; gTaxonomy=tTax; gStage=tStage; gMed=tMed; gMesh=tMesh;
             gQuantity=tQty; gUse=tUse; gLifeSecs=tLife; gProps=tProps;
+            gOrgan=tOrgan; gOrganMesh=tOrganMesh;
             if(gName=="" || gQuantity<1){
                 llOwnerSay("[Component] incomplete NC (Name / Quantity required): "+gNc);
                 return;
@@ -300,7 +471,6 @@ default{
                 llOwnerSay("[Component] NC without Taxonomy: "+gNc+" (won't be eligible for any workshop).");
             }
             // Restore remaining stock/expiry for NC items; other fields still come from the NC.
-            // REVIEW: restored zero stock has no gEmptyAt deadline, so reset bypasses empty-stock cleanup.
             if(llLinksetDataRead("rz_ready") == "1"){
                 gQuantity = (integer)llLinksetDataRead("rz_qty");
                 gExpiry   = (integer)llLinksetDataRead("rz_exp");
@@ -325,6 +495,7 @@ default{
                 else if(k=="med") tMed=v;
                 else if(k=="capacity") tCapacity=(integer)v;
                 else if(k=="mesh") tMesh=v;
+                else if(k=="organ") addOrgan(v);
                 else if(k=="axis") addAxis(v);
             }
         }
@@ -333,51 +504,75 @@ default{
     }
 
     listen(integer chan, string nm, key id, string msg){
-        if(chan != CRAFT_CHANNEL) return;
+        if(chan != CRAFT_CHANNEL && chan != DEV_CHANNEL) return;
         // Keep empty fields so optional properties do not shift protocol indexes.
         // REVIEW: id is not authenticated. Any nearby script knowing this channel can mutate stock or configure blanks.
         list p = llParseStringKeepNulls(msg, [SEP], []);
         string verb = llList2String(p,0);
 
+        if(verb == "MC"){ hudRequest(chan,id,p); return; }
+        if(chan == DEV_CHANNEL){
+            // Discovery stays compatible with the current development HUD.
+            if(verb == "PING"){
+                if(gReady && gQuantity > 0 && !expired())
+                    llWhisper(chan,"HERE"+SEP+(string)llGetKey()+SEP+gName+SEP+(string)gQuantity
+                        +SEP+(string)gUse+SEP+(string)gLifeSecs+SEP+gTaxonomy+SEP+gStage+SEP+gProps
+                        +SEP+(string)PROTO+SEP+(string)effPerMille()+SEP+gMesh+SEP+gOrgan);
+                else if(!gReady && gRole == ROLE_BLANK)
+                    llWhisper(chan,"BLANK"+SEP+(string)llGetKey()+SEP+(string)gCapacity);
+            }
+            return;
+        }
         if(verb == "PING"){
-            if(gReady){ if(gQuantity > 0) announce(); }   // Do not advertise empty stock.
+            if(gReady){ if(gQuantity > 0 && !expired()) announce(); }   // Do not advertise empty stock.
             else if(gRole == ROLE_BLANK) llWhisper(CRAFT_CHANNEL, "BLANK"+SEP+(string)llGetKey()+SEP+(string)gCapacity);
         }
         else if(verb == "CONSUME"){
             if(!gReady) return;
             if(llList2String(p,1) != (string)llGetKey()) return;
-            // REVIEW: validate field count and units > 0 before checking stock; consume() clamps only afterward.
+            if(llGetListLength(p) != 3) return;
             integer units = (integer)llList2String(p,2);
-            if(gQuantity < units){ llWhisper(CRAFT_CHANNEL, "NO"+SEP+(string)llGetKey()); return; }
-            consume(units);
+            if(!legacyStock(id,"CONSUME",units)){ llWhisper(CRAFT_CHANNEL,"NO"+SEP+(string)llGetKey()); return; }
             llWhisper(CRAFT_CHANNEL, "OK"+SEP+(string)llGetKey()+SEP+(string)gQuantity);
         }
         else if(verb == "REFUND"){
             if(!gReady) return;
             if(llList2String(p,1) != (string)llGetKey()) return;
-            // REVIEW: refunds have no reservation/sender match, positive-amount check, or replay protection.
-            gQuantity += (integer)llList2String(p,2);
-            // REVIEW: a refund after COMMIT leaves gDying set, so the next timer still deletes the item.
-            gEmptyAt = 0;
-            llLinksetDataWrite("rz_qty", (string)gQuantity);
-            setStats();
-            if(gExpiry > 0) llSetTimerEvent(30.0); else llSetTimerEvent(0.0);
+            if(llGetListLength(p) != 3 || !legacyStock(id,"REFUND",(integer)llList2String(p,2))) return;
             announce();
         }
         else if(verb == "COMMIT"){
             // The reaction completed: consumption is final; empty stock skips the refund grace period.
             if(!gReady) return;
             if(llList2String(p,1) != (string)llGetKey()) return;
-            if(gQuantity <= 0){ gDying = TRUE; llSetTimerEvent(2.0); }   // Delete in about two seconds to allow a pending GIVE.
+            if(llGetListLength(p) != 2) return;
+            legacyStock(id,"COMMIT",0);
         }
         else if(verb == "CUT"){                 // Record the player receiving the harvested object.
             if(!gReady) return;
             if(llList2String(p,1) != (string)llGetKey()) return;
             gCutter = (key)llList2String(p,2);
         }
-        else if(verb == "GIVE"){                // Give the Mesh inventory object to the recorded player.
+        else if(verb == "GIVE"){                // Give organ mesh object(s) to the recorded player.
             if(!gReady) return;
             if(llList2String(p,1) != (string)llGetKey()) return;
+            string organs = "";
+            if(llGetListLength(p) > 2) organs = llList2String(p,2);
+            if(organs != ""){                    // GIVE|key|leaf^root : multi-organ harvest.
+                list ol = llParseStringKeepNulls(organs, ["^"], []); integer oi;
+                for(oi=0; oi<llGetListLength(ol); oi++){
+                    string o = llList2String(ol, oi);
+                    integer mi = llListFindList(gOrganMesh, [o]);
+                    if(mi == -1 || (mi % 2) != 0){ llOwnerSay("[Component] GIVE: no mesh mapped for organ '"+o+"'."); jump nextOrgan; }
+                    string msh = llList2String(gOrganMesh, mi+1);
+                    if(msh == "" || llGetInventoryType(msh) == INVENTORY_NONE){ llOwnerSay("[Component] GIVE: mesh '"+msh+"' missing for organ '"+o+"'."); jump nextOrgan; }
+                    if(gCutter != NULL_KEY) llGiveInventory(gCutter, msh);
+                    @nextOrgan;
+                }
+                gCutter = NULL_KEY;
+                return;
+            }
+            // Legacy single-mesh give (GIVE|key).
             if(gMesh == ""){ llOwnerSay("[Component] GIVE requested, but no Mesh is defined."); return; }
             if(llGetInventoryType(gMesh) == INVENTORY_NONE){ llOwnerSay("[Component] Mesh '"+gMesh+"' is missing from the inventory."); return; }
             if(gCutter != NULL_KEY) llGiveInventory(gCutter, gMesh);
@@ -429,13 +624,11 @@ default{
     }
 
     timer(){
-        if(gDying){ die(); return; }                 // Deferred deletion after COMMIT, allowing GIVE to run first.
-        // Delete empty stock if no refund arrived during the grace period.
-        if(gQuantity <= 0 && gEmptyAt > 0 && llGetUnixTime() - gEmptyAt >= 600){
-            die();
-            return;
-        }
-        if(gExpiry > 0 && llGetUnixTime() >= gExpiry){
+        if(!gReady || gStockFault) return;
+        // No timeout may destroy a source while a HUD/workshop still holds units.
+        if(hasHeld()){ setStats(); return; }
+        if(gQuantity <= 0){ die(); return; }
+        if(expired()){
             llOwnerSay("[Component] "+gName+" has passed its lifetime.");
             die();
             return;

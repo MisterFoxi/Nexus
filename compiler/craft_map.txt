@@ -3,8 +3,11 @@
 
 === A. TAXONOMY ===
 bark
+beast
+    verr
 leaf_plant
     mint (menthe)
+        kanda
 liquid
     oil
     water
@@ -24,11 +27,14 @@ meta.stage values: plant, chopped, minced, twig, leaf, powder, essence, pils, po
 
 @cutting_board
   harvest       stage=plant, taxonomy=cuttable   -> GIVE (hands object)
+  harvest_leaf  stage=plant, taxonomy=cuttable   -> GIVE (hands object)
+  harvest_root  stage=plant, taxonomy=cuttable   -> GIVE (hands object)
   chop          taxonomy=leaf_plant, stage=leaf  -> stage=chopped
   choptatoes    taxonomy=potato, stage=harvested -> stage=sliced
   mince         taxonomy=leaf_plant, stage=chopped -> stage=minced
 
 @mortar
+  grind_organ   (any)                            -> stage=powder   [if meta.organ is grindable]
   grind         taxonomy=leaf_plant, stage=leaf  -> stage=powder
   over          taxonomy=leaf_plant, stage=leaf  -> stage=powder   [if fab.grind is over]
   grind_fine    taxonomy=leaf_plant, stage=chopped -> stage=powder

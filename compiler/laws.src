@@ -14,6 +14,21 @@ law harvest
     react
     give
 
+# multi-organ harvest (yield = accumulates; every matching law fires together).
+# NOTE: overlaps the bare 'harvest' above — keep one model once the runtime
+# evaluator handles 'yield'. The runtime only hands organs the species actually has.
+law harvest_leaf
+    when  meta.stage is plant
+    when  meta.taxonomy is cuttable
+    yield
+    give  leaf
+
+law harvest_root
+    when  meta.stage is plant
+    when  meta.taxonomy is cuttable
+    yield
+    give  root
+
 law chop
     when  meta.taxonomy is leaf_plant
     when  meta.stage is leaf
@@ -36,6 +51,14 @@ law mince
 
 
 @mortar
+# organ eligibility: only a grindable organ (fresh, pre-transformation) can be
+# ground here. 'meta.organ is grindable' matches the organ's tag token.
+law grind_organ
+    when  meta.organ is grindable
+    react
+    set   meta.stage = powder
+    scale qty x0.6
+
 law grind
     when  meta.taxonomy is leaf_plant
     when  meta.stage is leaf

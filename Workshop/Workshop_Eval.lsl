@@ -9,9 +9,11 @@
 //
 // LINKED-MESSAGE PROTOCOL: one request/response per Cook.
 // main -> evaluator (EVAL_REQ): action header + "\n\n" + basket rows,
-// each row: rawName|count|tax|stage|props|life|eff, separated by "\n".
+// each row: rawName|count|tax|stage|props|life|eff|organ, separated by "\n".
 // evaluator -> main (EVAL_RES):
-// "0" -> inert (no matching rule); "2" -> direct inventory delivery (give).
+// "0" -> inert (no matching rule).
+// "2" -> legacy direct delivery (bare "give", principal's single Mesh).
+// "2|leaf^root" -> multi-organ harvest (yield): hand out each listed organ's mesh.
 // "1|verdict|name|qty|use|life|tax|stage|props|med|eff" -> reaction.
 //
 // CONFIG notecard "bench_config" (configuration convention: owner-only); reads:
@@ -23,8 +25,8 @@ integer EVAL_REQ = 970200;           // main -> evaluator: basket
 integer EVAL_RES = 970201;           // evaluator -> main: result
 integer NOTOK    = -999999;          // Sentinel for an unknown token.
 
-integer GS = 7;                      // Fields per basket group.
-string  VERSION = "Workshop_Eval v0.6 (2026-10-22)";
+integer GS = 8;                      // Fields per basket group (v0.7: + organ).
+string  VERSION = "Workshop_Eval v0.7 (2026-10-24)";
 
 // ---- configuration subset used by this evaluator ----
 list    gGenres;
@@ -53,6 +55,7 @@ list gNeed;                          // Tokens required for a reaction (tax:<id>
 
 // ---- resolution ----
 string  rGenre; string rLid; integer rVerdict; string rDo; integer rCap; integer rFound;
+list    rYieldGives;                 // Accumulated organ ids to hand out (yield laws with give=<id>).
 
 // ---- prepared output ----
 string oName; integer oQty; integer oUse; integer oLife;
@@ -218,6 +221,27 @@ buildAggregate(list groups){
                 if(aid != NOTOK) axAdd(aid, llRound((float)fluxAxis((integer)llList2String(kv,1)) * mFac));
             }
         }
+        // Organ (fresh, pre-transformation): present organ + its tags as tokens, add its trait axes.
+        string org = llList2String(groups, gi+7);
+        if(org != "" && taxId != NOTOK){
+            integer oid = nameToId(org);
+            if(oid != NOTOK){
+                tokAdd(oid);
+                string otg = llLinksetDataRead("tax:"+(string)taxId+":organ:"+(string)oid+":tags");
+                if(otg != ""){
+                    list otl = llParseString2List(otg, ["^"], []); integer ot;
+                    for(ot=0;ot<llGetListLength(otl);ot++) tokAdd((integer)llList2String(otl,ot));
+                }
+                string otr = llLinksetDataRead("tax:"+(string)taxId+":organ:"+(string)oid+":trait");
+                if(otr != ""){
+                    list orl = llParseString2List(otr, ["^"], []); integer k2;
+                    for(k2=0;k2<llGetListLength(orl);k2++){
+                        list okv = llParseString2List(llList2String(orl,k2), [":"], []);
+                        axAdd((integer)llList2String(okv,0), llRound((float)fluxAxis((integer)llList2String(okv,1)) * mFac));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -277,7 +301,7 @@ integer countTerms(string when){ return llGetListLength(llParseString2List(when,
 
 // Most conditions wins; sequence breaks ties. Store the winning rule in r*.
 resolve(){
-    rFound = FALSE; integer bestTerms = -1; integer bestSeq = 0x7FFFFFFF;
+    rFound = FALSE; rYieldGives = []; integer bestTerms = -1; integer bestSeq = 0x7FFFFFFF;
     // Required-token gate: any missing token makes the mixture inert.
     integer nq;
     for(nq=0; nq<llGetListLength(gNeed); nq++)
@@ -296,15 +320,27 @@ resolve(){
             string lid = llList2String(parts, 2);
             string when = llLinksetDataRead(wkey);
             if(evalWhen(when)){
-                integer terms = countTerms(when);
-                integer seq = (integer)llLinksetDataRead("law:"+g+":"+lid+":seq");
-                if(terms > bestTerms || (terms == bestTerms && seq < bestSeq)){
-                    bestTerms = terms; bestSeq = seq;
-                    rGenre = g; rLid = lid; rFound = TRUE;
-                    rVerdict = (integer)llLinksetDataRead("law:"+g+":"+lid+":verdict");
-                    rDo = llLinksetDataRead("law:"+g+":"+lid+":do");
-                    string cs = llLinksetDataRead("law:"+g+":"+lid+":cap");
-                    if(cs == "") rCap = 0; else rCap = (integer)cs;
+                integer v = (integer)llLinksetDataRead("law:"+g+":"+lid+":verdict");
+                string doo = llLinksetDataRead("law:"+g+":"+lid+":do");
+                if(v == 2){                                   // yield: accumulate give targets (out of contest)
+                    list dl = llParseString2List(doo, ["^"], []); integer di;
+                    for(di=0; di<llGetListLength(dl); di++){
+                        string cc = llList2String(dl,di);
+                        if(llGetSubString(cc,0,4) == "give="){
+                            integer goid = (integer)llGetSubString(cc,5,-1);
+                            if(llListFindList(rYieldGives,[goid]) == -1) rYieldGives += goid;
+                        }
+                    }
+                } else {                                      // react/danger: most terms wins; seq breaks ties
+                    integer terms = countTerms(when);
+                    integer seq = (integer)llLinksetDataRead("law:"+g+":"+lid+":seq");
+                    if(terms > bestTerms || (terms == bestTerms && seq < bestSeq)){
+                        bestTerms = terms; bestSeq = seq;
+                        rGenre = g; rLid = lid; rFound = TRUE;
+                        rVerdict = v; rDo = doo;
+                        string cs = llLinksetDataRead("law:"+g+":"+lid+":cap");
+                        if(cs == "") rCap = 0; else rCap = (integer)cs;
+                    }
                 }
             }
             @nextk;
@@ -453,10 +489,32 @@ default{
         // REVIEW: require a complete configuration and loaded rule data before evaluating; partial loading can yield false inert results.
         injectAction(actHdr);
         resolve();
+        // Multi-organ harvest (yield): hand out each accumulated organ the principal species actually has.
+        if(llGetListLength(rYieldGives) > 0){
+            integer ptax = nameToId(llList2String(groups, 2));
+            list haveO = [];
+            if(ptax != NOTOK){
+                string os = llLinksetDataRead("tax:"+(string)ptax+":organs");
+                if(os != "") haveO = llParseString2List(os, ["^"], []);
+            }
+            string giveList = ""; integer yi;
+            for(yi=0; yi<llGetListLength(rYieldGives); yi++){
+                integer goid = llList2Integer(rYieldGives, yi);
+                if(llListFindList(haveO, [(string)goid]) != -1){        // only organs the species declares
+                    string onm = idToName(goid);
+                    if(onm != ""){ if(giveList != "") giveList += "^"; giveList += onm; }
+                }
+            }
+            if(giveList != ""){
+                llMessageLinked(LINK_SET, EVAL_RES, "2|"+giveList, NULL_KEY);
+                gAxId=[]; gAxVal=[]; gToks=[]; gInert=[]; gNeed=[]; rYieldGives=[];
+                return;
+            }
+        }
         if(!rFound){
             llMessageLinked(LINK_SET, EVAL_RES, "0", NULL_KEY);   // Inert: no matching rule.
         } else if(llListFindList(llParseString2List(rDo, ["^"], []), ["give"]) != -1){
-            llMessageLinked(LINK_SET, EVAL_RES, "2", NULL_KEY);   // Direct delivery: the winning rule contains "give".
+            llMessageLinked(LINK_SET, EVAL_RES, "2", NULL_KEY);   // Legacy direct delivery: bare "give".
         } else {
             buildOutput(groups);
             string res = "1|"+(string)rVerdict+"|"+oName+"|"+(string)oQty+"|"+(string)oUse
@@ -464,6 +522,6 @@ default{
             llMessageLinked(LINK_SET, EVAL_RES, res, NULL_KEY);
         }
         // Release temporary aggregate lists.
-        gAxId=[]; gAxVal=[]; gToks=[]; gInert=[]; gNeed=[];
+        gAxId=[]; gAxVal=[]; gToks=[]; gInert=[]; gNeed=[]; rYieldGives=[];
     }
 }

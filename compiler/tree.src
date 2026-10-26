@@ -13,16 +13,66 @@
 #  A group is inherited by the descendants of its members.
 #  The = 0 deltas are documentary (neutral): they state that a class has the
 #  axis; the compiler sums them with no effect.
+#
+#  ORGANS (anatomy, has-a — distinct from the is-a of classes):
+#     organs <a>, <b>, ...            registry of valid organ names (closed)
+#     abstract <node> [: <parent>]    template, non-instantiable
+#         allow <organ>, ...          organs this template permits (union down the tree)
+#         organ <organ>               structural per-organ default
+#             axis <axis> = <delta>       organ-level trait default
+#     species <node> : <parent>       concrete; carries exactly one 'has'
+#         has <organ>, ...            organs this species activates (must be in allow*)
+#         organ <organ>               per-organ specialization
+#             in   <tag>, ...             eligibility tags (reused via 'meta.organ is <tag>')
+#             axis <axis> = <delta>       organ-level trait (adds to the template default)
+#  Declare class traits BEFORE organ blocks (an organ block captures following axis lines).
 # ==========================================================================
 
-class leaf_plant
+organs root, bark,leaf, flower, fruit, stem, twig, bark, meat, hide, bone, blood, fat
+
+# Vegetal kingdom
+abstract plant
+    allow root, leaf, flower, fruit, twig
+
+abstract tree: plant
+    allow trunk, branch, bark
+    organ bark
+        in grindable                # défaut : l'écorce se broie
+
+abstract herb : plant               # herbacée (pas de bois)
+    allow stem
+
+
+
+abstract leaf_plant  : plant         # inherit from plant 
     axis org.smell = -1
+    organ root
+        axis org.bitter = 2        # structural default: plant roots are faintly bitter
+    
+
+
 
 class mint : leaf_plant
-    aka  menthe
+    aka  menthe,mint
     axis act.nervous = -2
 
-class bark                    # bark (no traits yet)
+species kanda : mint               # concrete species with anatomy
+    has  root, leaf, flower
+    organ root
+        in   grindable
+        axis org.bitter = 6        # + template default 2 => bitter 8 (toxic via 'vomitif')
+    organ leaf
+        in   edible, smokable, grindable
+        axis act.fluidifying = 3   # medicinal leaf
+    organ flower
+        in   smokable
+
+species willow : tree
+    organ bark
+        in grindable
+        axis org.bitter = 2 
+        
+
 
 class root
     axis org.sweet = 1            # was org.taste=-1 (faintly sweet) before the taste refactor
@@ -51,6 +101,22 @@ class salt : mineral
 class sugar : mineral
     axis org.sweet = 5
 
+
+# --- animal kingdom (food / butchering) --------------------------------
+abstract beast                     # template root: a butcherable animal
+    allow meat, hide, bone, blood, fat
+    organ meat
+        axis org.umami = 3         # structural default: meat is savoury
+
+species verr : beast               # verr — common Gorean herd animal
+    has  meat, hide, bone
+    organ meat
+        in   edible
+        axis org.umami = 2         # + default 3 => umami 5
+    organ bone
+        in   grindable
+    organ hide
+        in   tannable
 
 
 

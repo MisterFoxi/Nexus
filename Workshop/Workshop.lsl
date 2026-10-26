@@ -55,8 +55,8 @@ string  gFailSnd  = "fail_sound";
 integer gCfgLine; key gCfgQuery; string gCfgNc;
 
 // ---- presence (transient) ----
-list gIng;                           // stride 9 : [key,name,qty,tax,stage,props,life,eff,mesh]
-integer IK=0; integer IN=1; integer IQ=2; integer ITX=3; integer IST=4; integer IPR=5; integer ILF=6; integer IEF=7; integer IMS=8; integer IS=9;
+list gIng;                           // stride 10 : [key,name,qty,tax,stage,props,life,eff,mesh,organ]
+integer IK=0; integer IN=1; integer IQ=2; integer ITX=3; integer IST=4; integer IPR=5; integer ILF=6; integer IEF=7; integer IMS=8; integer IOR=9; integer IS=10;
 list gRec;                           // Available containers: stride 2 [key, capacity].
 list gKept;                          // Kept sources: stride KN=7 [name,qty,tax,stage,props,life,expiry]; persisted in state:kept.
 integer KN=7;
@@ -70,6 +70,7 @@ list    gCons;                       // Immediate reservations: stride 2 [key, c
 integer gState;                      // 0 idle, 1 craft scan, 2 cooking, 3 pending output, 4 collection scan, 5 evaluation, 6 stepper, 7 grinding.
 integer gGiveMode;                   // TRUE when the winning rule uses direct Mesh inventory delivery (give).
 key     gGiveKey;                    // Key of the plant that will deliver its Mesh object.
+string  gGiveOrgans;                 // Organ list "leaf^root" for multi-organ harvest; empty = legacy single give.
 
 // ---- output received from the evaluator ----
 integer rVerdict;
@@ -186,7 +187,7 @@ string packBasket(){
             s += llList2String(gIng,idx+IN) + "|" + (string)countPick(lab)
                + "|" + llList2String(gIng,idx+ITX) + "|" + llList2String(gIng,idx+IST)
                + "|" + llList2String(gIng,idx+IPR) + "|" + (string)llList2Integer(gIng,idx+ILF)
-               + "|" + (string)llList2Integer(gIng,idx+IEF);
+               + "|" + (string)llList2Integer(gIng,idx+IEF) + "|" + llList2String(gIng,idx+IOR);
         }
     }
     return s;
@@ -250,7 +251,7 @@ mergeKept(){                                         // Merge gKept into gIng us
         gIng += [ "KEPT"+(string)(i/KN),
                   llList2String(gKept, i+0), llList2Integer(gKept, i+1),
                   llList2String(gKept, i+2), llList2String(gKept, i+3),
-                  llList2String(gKept, i+4), life, keptEff(life, llList2Integer(gKept, i+6)), "" ];
+                  llList2String(gKept, i+4), life, keptEff(life, llList2Integer(gKept, i+6)), "", "" ];
     }
 }
 keptConsume(string sentinel, integer nn){            // Decrement a KEPT<index> source at commit time.
@@ -262,8 +263,8 @@ keptConsume(string sentinel, integer nn){            // Decrement a KEPT<index> 
 }
 
 // ---------- presence ----------
-setIng(key k, string name, integer qty, string tax, string stage, string props, integer life, integer eff, string mesh){
-    list row = [ (string)k, name, qty, tax, stage, props, life, eff, mesh ];
+setIng(key k, string name, integer qty, string tax, string stage, string props, integer life, integer eff, string mesh, string organ){
+    list row = [ (string)k, name, qty, tax, stage, props, life, eff, mesh, organ ];
     integer bykey = -1; integer i;
     for(i=0;i<llGetListLength(gIng);i+=IS) if(llList2String(gIng,i+IK)==(string)k){ bykey=i; jump done; }
     @done;
@@ -430,13 +431,15 @@ cook(){
 // Finish cutting: ask the plant to give its Mesh object to the recorded player.
 finishGive(){
     benchSmoke(FALSE); llStopSound(); llSetText("", ZERO_VECTOR, 0.0);
-    llWhisper(CRAFT_CHANNEL, "GIVE"+SEP+(string)gGiveKey);   // The plant gives to the player previously recorded by CUT.
+    string g = "GIVE"+SEP+(string)gGiveKey;                  // The plant gives to the player previously recorded by CUT.
+    if(gGiveOrgans != "") g += SEP+gGiveOrgans;              // Multi-organ harvest: name each organ to hand out.
+    llWhisper(CRAFT_CHANNEL, g);
     integer ci;                                             // Commit reserved ingredient units.
     // REVIEW: direct delivery commits without checking GIVE success or waiting for any acknowledgement.
     for(ci=0; ci<llGetListLength(gCons); ci+=2)
         llWhisper(CRAFT_CHANNEL, "COMMIT"+SEP+llList2String(gCons,ci));
-    gCons=[]; gPicks=[]; gGiveMode=FALSE;
-    llRegionSayTo(gUser, 0, "Cutting done - leaves handed over.");
+    gCons=[]; gPicks=[]; gGiveMode=FALSE; gGiveOrgans="";
+    llRegionSayTo(gUser, 0, "Cutting done - handed over.");
     gState = 0;
 }
 
@@ -551,15 +554,19 @@ default{
             gPicks=[]; gState=0;
             return;
         }
-        if(code == 2){                                        // Direct inventory delivery: the winning rule contains "give".
+        if(code == 2){                                        // Direct inventory delivery: the winning rule gives.
+            string giveOrgans = "";                           // "2|leaf^root" = multi-organ harvest; "2" = legacy single Mesh.
+            if(llGetListLength(p) > 1) giveOrgans = llList2String(p,1);
             integer idx0 = ingByLabel(llList2String(gPicks, 0));
-            if(idx0 == -1 || llList2String(gIng, idx0+IMS) == ""){
+            // Legacy give needs the principal's single Mesh; organ harvest resolves meshes in the Component.
+            if(idx0 == -1 || (giveOrgans == "" && llList2String(gIng, idx0+IMS) == "")){
                 refundAll(); oneSnd(gFailSnd);
-                llRegionSayTo(gUser, 0, "Nothing to hand over (principal has no Mesh).");
+                llRegionSayTo(gUser, 0, "Nothing to hand over (principal has no Mesh/organ).");
                 gPicks=[]; gState=0;
                 return;
             }
             gGiveMode = TRUE;
+            gGiveOrgans = giveOrgans;
             gGiveKey  = (key)llList2String(gIng, idx0+IK);
             llWhisper(CRAFT_CHANNEL, "CUT"+SEP+(string)gGiveKey+SEP+(string)gUser);  // Send the harvesting player's UUID.
             gState = 2;                                       // The cooking state also represents cutting.
@@ -655,8 +662,10 @@ default{
                 if(llGetListLength(p) > 10) heff = (integer)llList2String(p,10);
                 string hmesh = "";
                 if(llGetListLength(p) > 11) hmesh = llList2String(p,11);
+                string horgan = "";
+                if(llGetListLength(p) > 12) horgan = llList2String(p,12);
                 setIng((key)llList2String(p,1), llList2String(p,2), (integer)llList2String(p,3),
-                       llList2String(p,6), llList2String(p,7), llList2String(p,8), (integer)llList2String(p,5), heff, hmesh);
+                       llList2String(p,6), llList2String(p,7), llList2String(p,8), (integer)llList2String(p,5), heff, hmesh, horgan);
             }
             else if(verb=="BLANK"){
                 string bk = llList2String(p,1);

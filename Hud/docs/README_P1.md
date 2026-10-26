@@ -83,9 +83,15 @@ never sends another start request. This does not add another source stock debit.
 
 - **Flag false:** return every basket unit, across all pages, one at a time
   through the existing RETURN path. Every decrease waits for OK.
-- **Flag true:** set quantities to zero without RETURN. Ingredients are lost;
-  source stock does not increase.
-- Discard first clears existing pending requests, including invisible TAKEs
+- **Flag true:** send `MC|COMMIT|source|request|heldQuantity` through the
+  existing relay, one source at a time. Quantities decrease only after the matching
+  OK and persistence. Ingredients are lost; stock is not debited again and no
+  product is created. This is the Component v0.6 closure test path.
+- With the flag true, missing/refused COMMIT replies retain quantities, the exact
+  saved pending request and the used-preparation flag. Discard cannot finish until
+  a matching OK arrives. Reset never resends; a late OK can finish closure.
+  Other pre-existing pending operations also await their replies in this mode.
+- **Before Start only**, Discard first clears existing pending requests, including invisible TAKEs
   with zero confirmed quantity. Each uncertain row is zeroed, its pending
   request and operation are cleared, and the relay is released. Remaining
   units from that source are abandoned without invented returns or resends.
@@ -97,10 +103,10 @@ never sends another start request. This does not add another source stock debit.
   a saved request. It cannot recreate the basket or block it again.
 - Manual additions and removals are blocked during Discard. After crafting
   starts, additions and returns remain blocked until the basket is discarded.
-- Discard mode (0 inactive, 1 return, 2 loss) is saved in `mc:simple:discard`
+- Discard mode (0 inactive, 1 return, 2 commit used units) is saved in `mc:simple:discard`
   so an interrupted traversal can resume after reset. No second basket,
   history, or automatic resend is created.
-- Once all rows are returned or abandoned and empty, reset the craft flag,
+- Once all rows are returned/abandoned before Start, or confirmed committed after Start, reset the craft flag,
   emit `918317 / DISCARD_DONE`, clear names, and hide P1 icons, digits, and
   counters. The renderer preserves this cleared state after `fw_ready`.
 - `MC_Turn_Z` receives the owner's `P1_DISCARD` touch directly and immediately
@@ -108,8 +114,8 @@ never sends another start request. This does not add another source stock debit.
   position idempotently on `DISCARD_DONE`. The visual return to page 0 is
   independent of source exchanges; cleanup and returns continue to completion.
 - An empty basket, including one emptied by abandoning pending requests,
-  finishes Discard even without a relay IDLE message. Loss after crafting also
-  does not depend on the relay. Confirmed returns continue to use it.
+  finishes Discard even without a relay IDLE message. Confirmed RETURN and
+  COMMIT requests both use the relay. A pending COMMIT is never abandoned.
 
 User messages are in English. The chop progress display is now reset on confirmed
 DISCARD_DONE; no additional result display is cleared:
@@ -121,8 +127,9 @@ The old `Discard blocked:` message and unlimited wait have been removed.
 Replace `MC_Selected_Controller` and `MC_Turn_Z`: persistent mode restarts
 traversal and abandons old pending requests; Discard directly returns the HUD
 to page 0. P1 scripts subsequently receive `DISCARD_DONE`.
-Ordinary resets outside Discard preserve pending requests. Only explicitly
-abandoning the basket applies this cleanup rule.
+Ordinary resets preserve pending requests. The old uncertainty-abandonment
+rule now applies only to Discard before Start. After Start, confirmed Component
+COMMIT closure takes precedence and unresolved requests remain recorded.
 
 ## Local messages
 

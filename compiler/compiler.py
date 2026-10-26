@@ -51,20 +51,24 @@ Usage: python compiler.py axes.src tree.src laws.src > monde.nc
 
 import re, sys, os
 
-VERDICTS = {"react": 0, "danger": 1}
-MAX_DEPTH = 3
+VERDICTS = {"react": 0, "danger": 1, "yield": 2}
+MAX_DEPTH = 4
 
 # --- axes.src : single-line ---
-LABEL_RE = re.compile(r'^([a-z]+\.[a-z_]+)\s+label\s*$')
+LABEL_RE = re.compile(r'^([a-z]+\.[a-z_]+)\s+label\s*(?::\s*(.*\S))?\s*$')          # label [: dom,dom]
 CAT_RE   = re.compile(r'^([a-z]+\.[a-z_]+)\s+cat\s*:\s*(.*\S)\s*$')
 TAXD_RE  = re.compile(r'^([a-z]+\.[a-z_]+)\s+taxonomy\s*$')
-STATION_RE = re.compile(r'^station\s+([a-z_]+)\s*$')
+ORGAND_RE= re.compile(r'^([a-z]+\.[a-z_]+)\s+organ\s*$')                            # declares the organ dimension
+DOMAIN_RE= re.compile(r'^domain\s+([a-z_]+)\s*$')                                   # top-level domain declaration
+STATION_RE = re.compile(r'^station\s+([a-z_]+)\s*(?::\s*(.*\S))?\s*$')              # station [: dom,dom]
 # --- axes.src : axis block ---
 AXIS_OPEN_RE = re.compile(r'^axis\s+([a-z]+\.[a-z_]+)\s*$')
 UNIT_RE      = re.compile(r'^unit\s+([A-Za-z%]+)\s*$')
 RANGE_RE     = re.compile(r'^range\s+(-?\d+)\s*\.\.\s*(-?\d+)\s*$')
 MAPS_RE      = re.compile(r'^maps\s+(-?\d+)\s*\.\.\s*(-?\d+)\s*$')
 ZONE_RE      = re.compile(r'^range\s+([a-z_]+)\s+(-?\d+)\s*\.\.\s*(-?\d+)\s*$')   # named exclusive zone
+AXDOMAIN_RE  = re.compile(r'^domain\s+(.*\S)\s*$')                                # in-axis: exposed domains
+AXAKA_RE     = re.compile(r'^aka\s+(.*\S)\s*$')                                   # in-axis: synonyms (share the id)
 # --- laws.src ---
 HDR_RE   = re.compile(r'^@([a-z_]+)$')
 LAWNAME_RE = re.compile(r'^law\s+([a-z0-9_]+)$')
@@ -76,14 +80,22 @@ ACT_SET    = re.compile(r'^set\s+([a-z]+\.[a-z_]+)\s*=\s*([a-z_]+)$')
 ACT_SCALE  = re.compile(r'^scale\s+(eff|qty|[a-z]+\.[a-z_]+)\s+x\s*([0-9.]+)$')
 ACT_ADD    = re.compile(r'^add\s+([a-z]+\.[a-z_]+)$')
 ACT_REM    = re.compile(r'^remove\s+([a-z]+\.[a-z_]+)$')
+ACT_GIVE   = re.compile(r'^give(?:\s+([a-z_]+))?$')                               # give | give <organ>
 # --- tree.src : class / group block ---
 CLASS_OPEN_RE = re.compile(r'^class\s+([a-z_]+)\s*(?::\s*([a-z_]+))?\s*$')
+ABSTRACT_OPEN_RE = re.compile(r'^abstract\s+([a-z_]+)\s*(?::\s*([a-z_]+))?\s*$')
+SPECIES_OPEN_RE  = re.compile(r'^species\s+([a-z_]+)\s*:\s*([a-z_]+)\s*$')
 AKA_RE        = re.compile(r'^aka\s+(.*\S)\s*$')
 CAXIS_RE      = re.compile(r'^axis\s+([a-z]+\.[a-z_]+)\s*=\s*(-?\d+)\s*$')
 INERT_RE      = re.compile(r'^inert\s+([a-z]+\.[a-z_]+)\s*$')
 NEED_RE       = re.compile(r'^need\s+([a-z_]+)(?:\s+(\d+))?\s*$')
 GROUP_OPEN_RE = re.compile(r'^group\s+([a-z_]+)\s*$')
 MEMBER_RE     = re.compile(r'^member\s+([a-z_]+)\s*$')
+ORGANS_RE     = re.compile(r'^organs\s+(.*\S)\s*$')                               # registry of valid organ names
+ALLOW_RE      = re.compile(r'^allow\s+(.*\S)\s*$')                                # template: allowed organs
+HAS_RE        = re.compile(r'^has\s+(.*\S)\s*$')                                  # species: activated organs
+ORGAN_OPEN_RE = re.compile(r'^organ\s+([a-z_]+)\s*$')                             # per-organ sub-block
+ORGAN_IN_RE   = re.compile(r'^in\s+(.*\S)\s*$')                                   # per-organ: eligibility tags
 
 errors = []
 warnings = []
@@ -117,20 +129,29 @@ class Axis:
         s.name, s.id, s.pmin, s.pmax, s.unit, s.imin, s.imax = name, id_, pmin, pmax, unit, imin, imax
         s.zones = {}       # name -> (phys_lo, phys_hi)
         s.zone_int = {}    # name -> (int_lo, int_hi), exclusive
+        s.domains = []     # output domains this axis is engraved into (empty = not a terminal effect)
     def to_int(s, phys): return round(s.imin + (phys - s.pmin) / (s.pmax - s.pmin) * (s.imax - s.imin))
 class Label:
     kind = "label"
-    def __init__(s, name, id_): s.name, s.id = name, id_
+    def __init__(s, name, id_): s.name, s.id, s.domains = name, id_, []   # domains: empty = legacy (allowed anywhere)
 class Cat:
     kind = "cat"
     def __init__(s, name, id_): s.name, s.id, s.vals = name, id_, {}
 class TaxDim:
     kind = "tax"
     def __init__(s, name, id_): s.name, s.id, s.vals = name, id_, {}   # vals filled by tree.src (nodes + groups + aliases)
+class OrganDim:
+    kind = "organ"
+    def __init__(s, name, id_): s.name, s.id, s.vals = name, id_, {}   # vals filled by tree.src (organs + tags)
+
+def _dlist(body): return [d.strip() for d in body.split(',') if d.strip()]
 
 def load_vocab(path, reg):
-    dims, stations, taxdim = {}, [], None
-    cur = None   # axis block in progress: {name, line, unit, pmin, pmax, imin, imax, bands}
+    dims, stations, taxdim, organdim = {}, {}, None, None   # stations: name -> set(domains)
+    domains = set()          # declared domain names
+    axis_aliases = {}        # alias -> canonical axis id (shares the id, excluded from inverse)
+    dom_refs = []            # (where, domain, line) -> validated against `domains` at the end (EA1)
+    cur = None               # axis block in progress
 
     def finish_axis(c):
         if c is None: return
@@ -145,6 +166,8 @@ def load_vocab(path, reg):
         ax = Axis(c['name'], reg.id(c['name']), pmin, pmax, c['unit'], imin, imax)
         if ax.pmin == ax.pmax: err(c['line'], "%s: flat domain" % c['name'])
         ax.zones = c['zones']
+        ax.domains = c['domains']
+        for d in c['domains']: dom_refs.append(("axis %s" % c['name'], d, c['line']))
         # zones -> intensity, sorted, clamped so neighbours stay mutually EXCLUSIVE
         zl = [[zn, ax.to_int(lo), ax.to_int(hi)] for zn, (lo, hi) in c['zones'].items()]
         zl.sort(key=lambda z: (z[1], z[2]))
@@ -155,6 +178,10 @@ def load_vocab(path, reg):
                 warnings.append("axis %s: zone '%s' is unreachable (too narrow / overlaps a neighbour once mapped to intensity)" % (c['name'], zn))
             ax.zone_int[zn] = (ilo, ihi)
         dims[c['name']] = ax
+        for al in c['akas']:                                             # axis synonyms share the canonical id
+            if not re.match(r'^[a-z]+\.[a-z_]+$', al): err(c['line'], "malformed axis alias: %r" % al); continue
+            if al in dims or al in axis_aliases: err(c['line'], "axis alias collision: %s" % al); continue
+            axis_aliases[al] = ax.id; dims[al] = ax                      # alias resolves to the same Axis object
 
     for i, raw in enumerate(open(path, encoding="utf-8"), 1):
         t = strip(raw).strip()
@@ -165,12 +192,12 @@ def load_vocab(path, reg):
             finish_axis(cur); cur = None
             m = AXIS_OPEN_RE.match(t)
             if not m: err(i, "malformed axis header: %r" % t); continue
-            cur = {'name': m.group(1), 'line': i, 'unit': None,
-                   'pmin': None, 'pmax': None, 'imin': None, 'imax': None, 'zones': {}}
+            cur = {'name': m.group(1), 'line': i, 'unit': None, 'pmin': None,
+                   'pmax': None, 'imin': None, 'imax': None, 'zones': {}, 'domains': [], 'akas': []}
             continue
 
-        if first in ("unit", "range", "maps"):
-            if cur is None: err(i, "clause '%s' outside an axis block" % first); continue
+        # in-axis block clauses (domain/aka are block-level only while an axis is open)
+        if cur is not None and first in ("unit", "range", "maps", "domain", "aka"):
             if first == "unit":
                 m = UNIT_RE.match(t)
                 if m: cur['unit'] = m.group(1)
@@ -179,6 +206,14 @@ def load_vocab(path, reg):
                 m = MAPS_RE.match(t)
                 if m: cur['imin'], cur['imax'] = int(m.group(1)), int(m.group(2))
                 else: err(i, "malformed maps: %r" % t)
+            elif first == "domain":
+                m = AXDOMAIN_RE.match(t)
+                if m: cur['domains'] += _dlist(m.group(1))
+                else: err(i, "malformed axis domain: %r" % t)
+            elif first == "aka":
+                m = AXAKA_RE.match(t)
+                if m: cur['akas'] += _dlist(m.group(1))
+                else: err(i, "malformed axis aka: %r" % t)
             else:  # 'range' = domain (range lo .. hi)  OR  named zone (range name lo .. hi)
                 m = RANGE_RE.match(t)
                 if m: cur['pmin'], cur['pmax'] = int(m.group(1)), int(m.group(2))
@@ -190,20 +225,38 @@ def load_vocab(path, reg):
                     else: err(i, "malformed range/zone: %r" % t)
             continue
 
+        if first in ("unit", "range", "maps"):
+            err(i, "clause '%s' outside an axis block" % first); continue
+
         # anything else: closes the current axis block, then single-line dispatch
         finish_axis(cur); cur = None
+        m = DOMAIN_RE.match(t)
+        if m: domains.add(m.group(1)); continue
         m = STATION_RE.match(t)
-        if m: stations.append(m.group(1)); continue
+        if m:
+            nm, body = m.group(1), m.group(2)
+            ds = set(_dlist(body)) if body else set()
+            for d in ds: dom_refs.append(("station %s" % nm, d, i))
+            stations[nm] = ds; continue
         m = TAXD_RE.match(t)
         if m:
             name = m.group(1)
             if name in dims: err(i, "redefined: %s" % name)
             taxdim = TaxDim(name, reg.id(name)); dims[name] = taxdim; continue
-        m = LABEL_RE.match(t)
+        m = ORGAND_RE.match(t)
         if m:
             name = m.group(1)
             if name in dims: err(i, "redefined: %s" % name)
-            dims[name] = Label(name, reg.id(name)); continue
+            organdim = OrganDim(name, reg.id(name)); dims[name] = organdim; continue
+        m = LABEL_RE.match(t)
+        if m:
+            name, body = m.group(1), m.group(2)
+            if name in dims: err(i, "redefined: %s" % name)
+            lb = Label(name, reg.id(name))
+            if body:
+                lb.domains = _dlist(body)
+                for d in lb.domains: dom_refs.append(("label %s" % name, d, i))
+            dims[name] = lb; continue
         m = CAT_RE.match(t)
         if m:
             name, body = m.group(1), m.group(2)
@@ -215,17 +268,29 @@ def load_vocab(path, reg):
             dims[name] = c; continue
         err(i, "malformed vocabulary line: %r" % t)
     finish_axis(cur)
-    return dims, stations, taxdim
+    # EA1: every referenced domain must be declared
+    for where, d, ln in dom_refs:
+        if d not in domains: err(ln, "%s: unknown domain '%s'" % (where, d))
+    return dims, stations, taxdim, organdim, domains, axis_aliases
 
 # ---------- taxonomy (tree.src) ----------
 class Node:
-    def __init__(s, name, parent): s.name, s.parent, s.deltas = name, parent, {}   # deltas: axis_name -> val
+    def __init__(s, name, parent):
+        s.name, s.parent, s.deltas = name, parent, {}      # deltas: axis_name -> val
+        s.abstract = False      # template, non-instantiable
+        s.species = False       # concrete, carries 'has' + organ specs
+        s.allow = set()         # template: organs allowed (union down the tree)
+        s.has = None            # species: organs activated (exactly one 'has')
+        s.has_count = 0         # to catch E8/E9
+        s.organs = {}           # organ_name -> {'tags': [..], 'deltas': {axis: val}}
 
-def load_tree(path, reg, dims, taxdim, auto_tax=None):
+def load_tree(path, reg, dims, taxdim, organdim, auto_tax=None):
     if taxdim is None:
         err(0, "no 'taxonomy' dimension declared in axes.src"); return {}, {}
     nodes, groups = {}, {}   # name->Node ; group_name->(members, line)
-    cur = None   # ('class', Node) | ('group', gname, members_list, line)
+    organs_reg = set()       # declared valid organ names ('organs' registry)
+    cur = None               # ('class', Node) | ('group', gname, members_list, line)
+    cur_organ = None         # organ sub-block currently open within a class/species block
 
     def finish(c):
         if c is None: return
@@ -244,18 +309,34 @@ def load_tree(path, reg, dims, taxdim, auto_tax=None):
         if not t: continue
         first = t.split(None, 1)[0].lower()
 
-        if first == 'class':
-            finish(cur); cur = None
-            m = CLASS_OPEN_RE.match(t)
-            if not m: err(i, "malformed class header: %r" % t); continue
-            name, parent = m.group(1), m.group(2)
+        if first in ('class', 'abstract', 'species'):
+            finish(cur); cur = None; cur_organ = None
+            if first == 'species':
+                m = SPECIES_OPEN_RE.match(t)
+                if not m: err(i, "malformed species header: %r" % t); continue
+                name, parent = m.group(1), m.group(2)
+            else:
+                m = (ABSTRACT_OPEN_RE if first == 'abstract' else CLASS_OPEN_RE).match(t)
+                if not m: err(i, "malformed %s header: %r" % (first, t)); continue
+                name, parent = m.group(1), m.group(2)
             if name in nodes: err(i, "node redefined: %s" % name)
             if name in groups: err(i, "name collides with a group: %s" % name)
-            cur = ('class', Node(name, parent))
+            nd = Node(name, parent)
+            nd.abstract = (first == 'abstract'); nd.species = (first == 'species')
+            cur = ('class', nd)
+            continue
+
+        if first == 'organs':
+            finish(cur); cur = None; cur_organ = None
+            m = ORGANS_RE.match(t)
+            if not m: err(i, "malformed organs registry: %r" % t); continue
+            for o in _dlist(m.group(1)):
+                if re.match(r'^[a-z_]+$', o): organs_reg.add(o)
+                else: err(i, "malformed organ name: %r" % o)
             continue
 
         if first == 'group':
-            finish(cur); cur = None
+            finish(cur); cur = None; cur_organ = None
             m = GROUP_OPEN_RE.match(t)
             if not m: err(i, "malformed group header: %r" % t); continue
             gname = m.group(1)
@@ -264,6 +345,7 @@ def load_tree(path, reg, dims, taxdim, auto_tax=None):
             continue
 
         if first == 'aka':
+            cur_organ = None
             if cur is None or cur[0] != 'class': err(i, "'aka' outside a class block"); continue
             m = AKA_RE.match(t)
             if not m: err(i, "malformed aka: %r" % t); continue
@@ -271,6 +353,40 @@ def load_tree(path, reg, dims, taxdim, auto_tax=None):
             for al in [a.strip() for a in m.group(1).split(',')]:
                 if not re.match(r'^[a-z_]+$', al): err(i, "malformed alias: %r" % al); continue
                 nd_aliases = getattr(nd, 'aliases', []); nd_aliases.append(al); nd.aliases = nd_aliases
+            continue
+
+        if first == 'allow':
+            cur_organ = None
+            if cur is None or cur[0] != 'class': err(i, "'allow' outside a class/abstract block"); continue
+            m = ALLOW_RE.match(t)
+            if not m: err(i, "malformed allow: %r" % t); continue
+            cur[1].allow |= set(_dlist(m.group(1)))
+            continue
+
+        if first == 'has':
+            cur_organ = None
+            if cur is None or cur[0] != 'class': err(i, "'has' outside a species block"); continue
+            nd = cur[1]
+            if not nd.species: err(i, "'has' only on a species: %s" % nd.name); continue
+            m = HAS_RE.match(t)
+            if not m: err(i, "malformed has: %r" % t); continue
+            nd.has_count += 1
+            nd.has = (nd.has or set()) | set(_dlist(m.group(1)))
+            continue
+
+        if first == 'organ':
+            if cur is None or cur[0] != 'class': err(i, "'organ' outside a class/species block"); continue
+            m = ORGAN_OPEN_RE.match(t)
+            if not m: err(i, "malformed organ header: %r" % t); continue
+            cur_organ = m.group(1)
+            cur[1].organs.setdefault(cur_organ, {'tags': [], 'deltas': {}})
+            continue
+
+        if first == 'in':
+            if cur_organ is None: err(i, "'in' outside an organ block"); continue
+            m = ORGAN_IN_RE.match(t)
+            if not m: err(i, "malformed in: %r" % t); continue
+            cur[1].organs[cur_organ]['tags'] += _dlist(m.group(1))
             continue
 
         if first == 'axis':
@@ -281,10 +397,12 @@ def load_tree(path, reg, dims, taxdim, auto_tax=None):
             ax = dims.get(an)
             if not ax or ax.kind != "num": err(i, "delta on unknown axis: %s" % an); continue
             if not (ax.imin <= dv <= ax.imax): err(i, "%s: delta %d out of target [%d..%d]" % (an, dv, ax.imin, ax.imax))
-            cur[1].deltas[an] = dv
+            if cur_organ is not None: cur[1].organs[cur_organ]['deltas'][an] = dv   # organ-level delta
+            else: cur[1].deltas[an] = dv                                            # class-level trait
             continue
 
         if first == 'inert':
+            cur_organ = None
             if cur is None or cur[0] != 'class': err(i, "'inert' outside a class block"); continue
             m = INERT_RE.match(t)
             if not m: err(i, "malformed inert: %r" % t); continue
@@ -298,6 +416,7 @@ def load_tree(path, reg, dims, taxdim, auto_tax=None):
             continue
 
         if first == 'need':
+            cur_organ = None
             if cur is None or cur[0] != 'class': err(i, "'need' outside a class block"); continue
             m = NEED_RE.match(t)
             if not m: err(i, "malformed need: %r" % t); continue
@@ -309,6 +428,7 @@ def load_tree(path, reg, dims, taxdim, auto_tax=None):
             continue
 
         if first == 'member':
+            cur_organ = None
             if cur is None or cur[0] != 'group': err(i, "'member' outside a group block"); continue
             m = MEMBER_RE.match(t)
             if not m: err(i, "malformed member: %r" % t); continue
@@ -317,6 +437,18 @@ def load_tree(path, reg, dims, taxdim, auto_tax=None):
 
         err(i, "malformed tree line: %r" % t)
     finish(cur)
+
+    # ----- organs: registry, tags, per-species accumulation, validation -----
+    # register organ names + all tags used, as values of the organ dimension
+    all_tags = set()
+    for nd in nodes.values():
+        for o, ob in nd.organs.items():
+            all_tags.update(ob['tags'])
+    if organdim is not None:
+        for o in sorted(organs_reg): organdim.vals[o] = reg.id(o)
+        for tg in sorted(all_tags):  organdim.vals.setdefault(tg, reg.id(tg))
+    elif organs_reg or all_tags:
+        err(0, "organs used but no 'organ' dimension declared in axes.src")
 
     # auto-declare FLAT classes for taxonomy targets of 'set' that weren't defined explicitly
     auto_created = []
@@ -389,7 +521,62 @@ def load_tree(path, reg, dims, taxdim, auto_tax=None):
         for nm2 in merged:
             if nm2 not in taxdim.vals or taxdim.vals[nm2] is None:
                 err(0, "need on unknown class/group: %s" % nm2)
-    return nodes, {"anc": anc, "groups": groups, "node_groups": node_groups, "acc": acc, "inert": inert_acc, "need": need_acc, "auto": auto_created}
+
+    # ----- organ validation + per-species accumulation -----
+    # allow* : union of 'allow' along the ancestry (extension only)
+    allow_acc = {}
+    for name in nodes:
+        s = set()
+        for a in anc[name]: s |= nodes[a].allow
+        allow_acc[name] = s
+    # E1: every organ named (allow / has / organ-block) must be in the 'organs' registry
+    for name, nd in nodes.items():
+        for o in nd.allow:
+            if o not in organs_reg: err(0, "%s: organ '%s' not in the 'organs' registry" % (name, o))
+        if nd.has:
+            for o in nd.has:
+                if o not in organs_reg: err(0, "%s: organ '%s' not in the 'organs' registry" % (name, o))
+        for o in nd.organs:
+            if o not in organs_reg: err(0, "%s: organ-block '%s' not in the 'organs' registry" % (name, o))
+    # E8/E9: a species has exactly one 'has'
+    for name, nd in nodes.items():
+        if nd.species:
+            if nd.has_count == 0: err(0, "species '%s': 'has' is mandatory" % name)
+            elif nd.has_count > 1: err(0, "species '%s': duplicate 'has'" % name)
+        if nd.has and not nd.species: err(0, "'has' on a non-species node: %s" % name)
+    # E4: has must be within allow* ; E5: organ-block only on an activated/allowed organ
+    for name, nd in nodes.items():
+        if nd.has:
+            for o in nd.has:
+                if o not in allow_acc[name]:
+                    err(0, "organ '%s' not allowed by the template of '%s' (allow* = {%s})" % (o, name, ", ".join(sorted(allow_acc[name]))))
+        for o in nd.organs:
+            ref = nd.has if nd.species else allow_acc[name]
+            if ref is not None and o not in ref:
+                err(0, "%s: organ-block '%s' not %s" % (name, o, "activated (absent from 'has')" if nd.species else "allowed (absent from the template)"))
+    # per-species accumulation: organs active + (deltas, tags) summed along the ancestry
+    organ_acc = {}      # species -> {organ -> {'deltas': {axis:val}, 'tags': [ids-ready names]}}
+    organs_active = {}  # species -> set(organ names), in declaration-stable order
+    for name, nd in nodes.items():
+        if not nd.species or not nd.has: continue
+        organs_active[name] = nd.has
+        per = {}
+        for o in nd.has:
+            deltas, tags = {}, []
+            for a in anc[name]:                               # self .. root ; abstract defaults flow down
+                ob = nodes[a].organs.get(o)
+                if not ob: continue
+                for an, dv in ob['deltas'].items(): deltas[an] = deltas.get(an, 0) + dv
+                for tg in ob['tags']:
+                    if tg not in tags: tags.append(tg)
+            per[o] = {'deltas': deltas, 'tags': tags}
+        organ_acc[name] = per
+    abstract = set(n for n, nd in nodes.items() if nd.abstract)
+
+    return nodes, {"anc": anc, "groups": groups, "node_groups": node_groups, "acc": acc,
+                   "inert": inert_acc, "need": need_acc, "auto": auto_created,
+                   "organ_acc": organ_acc, "organs_active": organs_active, "abstract": abstract,
+                   "organs_reg": organs_reg}
 
 # ---------- laws (laws.src) ----------
 class Law:
@@ -406,7 +593,7 @@ def resolve_cond(dims, cond, ln):
             if val not in d.zone_int: err(ln, "%s: unknown zone '%s'" % (name, val)); return None
             ilo, ihi = d.zone_int[val]
             return ("%d~%d~%d" % (d.id, ilo, ihi), d.id)
-        if d.kind in ("cat", "tax"):                         # cat/taxonomy -> value (token)
+        if d.kind in ("cat", "tax", "organ"):                # cat/taxonomy/organ -> value (token: organ or tag)
             if val not in d.vals or d.vals[val] is None: err(ln, "%s: unknown value '%s'" % (name, val)); return None
             return ("%d=%d" % (d.id, d.vals[val]), d.vals[val])
         err(ln, "%s: 'is' not applicable to this dimension" % name); return None
@@ -429,10 +616,22 @@ def resolve_cond(dims, cond, ln):
         return ("%d" % d.id, d.id)
     err(ln, "malformed condition: %r" % cond); return None
 
-def resolve_action(dims, act, ln):
+def _organ_dim(dims):
+    for d in dims.values():
+        if getattr(d, "kind", None) == "organ": return d
+    return None
+
+def resolve_action(dims, act, ln, ws=None, stations=None):
     act = act.strip()
     if act in ("keep", "pass"): return ""                     # readable no-op: reaction without transformation
-    if act == "give": return "give"                          # gives the incoming Mesh object
+    m = ACT_GIVE.match(act)                                   # give | give <organ>
+    if m:
+        organ = m.group(1)
+        if not organ: return "give"                          # bare give: hands the incoming Mesh object
+        od = _organ_dim(dims)
+        if od is None or organ not in od.vals or od.vals[organ] is None:
+            err(ln, "give: unknown organ '%s'" % organ); return None
+        return "give=%d" % od.vals[organ]                     # hands the Mesh object of this organ
     m = ACT_SET.match(act)                                   # set <dim> = <val>
     if m:
         nm, vn = m.group(1), m.group(2); d = dims.get(nm)
@@ -451,6 +650,12 @@ def resolve_action(dims, act, ln):
     if m:
         d = dims.get(m.group(1))
         if not d or d.kind != "label": err(ln, "add: unknown label '%s'" % m.group(1)); return None
+        # EA3: a domained label may only be engraved by a station exposing that domain
+        if d.domains and stations is not None:
+            exposed = stations.get(ws, set())
+            if not (set(d.domains) & exposed):
+                err(ln, "law at @%s: '%s' (domain %s) outside the station's domain %s"
+                        % (ws, d.name, "/".join(d.domains), ("{%s}" % "/".join(sorted(exposed))) if exposed else "{} (none)"))
         return "+%d" % d.id
     m = ACT_REM.match(act)                                   # remove <label>
     if m:
@@ -463,7 +668,7 @@ def load_laws(path, dims, stations):
     laws, ws, cur, do_list, i = [], None, None, [], 0
     def finalize(law, dl, ln):
         if law is None: return
-        if law.verdict is None: err(ln, "law %s: no verdict (react/danger)" % law.id)
+        if law.verdict is None: err(ln, "law %s: no verdict (react/danger/yield)" % law.id)
         law.do = "^".join(dl) if dl else None
         laws.append(law)
     for i, raw in enumerate(open(path, encoding="utf-8"), 1):
@@ -486,7 +691,7 @@ def load_laws(path, dims, stations):
         parts = t.split(None, 1)
         kw = parts[0].lower()
         rest = parts[1].strip() if len(parts) > 1 else ""
-        if kw in ("react", "danger") and rest == "":
+        if kw in ("react", "danger", "yield") and rest == "":
             cur.verdict = kw
         elif kw == "when":
             cur.when_raw.append(rest)
@@ -497,13 +702,13 @@ def load_laws(path, dims, stations):
             except ValueError: err(i, "non-integer cap")
         else:
             cur.actions_raw.append(t)
-            a = resolve_action(dims, t, i)
+            a = resolve_action(dims, t, i, ws, stations)
             if a: do_list.append(a)
     finalize(cur, do_list, i)
     return laws
 
 # ---------- emission ----------
-def emit(dims, taxdim, nodes, tx, laws, out):
+def emit(dims, taxdim, organdim, nodes, tx, laws, axis_aliases, stations, out):
     rows = []
     for d in dims.values():
         rows.append((d.id, d.name))
@@ -512,6 +717,11 @@ def emit(dims, taxdim, nodes, tx, laws, out):
     if taxdim:
         for vn, vid in taxdim.vals.items():
             if vid is not None: rows.append((vid, vn))
+    if organdim:
+        for vn, vid in organdim.vals.items():
+            if vid is not None: rows.append((vid, vn))
+    for al, aid in axis_aliases.items():                       # axis synonyms -> canonical id (forward only)
+        rows.append((aid, al))
     seen_id = set()
     for _id, name in sorted(rows):
         if (_id, name) in seen_id: continue
@@ -520,12 +730,15 @@ def emit(dims, taxdim, nodes, tx, laws, out):
     # INVERSE index id->canonical name (aliases excluded): idToName on the LSL side = O(1) read "tok:#<id>"
     rev = {}
     for d in dims.values():
-        rev[d.id] = d.name
+        rev[d.id] = d.name                                     # alias entries share the canonical Axis.name -> excluded
         if d.kind == "cat":
             for vn, vid in d.vals.items(): rev[vid] = vn
     if taxdim:
         for nm in nodes: rev[taxdim.vals[nm]] = nm
         for gname in tx["groups"]: rev[taxdim.vals[gname]] = gname
+    if organdim:
+        for vn, vid in organdim.vals.items():
+            if vid is not None: rev[vid] = vn
     for _id in sorted(rev):
         out.append("tok:#%d = %s" % (_id, rev[_id]))
     out.append("")
@@ -545,7 +758,34 @@ def emit(dims, taxdim, nodes, tx, laws, out):
         if nd_need:
             pairs = "^".join("%d:%d" % (taxdim.vals[k], v) for k, v in sorted(nd_need.items(), key=lambda kv: taxdim.vals[kv[0]]))
             out.append("tax:%d:need = %s" % (nid, pairs))
+        if name in tx.get("abstract", set()):
+            out.append("tax:%d:abstract = 1" % nid)
+        # organs (species only): active organs + per-organ accumulated trait/tags
+        oa = tx.get("organ_acc", {}).get(name)
+        if oa is not None and organdim is not None:
+            active = sorted(tx["organs_active"][name], key=lambda o: organdim.vals[o])
+            out.append("tax:%d:organs = %s" % (nid, "^".join(str(organdim.vals[o]) for o in active)))
+            for o in active:
+                oid = organdim.vals[o]
+                dl = oa[o]['deltas']
+                if dl:
+                    pairs = "^".join("%d:%d" % (dims[a].id, v) for a, v in sorted(dl.items(), key=lambda kv: dims[kv[0]].id))
+                    out.append("tax:%d:organ:%d:trait = %s" % (nid, oid, pairs))
+                tags = oa[o]['tags']
+                if tags:
+                    tids = sorted(organdim.vals[tg] for tg in tags)
+                    out.append("tax:%d:organ:%d:tags = %s" % (nid, oid, "^".join(str(x) for x in tids)))
     out.append("")
+    # domains : station -> domains ; axis/label -> domains (for the runtime's output-contract selection)
+    dom_rows = []
+    for st, ds in stations.items():
+        if ds: dom_rows.append("dom:st:%s = %s" % (st, "^".join(sorted(ds))))
+    for d in dims.values():
+        if getattr(d, "domains", None):
+            dom_rows.append("dom:tok:%d = %s" % (d.id, "^".join(d.domains)))
+    for r in sorted(set(dom_rows)):
+        out.append(r)
+    if dom_rows: out.append("")
     for seq, law in enumerate(laws):
         k = "law:%s:%s" % (law.ws, law.id)
         out.append("%s:when = %s" % (k, "^".join(c for c, _ in law.when)))
@@ -662,7 +902,7 @@ def write_craft_map(path, nodes, tx, dims, laws):
             for a in law.actions_raw:
                 m = SETO_RE.match(a)
                 if m: outs.append("%s=%s" % (m.group(1).split('.')[1], m.group(2)))
-                elif a.strip() == "give": give = True
+                elif ACT_GIVE.match(a.strip()): give = True
             inpart = ", ".join(ins) or "(any)"
             outpart = "GIVE (hands object)" if give else (", ".join(outs) if outs else "(in place)")
             g = "   [if %s]" % " & ".join(guards) if guards else ""
@@ -685,7 +925,7 @@ def main():
     lock = os.path.join(os.path.dirname(os.path.abspath(ap)) or ".", "ids.lock")
     reg = IdRegistry(lock)
     set_targets = scan_set_targets(lp)
-    dims, stations, taxdim = load_vocab(ap, reg)
+    dims, stations, taxdim, organdim, domains, axis_aliases = load_vocab(ap, reg)
     # auto-declare missing cat values that are 'set' targets (e.g. new meta.stage values)
     auto = []
     for dimname, vals in set_targets.items():
@@ -694,7 +934,7 @@ def main():
             for v in sorted(vals):
                 if v not in d.vals: d.vals[v] = reg.id(v); auto.append(dimname + " = " + v)
     auto_tax = set(set_targets.get(taxdim.name, set())) if taxdim is not None else set()
-    nodes, tx = load_tree(tp, reg, dims, taxdim, auto_tax)
+    nodes, tx = load_tree(tp, reg, dims, taxdim, organdim, auto_tax)
     auto += [taxdim.name + " = " + n for n in tx.get("auto", [])]
     laws = load_laws(lp, dims, stations)
     if auto:
@@ -708,7 +948,7 @@ def main():
     write_law_order(os.path.join(d_, "laws_order.txt"), laws)
     write_craft_map(os.path.join(d_, "craft_map.txt"), nodes, tx, dims, laws)
     out = []
-    emit(dims, taxdim, nodes, tx, laws, out)
+    emit(dims, taxdim, organdim, nodes, tx, laws, axis_aliases, stations, out)
     sys.stdout.write("\n".join(out) + "\n")
 
 if __name__ == "__main__":
