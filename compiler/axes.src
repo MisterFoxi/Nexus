@@ -126,6 +126,12 @@ axis org.viscosity               # thin <-> thick (middle = ordinary)
     range   thin   -7 .. -3
     range   thick  3 .. 7
 
+axis org.purity                  # foul -> potable -> sterile (intrinsic; raised by process, read by threshold)
+    range   0 .. 10
+    range   foul     0 .. 2
+    range   potable  3 .. 6
+    range   sterile  7 .. 10
+
 # ===== output labels =====
 # 'label [: <domain,...>]' — a domained label may only be engraved (add) by a
 # station exposing that domain (EA3).

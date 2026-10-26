@@ -28,7 +28,7 @@
 #  Declare class traits BEFORE organ blocks (an organ block captures following axis lines).
 # ==========================================================================
 
-organs root, bark,leaf, flower, fruit, stem, twig, bark, meat, hide, bone, blood, fat
+organs root, bark, leaf, flower, fruit, stem, twig, trunk, branch, meat, hide, bone, blood, fat
 
 # Vegetal kingdom
 abstract plant
@@ -68,9 +68,10 @@ species kanda : mint               # concrete species with anatomy
         in   smokable
 
 species willow : tree
+    has  bark
     organ bark
         in grindable
-        axis org.bitter = 2 
+        axis org.bitter = 2
         
 
 
@@ -88,6 +89,7 @@ class liquid                  # base class for liquids
 class water : liquid
     axis org.smell = 0
     axis org.viscosity = -4   # runny (0 + -4 via inheritance)
+    axis org.purity = 1       # raw water = foul; boiling -> potable, distilling -> sterile (nonzero so 'scale' can lift it)
 
 class oil : liquid
     axis org.viscosity = 5    # thick (0 + 5 via inheritance)
@@ -126,5 +128,4 @@ group salad
 
 group cuttable                # classes harvestable at the cutting_board
     member leaf_plant
-    member bark
     member root

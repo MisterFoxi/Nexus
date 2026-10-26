@@ -121,6 +121,14 @@ law poultice
     scale act.fluidifying x1.5         # the liquid "binds" the paste, e.g.
 
 
+@alambic
+law distill_water                # potable water -> sterile (medical purification; the "knowledge" lever)
+    when meta.taxonomy is water
+    when org.purity is potable
+    react
+    scale org.purity x3          # 3 -> 9 (sterile, clamped to 10) ; unlocks 'perf' (IV saline)
+
+
 @cauldron
 law overcooked
     when  fab.thermal is boiling
@@ -144,21 +152,24 @@ law vomitif
     react
     add   act.vomiting
 
-law purifiedwater
+law boil_water                   # raw water -> potable (tea-grade). 'is foul' => acts once, no re-boil stacking.
     when fab.thermal is boiling
     when meta.taxonomy is water
+    when org.purity is foul
     react
-    set meta.stage = purified
+    scale org.purity x3          # 1 -> 3 (potable) ; enough for tea / brine, NOT for medical use
 
 
-law perf
-    when meta.stage is purified
+law perf                         # sterile water + ~isotonic salt -> IV saline (medical grade)
+    when meta.taxonomy is water
+    when org.purity >= 7         # sterile only (reached by distillation, not mere boiling)
     when org.salty <= 2          # pincee -> isotonique
     react
     set meta.stage = saline_iv
 
-law brine
-    when meta.stage is purified
+law brine                        # potable water + lots of salt -> brine (sterility not required)
+    when meta.taxonomy is water
+    when org.purity >= 3
     when org.salty >= 3          # beaucoup -> saumure
     react
     set meta.stage = brine
