@@ -218,11 +218,13 @@ setStats(){
     integer ef = effPerMille();
     if(gExpiry > 0)     d += " | eff " + (string)(ef/10) + "%";
     llSetObjectDesc(d);
+    integer textLink = 0; // An unlinked prim is link 0; a linked object's root is link 1.
+    if(llGetLinkNumber() != 0) textLink = LINK_ROOT;
     if(gShowHover){
         string t = gName + "\n(x" + (string)gQuantity + ")";
         if(gExpiry > 0) t += " " + (string)(ef/10) + "%";
-        llSetLinkPrimitiveParamsFast(LINK_ROOT, [PRIM_TEXT, t, <0.85,0.95,0.85>, 1.0]);
-    } else llSetLinkPrimitiveParamsFast(LINK_ROOT, [PRIM_TEXT, "", ZERO_VECTOR, 0.0]);
+        llSetLinkPrimitiveParamsFast(textLink, [PRIM_TEXT, t, <0.85,0.95,0.85>, 1.0]);
+    } else llSetLinkPrimitiveParamsFast(textLink, [PRIM_TEXT, "", ZERO_VECTOR, 0.0]);
 }
 
 announce(){
