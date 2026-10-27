@@ -36,7 +36,7 @@ integer EVAL_RES = 970201;           // evaluator -> main: result
 integer NOTOK    = -999999;          // Sentinel for an unknown token.
 
 integer GS = 8;                      // Fields per basket group (v0.7: + organ).
-string  VERSION = "Workshop_Eval v0.7 (2026-10-24)";
+string  VERSION = "Workshop_Eval v0.7.1 (2026-10-27)";
 
 // ---- configuration subset used by this evaluator ----
 list    gGenres;
@@ -459,6 +459,15 @@ buildOutput(list groups){
 
     oTax   = idToName(outTaxId);
     oStage = idToName(outStageId);
+    // Publish the transformed stage in the product name used by CONFIG and HERE.
+    // Replace a previous stage suffix instead of accumulating /chopped/minced/...
+    string inputStage = llList2String(groups, 3);
+    string suffix = "/" + inputStage;
+    integer baseLength = llStringLength(oName) - llStringLength(suffix);
+    if(inputStage != "" && baseLength > 0
+        && llGetSubString(oName, baseLength, -1) == suffix)
+        oName = llGetSubString(oName, 0, baseLength - 1);
+    if(oStage != "") oName += "/" + oStage;
 }
 
 // Parse newline/pipe basket input into a flat list with stride 7.

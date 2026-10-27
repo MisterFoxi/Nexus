@@ -27,7 +27,7 @@ class World(h.World):
         self.physical=[]
         self.pause_codes=set();self.pause_build=False
         self.tokens={
-            'meta.taxonomy':14,'meta.stage':10,'mint':16,'leaf':11,'chopped':28,
+            'meta.taxonomy':14,'meta.stage':10,'mint':16,'leaf':11,'chopped':28,'minced':29,
             'meta.organ':56,'act.nervous':5,'fab.grind':22,'root':17,'plant':23,
             'cuttable':27,'leaf_plant':15,'powder':12}
         for name,number in self.tokens.items():
@@ -345,6 +345,51 @@ class SplitTests(unittest.TestCase):
         messages=[text for obj,text in self.w.logs if obj==BENCH and 'Free:' in text]
         self.assertEqual(len(messages),5)
 
+    def test_container_object_and_here_scan_publish_transformed_name(self):
+        class ContainerScript(Script):
+            def call(self,name,args):
+                if name=='state_entry':return
+                return super().call(name,args)
+            def builtin(self,name,args):
+                if name=='llSetObjectName':self.world.container_name=args[0];return
+                if name=='llSetLinkPrimitiveParamsFast':return
+                if name=='llSay':return
+                return super().builtin(name,args)
+        container=ContainerScript(self.w,'Component.lsl',CONTAINER,{'gRole':2})
+        self.bind();self.add(name='Kanda leaf')
+        self.selected.call('basketAction',['CRAFT_STARTED',RUN]);self.w.drain(20000)
+        self.submit();self.w.containers[CONTAINER]=0
+        self.advance(1);self.advance(2);self.collect()
+        self.assertEqual(self.w.container_name,'Kanda leaf/chopped')
+        self.assertEqual(container.global_vars['gName'],'Kanda leaf/chopped')
+        self.assertEqual(container.global_vars['gStage'],'chopped')
+        here=[message[3] for message in self.w.radio if message[0]==CONTAINER and message[3].startswith('HERE|')][-1]
+        self.assertEqual(here.split('|')[2],'Kanda leaf/chopped')
+        self.assertEqual(here.split('|')[7],'chopped')
+
+    def test_existing_filled_container_reports_stage_without_changing_saved_dna(self):
+        class ExistingContainer(Script):
+            def call(self,name,args):
+                if name=='state_entry':return
+                return super().call(name,args)
+            def builtin(self,name,args):
+                if name=='llSetLinkPrimitiveParamsFast':self.world.params.append(args);return
+                return super().builtin(name,args)
+        container=ExistingContainer(self.w,'Component.lsl',CONTAINER,{'gRole':2,'gReady':1,
+            'gName':'Kanda leaf','gStage':'chopped','gTaxonomy':'mint','gQuantity':5})
+        container.call('setStats',[])
+        self.assertEqual(self.w.params[-1][1][1],'Kanda leaf/chopped\n(x5)')
+        for channel in [-918273,-918274]:
+            container.call('listen',[channel,'',HUD,'PING']);self.w.drain(20000)
+            here=[m[3] for m in self.w.radio if m[0]==CONTAINER and m[2]==channel and m[3].startswith('HERE|')][-1]
+            self.assertEqual(here.split('|')[2],'Kanda leaf/chopped')
+        self.assertEqual(container.global_vars['gName'],'Kanda leaf')
+        self.assertEqual(container.global_vars['gQuantity'],5)
+        container.global_vars['gName']='Kanda leaf/chopped'
+        self.assertEqual(container.call('productName',[]),'Kanda leaf/chopped')
+        container.global_vars['gRole']=1;container.global_vars['gName']='Kanda leaf'
+        self.assertEqual(container.call('productName',[]),'Kanda leaf')
+
 class EvalParityTests(unittest.TestCase):
     def result(self,filename,groups,header='',stream=False,mode='react'):
         w=World()
@@ -354,6 +399,9 @@ class EvalParityTests(unittest.TestCase):
         if mode=='danger':
             w.storage[BENCH,'law:cutting_board:fixture:verdict']='1'
             w.storage[BENCH,'law:cutting_board:fixture:do']='10=28^qty*0.6^eff*0.5^5*2'
+        if mode=='mince':
+            w.storage[BENCH,'law:cutting_board:fixture:when']='14=15^10=28'
+            w.storage[BENCH,'law:cutting_board:fixture:do']='10=29'
         script=Script(w,filename,BENCH);w.drain(20000)
         if stream:
             w.storage[BENCH,'ws:input']=json.dumps([RUN,'READY',len(groups),len(groups),0,''])
@@ -372,7 +420,12 @@ class EvalParityTests(unittest.TestCase):
                             ['Other',2,'mint','leaf','act.nervous=-1',3600,500,'root']]
                     old,_,_=self.result('Workshop_Eval.before.lsl',groups,'fab.grind=5',mode=mode)
                     new,_,_=self.result('Workshop_Eval.lsl',groups,'fab.grind=5',stream=True,mode=mode)
-                    self.assertEqual(new,old)
+                    if old.startswith('1|'):
+                        previous=old.split('|');current=new.split('|')
+                        self.assertEqual(current[:2]+current[3:],previous[:2]+previous[3:])
+                        self.assertEqual(current[2],previous[2]+'/'+current[7])
+                    else:
+                        self.assertEqual(new,old)
 
     def test_duplicate_stream_request_returns_same_cached_random_result(self):
         groups=[['Mint',1,'mint','leaf','act.nervous=2',86400,750,'leaf']]
@@ -380,5 +433,13 @@ class EvalParityTests(unittest.TestCase):
         del w.storage[BENCH,'law:cutting_board:fixture:when']
         script.call('link_message',[1,970202,'',RUN]);w.drain(20000)
         self.assertEqual(json.loads(w.storage[BENCH,'ws:eval:result'])[1],result)
+
+    def test_next_transformation_replaces_previous_stage_suffix(self):
+        groups=[['Kanda leaf/chopped',5,'mint','chopped','act.nervous=2',86400,750,'']]
+        result,_,_=self.result('Workshop_Eval.lsl',groups,stream=True,mode='mince')
+        fields=result.split('|')
+        self.assertEqual(fields[2],'Kanda leaf/minced')
+        self.assertEqual(fields[3],'5')
+        self.assertEqual(fields[7],'minced')
 
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -63,7 +63,7 @@ integer HS = 7;
 integer gStockFault;
 string  SEP = "|";
 integer PROTO = 5;          // v5 adds the organ field in HERE and organ->mesh harvest delivery.
-string  VERSION = "Component v0.7.1 (2026-10-27)"; // Bump script revision on changes; PROTO is independent.
+string  VERSION = "Component v0.7.2 (2026-10-27)"; // Bump script revision on changes; PROTO is independent.
 
 integer ROLE_NONE  = 0;
 integer ROLE_NC    = 1;     // Defined by a notecard.
@@ -101,6 +101,15 @@ integer gDevListen = -1;
 integer gVersionListen = -1;
 
 string trim(string s){ return llStringTrim(s, STRING_TRIM); }
+
+// Filled containers display their existing stage; raw saved DNA remains unchanged.
+string productName(){
+    if(gRole != ROLE_BLANK || gStage == "" || gName == gStage) return gName;
+    string suffix = "/"+gStage;
+    integer start = llStringLength(gName)-llStringLength(suffix);
+    if(start >= 0 && llGetSubString(gName,start,-1) == suffix) return gName;
+    return gName+suffix;
+}
 
 reportVersion(){
     llOwnerSay("[Nexus] "+VERSION+" | protocol "+(string)PROTO);
@@ -228,7 +237,7 @@ setStats(){
     integer textLink = 0; // An unlinked prim is link 0; a linked object's root is link 1.
     if(llGetLinkNumber() != 0) textLink = LINK_ROOT;
     if(gShowHover){
-        string t = gName + "\n(x" + (string)gQuantity + ")";
+        string t = productName() + "\n(x" + (string)gQuantity + ")";
         if(gExpiry > 0) t += " " + (string)(ef/10) + "%";
         llSetLinkPrimitiveParamsFast(textLink, [PRIM_TEXT, t, <0.85,0.95,0.85>, 1.0]);
     } else llSetLinkPrimitiveParamsFast(textLink, [PRIM_TEXT, "", ZERO_VECTOR, 0.0]);
@@ -236,14 +245,14 @@ setStats(){
 
 announce(){
     if(!gReady || gQuantity <= 0 || expired()) return;
-    llWhisper(CRAFT_CHANNEL, "HERE"+SEP+(string)llGetKey()+SEP+gName+SEP+(string)gQuantity
+    llWhisper(CRAFT_CHANNEL, "HERE"+SEP+(string)llGetKey()+SEP+productName()+SEP+(string)gQuantity
         +SEP+(string)gUse+SEP+(string)gLifeSecs+SEP+gTaxonomy+SEP+gStage+SEP+gProps+SEP+(string)PROTO+SEP+(string)effPerMille()+SEP+gMesh+SEP+gOrgan);
 }
 
 // Publish the identity after loading a notecard, restoring state, or receiving CONFIG.
 finalize(){
     if(gLifeSecs > 0 && gExpiry == 0) gExpiry = llGetUnixTime() + gLifeSecs;
-    llSetObjectName(gName);
+    llSetObjectName(productName());
     if(!restoreStock()) return;
     saveKVP();
     gReady = TRUE;
@@ -504,7 +513,7 @@ default{
             // Discovery stays compatible with the current development HUD.
             if(verb == "PING"){
                 if(gReady && gQuantity > 0 && !expired())
-                    llWhisper(chan,"HERE"+SEP+(string)llGetKey()+SEP+gName+SEP+(string)gQuantity
+                    llWhisper(chan,"HERE"+SEP+(string)llGetKey()+SEP+productName()+SEP+(string)gQuantity
                         +SEP+(string)gUse+SEP+(string)gLifeSecs+SEP+gTaxonomy+SEP+gStage+SEP+gProps
                         +SEP+(string)PROTO+SEP+(string)effPerMille()+SEP+gMesh+SEP+gOrgan);
                 else if(!gReady && gRole == ROLE_BLANK)
