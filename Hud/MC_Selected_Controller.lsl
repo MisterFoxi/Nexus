@@ -31,6 +31,10 @@ string gExportType;
 key gTypeSource = NULL_KEY;
 string gTypeHere;
 integer gTypeIndex;
+integer gValidating;
+integer gValidatePending;
+integer gValidateIndex;
+key gValidateRun = NULL_KEY;
 
 integer validKey(key value)
 {
@@ -88,7 +92,7 @@ integer saveFlag(string name, integer value)
 
 queueDiscard()
 {
-    if (!gDiscard || gFault) return;
+    if (!gDiscard || gFault || gValidating) return;
     if ((!gDiscardSweep || gDiscard == 2) && (gBusy || gActive != NULL_KEY)) return;
     gDiscardRun = llGenerateKey();
     llMessageLinked(LINK_THIS, 918316, "", gDiscardRun);
@@ -96,7 +100,7 @@ queueDiscard()
 
 render()
 {
-    if (gFault) return;
+    if (gFault || gValidating) return;
     gRender = llGenerateKey();
     gScanning = TRUE; gIndex = 0; gCount = 0; gAvailable = FALSE;
     gKeys = []; gView = [];
@@ -150,6 +154,7 @@ pump()
 
 start(string verb, key source, string here)
 {
+    if (gValidating) return;
     if (verb != "COMMIT" && !gDiscard && (workshopBlocked() || gExportTicket != NULL_KEY || gTypeSource != NULL_KEY))
     { llOwnerSay("[Selected] Workshop treatment pending. Basket retained."); return; }
     if (gCraftStarted && verb != "COMMIT")
@@ -159,7 +164,15 @@ start(string verb, key source, string here)
     list row = readRow(source);
     if (gFault) return;
     if (llList2String(row, 2) != "")
-    { llOwnerSay("[Selected] This source has an unresolved request. Nothing sent."); return; }
+    {
+        // Explicit user retry: keep the exact persisted UUID, verb and quantity.
+        // Component repeats its receipt instead of applying an acknowledged operation twice.
+        gActive = llList2Key(row, 2);
+        gBusy = TRUE;
+        llMessageLinked(LINK_THIS, 918301, llList2String(row, 3) + "|" + (string)source
+            + "|" + llList2String(row, 4), gActive);
+        return;
+    }
     if ((verb == "RETURN" || verb == "COMMIT") && llList2Integer(row, 0) < 1) return;
     integer amount = 1;
     if (verb == "COMMIT") amount = llList2Integer(row, 0);
@@ -198,6 +211,7 @@ string ingredientType(string text)
 
 typePump()
 {
+    if (gValidating) return;
     if (gTypeSource == NULL_KEY) return;
     if (gDiscard || gCraftStarted) { gTypeSource = NULL_KEY; gTypeHere = ""; return; }
     if (workshopBlocked()) { gTypeSource = NULL_KEY; return; }
@@ -280,7 +294,7 @@ exportRequest(string text, key ticket)
     {
         if (llList2String(session, 5) != "SNAPSHOT") return;
         gExportTicket = ticket;
-        if (!gCraftStarted || gDiscard || gBusy || gActive != NULL_KEY || gTypeSource != NULL_KEY)
+        if (!gCraftStarted || gDiscard || gBusy || gActive != NULL_KEY || gTypeSource != NULL_KEY || gValidating)
         { exportError("Basket update pending or preparation not started."); return; }
         gExportCheck = TRUE; gExportIndex = 0; gExportCount = 0; gExportType = "";
         llMessageLinked(LINK_THIS, 918382, "", ticket);
@@ -293,6 +307,55 @@ exportRequest(string text, key ticket)
     if (index < 0 || (string)index != llList2String(fields, 1)) return;
     gExportTicket = ticket; gExportCheck = FALSE; gExportIndex = index;
     llMessageLinked(LINK_THIS, 918382, "", ticket);
+}
+
+// Refresh validates saved UUIDs, not PING replies: a silent but present source is retained.
+// Freeze offset-based traversals while deleting; an active export finishes first.
+queueValidation()
+{
+    if (!gValidatePending || gValidating || gFault || gExportTicket != NULL_KEY) return;
+    gValidatePending = FALSE; gValidating = TRUE; gValidateIndex = 0;
+    gValidateRun = llGenerateKey();
+    gRender = llGenerateKey(); gScanning = TRUE;
+    gDiscardRun = NULL_KEY; gDiscardIndex = 0; gTypeIndex = 0;
+    llMessageLinked(LINK_THIS, 918386, "", gValidateRun);
+}
+
+validatePump()
+{
+    if (!gValidating || gFault) return;
+    list keys = llLinksetDataFindKeys("^mc:simple:row:", gValidateIndex, 1);
+    if (llGetListLength(keys))
+    {
+        string name = llList2String(keys, 0);
+        key source = (key)llGetSubString(name, llStringLength(PREFIX), -1);
+        if (!validKey(source)) { fault("Invalid source key."); return; }
+        if (llGetListLength(llGetObjectDetails(source, [OBJECT_NAME]))) ++gValidateIndex;
+        else
+        {
+            list row = readRow(source);
+            if (gFault) return;
+            key pending = llList2Key(row, 2);
+            integer removed = llLinksetDataDelete(name);
+            if (removed != 0 && removed != 4) { fault("Cannot remove missing source."); return; }
+            // Keep this offset: deleting a key shifts the next key into its place.
+            if (gActive == pending) gActive = NULL_KEY;
+            if (validKey(pending)) llMessageLinked(LINK_THIS, 918304, "", pending);
+            // No STOCK event: this is a deleted object, and STOCK would cancel Nearby's scan.
+        }
+        llMessageLinked(LINK_THIS, 918386, "", gValidateRun);
+        return;
+    }
+    gValidating = FALSE; gValidateRun = NULL_KEY;
+    render();
+    llMessageLinked(LINK_THIS, 918291, "P1", NULL_KEY);
+    if (gTypeSource != NULL_KEY)
+    {
+        if (llGetListLength(llGetObjectDetails(gTypeSource, [OBJECT_NAME])))
+            llMessageLinked(LINK_THIS, 918384, "", gTypeSource);
+        else { gTypeSource = NULL_KEY; gTypeHere = ""; }
+    }
+    queueDiscard(); queueValidation();
 }
 
 // REVIEW: discard and craft_started are separate writes. A reset/write failure between them can leave a partially finalized basket state.
@@ -319,10 +382,10 @@ finishDiscard()
 
 discardPump()
 {
-    if (!gDiscard) return;
+    if (!gDiscard || gValidating) return;
     if ((!gDiscardSweep || gDiscard == 2) && (gBusy || gActive != NULL_KEY)) return;
-    // REVIEW: zero rows are never collected. Unique sources accumulate persistent records and increase every full traversal cost.
-    // Never delete row keys: zero rows keep stable progressive offsets.
+    // Discard keeps zero rows so its offsets remain stable.
+    // Refresh owns deletion and pauses this traversal while removing missing sources.
     list keys = llLinksetDataFindKeys("^mc:simple:row:", gDiscardIndex, 1);
     if (llGetListLength(keys))
     {
@@ -515,6 +578,9 @@ default
                 + " bytes; observed minimum: " + (string)gMinFree + "."); return;
         }
         if (gFault) return;
+        if (number == 918270 && validKey(request))
+        { gValidatePending = TRUE; queueValidation(); return; }
+        if (number == 918386 && request == gValidateRun) { validatePump(); return; }
         if (number == 918380) { exportRequest(text, request); return; }
         if (number == 918382 && request == gExportTicket) { exportPump(); return; }
         if (number == 918384 && request == gTypeSource) { typePump(); return; }
@@ -527,6 +593,7 @@ default
             gBusy = text != "IDLE";
             // Relay reset/timeout releases other sources; saved pending rows remain blocked.
             if (!gBusy) gActive = NULL_KEY;
+            queueValidation();
             queueDiscard();
             return;
         }
