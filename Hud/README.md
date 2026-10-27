@@ -11,7 +11,7 @@ The root contains only the **current HUD scripts**, to install in the linkset's 
 | Animation | MC_Atlas_Player, MC_P1_Animation |
 | Button textures (connected to animation controller) | MC_Playback_Buttons |
 | Chopping progress on P1_PROGRESS | MC_Chop_Progress |
-| Workshop HUD endpoint (Workshop wiring pending) | MC_Workshop_Link |
+| Workshop HUD endpoint | MC_Workshop_Link |
 
 ## Current installation
 
@@ -45,5 +45,6 @@ From PowerShell, run `./tests/run_hud_checks.ps1`. It covers selection, the craf
 The chopping controller now commits the existing craft_started latch before first
 playback, tracks 10-second active-time progress and never reoffers START for a used
 preparation. CONT resumes; confirmed Discard releases the latch. Source reservations
-and discard remain with the existing basket/transaction owners; final craft output
-and any additional quality/result rules still need implementation.
+and discard remain with the existing basket/transaction owners. Product evaluation
+and physical output are delegated to the five Workshop scripts; see
+[Workshop installation and memory checks](../Workshop/README.md).

@@ -21,6 +21,16 @@
 // See Workshop.lsl's header for details and the remaining configuration keys.
 // ============================================================
 
+integer EVAL_STREAM = 970202;        // bounded stored input; id = treatment UUID
+integer EVAL_STEP = 970203;
+integer gConfigReady;
+integer gStreaming;
+key gStreamRun = NULL_KEY;
+integer gStreamIndex;
+integer gStreamCount;
+list gPrincipal;
+integer gMinFreshness;
+string gStreamAction;
 integer EVAL_REQ = 970200;           // main -> evaluator: basket
 integer EVAL_RES = 970201;           // evaluator -> main: result
 integer NOTOK    = -999999;          // Sentinel for an unknown token.
@@ -74,6 +84,7 @@ string findConfigNc(){
 }
 // REVIEW: configuration reload resets genres only; omitted numeric fields retain previous values and requests can arrive mid-load.
 loadConfig(){
+    gConfigReady = FALSE;
     gGenres = [];
     gCfgNc = findConfigNc();
     if(gCfgNc == "") return;                        // The main script already reports a missing configuration notecard.
@@ -163,10 +174,10 @@ integer fluxAxis(integer v){                        // Apply +/- FLUX_ABS while 
 
 // Basket groups (stride 7) -> aggregate: batch-scale duplicates, then sum groups.
 // Build a new aggregate per request; token presence, inert axes, and required tokens are unioned across inputs.
-buildAggregate(list groups){
+clearAggregate(){
     gAxId=[]; gAxVal=[]; gToks=[]; gInert=[]; gNeed=[]; gBatchSpoilMul=1000;
-    integer n = llGetListLength(groups); integer gi;
-    for(gi=0; gi<n; gi+=GS){
+}
+addGroup(list groups, integer gi){
         integer c  = (integer)llList2String(groups, gi+1);
         string tax = llList2String(groups, gi+2);
         // REVIEW: validate group stride, positive count, known taxonomy/stage, and freshness before using input metadata.
@@ -242,7 +253,11 @@ buildAggregate(list groups){
                 }
             }
         }
-    }
+}
+buildAggregate(list groups){
+    clearAggregate();
+    integer i;
+    for(i=0; i<llGetListLength(groups); i+=GS) addGroup(groups, i);
 }
 
 // ---------- inject action axes before resolving rules ----------
@@ -361,11 +376,14 @@ buildOutput(list groups){
     oMed   = "";
     // Inherit the lowest freshness among all inputs.
     oEff = 1000;
+    if(gStreaming) oEff = gMinFreshness;
+    else {
     integer n = llGetListLength(groups); integer gi;
     for(gi=0; gi<n; gi+=GS){
         // REVIEW: input freshness is not validated or clamped to 0..1000 before inheritance.
         integer eE = (integer)llList2String(groups, gi+6);
         if(eE < oEff) oEff = eE;
+    }
     }
     integer outTaxId   = nameToId(llList2String(groups, 2));
     integer outStageId = nameToId(llList2String(groups, 3));
@@ -456,36 +474,16 @@ list parseBasket(string s){
     return out;
 }
 
-default{
-    state_entry(){ llOwnerSay("[MedicalGS] "+VERSION); loadConfig(); }
 
-    changed(integer c){ if(c & CHANGED_INVENTORY) loadConfig(); }
-
-    dataserver(key q, string data){
-        if(q != gCfgQuery) return;
-        if(data == EOF){
-            if(llGetListLength(gGenres)==0) llOwnerSay("[Eval] no Genre set in bench_config.");
-            return;
-        }
-        applyCfgLine(data);
-        gCfgLine++; gCfgQuery = llGetNotecardLine(gCfgNc, gCfgLine);
-    }
-
-    // REVIEW: EVAL_REQ is shared with Field; multiple clients/evaluators in one linkset receive each other's broadcast traffic.
-    link_message(integer sender, integer num, string str, key id){
-        if(num != EVAL_REQ) return;
-        string actHdr = ""; string body = str;
-        integer sp = llSubStringIndex(str, "\n\n");
-        if(sp != -1){
-            if(sp > 0) actHdr = llGetSubString(str, 0, sp-1);   // sp==0 means an empty header; llGetSubString(...,0,-1) would return everything.
-            body = llGetSubString(str, sp+2, -1);
-        }
-        list groups = parseBasket(body);
-        if(llGetListLength(groups) < GS){                 // Empty or malformed basket.
-            llMessageLinked(LINK_SET, EVAL_RES, "0", NULL_KEY);
-            return;
-        }
-        buildAggregate(groups);
+sendResult(string result, key request){
+    if(gStreaming){
+        integer stored = llLinksetDataWrite("ws:eval:result", llList2Json(JSON_ARRAY,[request,result]));
+        if(stored == 0 || stored == 5) llMessageLinked(LINK_THIS,EVAL_RES,"STORED",request);
+        else llMessageLinked(LINK_THIS,EVAL_RES,"ERROR|Cannot save evaluation result.",request);
+        gStreamRun=NULL_KEY;
+    } else llMessageLinked(LINK_SET,EVAL_RES,result,request);
+}
+evaluate(list groups, string actHdr, key request){
         // REVIEW: require a complete configuration and loaded rule data before evaluating; partial loading can yield false inert results.
         injectAction(actHdr);
         resolve();
@@ -506,22 +504,86 @@ default{
                 }
             }
             if(giveList != ""){
-                llMessageLinked(LINK_SET, EVAL_RES, "2|"+giveList, NULL_KEY);
+                sendResult("2|"+giveList, request);
                 gAxId=[]; gAxVal=[]; gToks=[]; gInert=[]; gNeed=[]; rYieldGives=[];
                 return;
             }
         }
         if(!rFound){
-            llMessageLinked(LINK_SET, EVAL_RES, "0", NULL_KEY);   // Inert: no matching rule.
+            sendResult("0", request);   // Inert: no matching rule.
         } else if(llListFindList(llParseString2List(rDo, ["^"], []), ["give"]) != -1){
-            llMessageLinked(LINK_SET, EVAL_RES, "2", NULL_KEY);   // Legacy direct delivery: bare "give".
+            sendResult("2", request);   // Legacy direct delivery: bare "give".
         } else {
             buildOutput(groups);
             string res = "1|"+(string)rVerdict+"|"+oName+"|"+(string)oQty+"|"+(string)oUse
                 +"|"+(string)oLife+"|"+oTax+"|"+oStage+"|"+oProps+"|"+oMed+"|"+(string)oEff;
-            llMessageLinked(LINK_SET, EVAL_RES, res, NULL_KEY);
+            sendResult(res, request);
         }
-        // Release temporary aggregate lists.
-        gAxId=[]; gAxVal=[]; gToks=[]; gInert=[]; gNeed=[]; rYieldGives=[];
+
+    gAxId=[]; gAxVal=[]; gToks=[]; gInert=[]; gNeed=[]; rYieldGives=[];
+    gPrincipal=[]; gStreaming=FALSE;
+}
+streamStep(){
+    if(gStreamRun == NULL_KEY) return;
+    if(gStreamIndex >= gStreamCount){
+        evaluate(gPrincipal,gStreamAction,gStreamRun);
+        return;
+    }
+    list group=llParseStringKeepNulls(llLinksetDataRead("ws:in:group:"+(string)gStreamIndex),["|"],[]);
+    if(llGetListLength(group) != GS || llList2Integer(group,1) < 1){
+        llMessageLinked(LINK_THIS,EVAL_RES,"ERROR|Invalid stored evaluation group.",gStreamRun);
+        gStreamRun=NULL_KEY; gStreaming=FALSE; clearAggregate(); return;
+    }
+    if(gStreamIndex == 0) gPrincipal=group;
+    integer freshness=llList2Integer(group,6);
+    if(freshness < gMinFreshness) gMinFreshness=freshness;
+    addGroup(group,0);
+    ++gStreamIndex;
+    llMessageLinked(LINK_THIS,EVAL_STEP,"",gStreamRun);
+}
+evalReady(){ if(gConfigReady) llMessageLinked(LINK_THIS,970299,"EVAL",NULL_KEY); }
+default{
+    state_entry(){ llOwnerSay("[MedicalGS] "+VERSION+"; progressive Workshop input"); loadConfig(); }
+    changed(integer c){ if(c & CHANGED_INVENTORY) loadConfig(); }
+    dataserver(key q,string data){
+        if(q != gCfgQuery) return;
+        if(data == EOF){
+            gConfigReady=llGetListLength(gGenres)>0;
+            if(!gConfigReady) llOwnerSay("[Eval] no Genre set in bench_config.");
+            evalReady(); return;
+        }
+        applyCfgLine(data); ++gCfgLine; gCfgQuery=llGetNotecardLine(gCfgNc,gCfgLine);
+    }
+    link_message(integer sender,integer num,string str,key id){
+        if(num == 970298){ evalReady(); return; }
+        if(num == 970290){ llOwnerSay("[Workshop Eval] Free: "+(string)llGetFreeMemory()); return; }
+        if(num == EVAL_STEP && sender == llGetLinkNumber() && id == gStreamRun){ streamStep(); return; }
+        if(num == EVAL_STREAM && sender == llGetLinkNumber()){
+            if(id == NULL_KEY || !gConfigReady) return;
+            list cached=llJson2List(llLinksetDataRead("ws:eval:result"));
+            if(llList2Key(cached,0) == id){ llMessageLinked(LINK_THIS,EVAL_RES,"STORED",id); return; }
+            if(gStreamRun != NULL_KEY) return;
+            list input=llJson2List(llLinksetDataRead("ws:input"));
+            if(llList2Key(input,0) != id || llList2String(input,1) != "READY" || llList2Integer(input,3)<1){
+                llMessageLinked(LINK_THIS,EVAL_RES,"ERROR|Stored input not ready.",id); return;
+            }
+            clearAggregate(); gStreaming=TRUE; gStreamRun=id;
+            gStreamIndex=0; gStreamCount=llList2Integer(input,3); gMinFreshness=1000;
+            gPrincipal=[]; gStreamAction=str;
+            llMessageLinked(LINK_THIS,EVAL_STEP,"",id); return;
+        }
+        // Field's existing direct request remains available in its own linkset.
+        if(num != EVAL_REQ || gStreamRun != NULL_KEY) return;
+        string actHdr=""; string body=str;
+        integer sp=llSubStringIndex(str,"\n\n");
+        if(sp != -1){
+            if(sp>0) actHdr=llGetSubString(str,0,sp-1);
+            body=llGetSubString(str,sp+2,-1);
+        }
+        list groups=parseBasket(body);
+        if(llGetListLength(groups)<GS || llGetListLength(groups)%GS){
+            llMessageLinked(LINK_SET,EVAL_RES,"0",id); return;
+        }
+        gStreaming=FALSE; buildAggregate(groups); evaluate(groups,actHdr,id);
     }
 }

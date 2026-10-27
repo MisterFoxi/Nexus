@@ -157,7 +157,7 @@ default
             else showState(text, ticket);
             return;
         }
-        if (number == 918317 && text == "DISCARD_DONE" && ticket != NULL_KEY
+        if (number == 918317 && (text == "DISCARD_DONE" || text == "CRAFT_DONE") && ticket != NULL_KEY
             && llLinksetDataRead("mc:simple:craft_started") != "1")
         {
             gUsed = FALSE;

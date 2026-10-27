@@ -1,9 +1,9 @@
 # HUD endpoint for Workshop
 
-This change implements the HUD side only. The current Workshop.lsl has not been
-changed and does not yet speak MCW. This is an endpoint contract for its later
-wiring, not an in-world integration claim. No product law or evaluation lives
-in the HUD.
+The five-script Workshop counterpart now implements MCW; see
+[Workshop installation and memory checks](../../Workshop/README.md).
+In-world memory and physical delivery still need verification. No product law
+or evaluation lives in the HUD.
 
 ## Installation
 

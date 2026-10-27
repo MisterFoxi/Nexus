@@ -1,4 +1,4 @@
-// ROOT. Continue rotates 180 degrees; Discard always returns local Z to zero.
+// ROOT. Continue rotates 180 degrees; Take/Discard immediately return local Z to zero.
 // MC_Selected_Controller sends 918310 only after checking the basket.
 key gLastTicket;
 key gLastDiscard;
@@ -18,9 +18,11 @@ default
     {
         integer i;
         for (i = 0; i < count; ++i)
-            if (llDetectedKey(i) == llGetOwner()
-                && llToLower(llStringTrim(llGetLinkName(llDetectedLinkNumber(i)), STRING_TRIM)) == "p1_discard")
-                pageZero();
+            if (llDetectedKey(i) == llGetOwner())
+            {
+                string name = llToLower(llStringTrim(llGetLinkName(llDetectedLinkNumber(i)), STRING_TRIM));
+                if (name == "p1_discard" || name == "p1_take") pageZero();
+            }
     }
     link_message(integer sender, integer number, string payload, key ticket)
     {

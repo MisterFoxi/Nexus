@@ -1,5 +1,5 @@
 // ============================================================
-//  Component — generic ELEMENT script (proto v0.4 — ADN model)
+//  Component — generic ELEMENT script (protocol 5 — ADN model)
 //  Gorean / medieval medical-craft RP. Drop into any mesh.
 //  The mesh is pure decoration; this script holds all behavior.
 // ============================================================
@@ -49,6 +49,7 @@
 // Production remains -918273; the current HUD uses DEV_CHANNEL.
 integer CRAFT_CHANNEL = -918273;
 integer DEV_CHANNEL = -918274;
+integer VERSION_CHANNEL = 918276; // Owner chat: /918276 version; same-owner debug tools may whisper VERSION.
 // HUD on either channel: MC|TAKE/RETURN/COMMIT|source|request|units.
 // TAKE/RETURN use exactly one unit; COMMIT finalizes held units (no second debit).
 // Reply: MC|RESULT|source|request|verb|OK/NO|remaining, whispered on the request channel.
@@ -62,7 +63,7 @@ integer HS = 7;
 integer gStockFault;
 string  SEP = "|";
 integer PROTO = 5;          // v5 adds the organ field in HERE and organ->mesh harvest delivery.
-string  VERSION = "Component v0.7 (2026-10-24)";
+string  VERSION = "Component v0.7.1 (2026-10-27)"; // Bump script revision on changes; PROTO is independent.
 
 integer ROLE_NONE  = 0;
 integer ROLE_NC    = 1;     // Defined by a notecard.
@@ -97,8 +98,14 @@ string  tOrgan; list tOrganMesh;
 
 integer gListen = -1;
 integer gDevListen = -1;
+integer gVersionListen = -1;
 
 string trim(string s){ return llStringTrim(s, STRING_TRIM); }
+
+reportVersion(){
+    llOwnerSay("[Nexus] "+VERSION+" | protocol "+(string)PROTO);
+    llWhisper(VERSION_CHANNEL,"MC|VERSION|"+(string)llGetKey()+"|"+VERSION+"|"+(string)PROTO);
+}
 
 // Check next-owner permissions; this does not verify current-owner immutability.
 integer noModOk(string nc){
@@ -412,6 +419,8 @@ default{
         gListen = llListen(CRAFT_CHANNEL, "", "", "");
         if(gDevListen != -1) llListenRemove(gDevListen);
         gDevListen = llListen(DEV_CHANNEL, "", "", "");
+        if(gVersionListen != -1) llListenRemove(gVersionListen);
+        gVersionListen = llListen(VERSION_CHANNEL, "", "", "");
         boot();
     }
 
@@ -480,6 +489,10 @@ default{
     }
 
     listen(integer chan, string nm, key id, string msg){
+        if(chan == VERSION_CHANNEL){
+            if(llGetOwnerKey(id) == llGetOwner() && llToLower(trim(msg)) == "version") reportVersion();
+            return;
+        }
         if(chan != CRAFT_CHANNEL && chan != DEV_CHANNEL) return;
         // Keep empty fields so optional properties do not shift protocol indexes.
         // REVIEW: id is not authenticated. Any nearby script knowing this channel can mutate stock or configure blanks.
@@ -575,7 +588,7 @@ default{
                 info += " - expires in "+fmtLeft(left);
             }
         }
-        llRegionSayTo(t, 0, info);
+        llRegionSayTo(t, 0, info+" - "+VERSION+" - protocol "+(string)PROTO);
     }
 
     timer(){

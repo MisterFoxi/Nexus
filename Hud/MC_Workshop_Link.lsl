@@ -216,6 +216,12 @@ default
         }
         if (source != gBench || llList2Key(fields, 2) != llGetKey()
             || llList2Key(fields, 3) != gSession || gSession == NULL_KEY) return;
+        if (verb == "EXIT_REQUEST" && llList2Key(fields, 4) == NULL_KEY)
+        {
+            if (gPhase == "IDLE") choose("EXIT");
+            else llOwnerSay("[Workshop HUD] Exit waits for the current treatment or stock closure.");
+            return;
+        }
         if (verb == "BOUND" && gPhase == "BINDING" && llList2Key(fields, 4) == NULL_KEY)
         {
             gPhase = "IDLE"; gWire = "";
