@@ -35,6 +35,8 @@ integer gValidating;
 integer gValidatePending;
 integer gValidateIndex;
 key gValidateRun = NULL_KEY;
+key gCancelRun = NULL_KEY;
+integer gCancelIndex;
 
 integer validKey(key value)
 {
@@ -165,6 +167,12 @@ start(string verb, key source, string here)
     if (gFault) return;
     if (llList2String(row, 2) != "")
     {
+        if (verb == "RETURN" && llList2String(row, 3) == "TAKE")
+        {
+            // Preserve the user's removal while resolving the earlier TAKE.
+            integer saved = llLinksetDataWrite("mc:simple:cancel:" + (string)source, llList2String(row, 2));
+            if (saved != 0 && saved != 5) { fault("Cannot save selection removal."); return; }
+        }
         // Explicit user retry: keep the exact persisted UUID, verb and quantity.
         // Component repeats its receipt instead of applying an acknowledged operation twice.
         gActive = llList2Key(row, 2);
@@ -185,6 +193,45 @@ start(string verb, key source, string here)
     render(); memory();
 }
 
+
+queueCancelledSelection()
+{
+    if (gFault || gBusy || gActive != NULL_KEY || gValidating || gDiscard || gCraftStarted) return;
+    gCancelIndex = 0; gCancelRun = llGenerateKey();
+    llMessageLinked(LINK_THIS, 918387, "", gCancelRun);
+}
+
+cancelledSelectionPump()
+{
+    if (gFault || gBusy || gActive != NULL_KEY || gValidating || gDiscard || gCraftStarted) return;
+    list keys = llLinksetDataFindKeys("^mc:simple:cancel:", gCancelIndex, 1);
+    if (!llGetListLength(keys)) { gCancelRun = NULL_KEY; return; }
+    string name = llList2String(keys, 0);
+    key source = (key)llGetSubString(name, llStringLength("mc:simple:cancel:"), -1);
+    key take = (key)llLinksetDataRead(name);
+    list row = readRow(source);
+    if (gFault) return;
+    if (llList2String(row, 2) != "")
+    {
+        ++gCancelIndex; // Never resend a pending source operation automatically.
+        llMessageLinked(LINK_THIS, 918387, "", gCancelRun);
+        return;
+    }
+    if (llList2Key(row, 1) == take && llList2Integer(row, 0) > 0)
+    {
+        start("RETURN", source, llUnescapeURL(llList2String(row, 5)));
+        if (gActive != NULL_KEY) { gCancelRun = NULL_KEY; return; }
+        // A temporary Workshop lock may postpone the user's return; retain the intent.
+        ++gCancelIndex;
+    }
+    else
+    {
+        // The return completed, the row was removed, or no held unit remains.
+        integer removed = llLinksetDataDelete(name);
+        if (removed != 0 && removed != 4) { fault("Cannot clear selection removal."); return; }
+    }
+    llMessageLinked(LINK_THIS, 918387, "", gCancelRun);
+}
 
 // Workshop state is owned exclusively by MC_Workshop_Link.
 list workshopSession()
@@ -471,7 +518,8 @@ basketAction(string action, key ticket)
     // This is the engine handshake, independent of visual Cut/Stop; wait for its persisted ACK.
     if (action == "CRAFT_STARTED")
     {
-        if (gDiscard || gBusy || gActive != NULL_KEY || gTypeSource != NULL_KEY || gScanning || !gCanContinue)
+        if (gDiscard || gBusy || gActive != NULL_KEY || gTypeSource != NULL_KEY || gScanning || !gCanContinue
+            || llGetListLength(llLinksetDataFindKeys("^mc:simple:cancel:", 0, 1)))
         { llOwnerSay("[Selected] Cannot start craft during a basket update or with no available ingredients."); return; }
         // The craft engine must request this before starting and wait for this ACK.
         if (!saveFlag("craft_started", TRUE)) return;
@@ -581,6 +629,7 @@ default
         if (number == 918270 && validKey(request))
         { gValidatePending = TRUE; queueValidation(); return; }
         if (number == 918386 && request == gValidateRun) { validatePump(); return; }
+        if (number == 918387 && request == gCancelRun) { cancelledSelectionPump(); return; }
         if (number == 918380) { exportRequest(text, request); return; }
         if (number == 918382 && request == gExportTicket) { exportPump(); return; }
         if (number == 918384 && request == gTypeSource) { typePump(); return; }
@@ -595,6 +644,7 @@ default
             if (!gBusy) gActive = NULL_KEY;
             queueValidation();
             queueDiscard();
+            queueCancelledSelection();
             return;
         }
         // Generic basket API: return one held unit from a source UUID.
