@@ -2,26 +2,29 @@
 #   A) taxonomy (class hierarchy)      B) stage/craft flow (from laws)
 
 === A. TAXONOMY ===
-bark
 beast
     verr
-leaf_plant
-    mint (menthe)
-        kanda
 liquid
     oil
     water
 mineral
     salt
     sugar
+plant
+    herb
+    leaf_plant
+        mint (menthe, mint)
+            kanda
+    tree
+        willow
 root
     potato (sul)
 
 groups:
     salad : leaf_plant, root
-    cuttable : leaf_plant, bark, root
+    cuttable : leaf_plant, root
 
-meta.stage values: plant, chopped, minced, twig, leaf, powder, essence, pils, poultice, seed, sprout, mature, withered, harvested, sliced, fried, brine, purified, saline_iv
+meta.stage values: plant, chopped, minced, twig, leaf, powder, essence, pils, poultice, seed, sprout, mature, withered, harvested, sliced, fried, brine, saline_iv
 
 === B. CRAFT FLOW (stage/taxonomy transitions, by station) ===
 
@@ -43,14 +46,17 @@ meta.stage values: plant, chopped, minced, twig, leaf, powder, essence, pils, po
   over_ultra    taxonomy=leaf_plant, stage=minced -> stage=powder   [if fab.grind is over]
   poultice      taxonomy=leaf_plant, stage=powder, taxonomy=liquid -> stage=poultice
 
+@alambic
+  distill_water taxonomy=water                   -> (in place)   [if org.purity is potable]
+
 @cauldron
   overcooked    (any)                            -> (in place)   [if fab.thermal is boiling]
   cooked_ok     (any)                            -> (in place)   [if fab.thermal is simmer]
   corrosif      (any)                            -> (in place)   [if fab.acidity is acidic & fab.stability is explosive]
   vomitif       (any)                            -> (in place)   [if org.bitter is bitter]
-  purifiedwater taxonomy=water                   -> stage=purified   [if fab.thermal is boiling]
-  perf          stage=purified                   -> stage=saline_iv   [if org.salty <= 2]
-  brine         stage=purified                   -> stage=brine   [if org.salty >= 3]
+  boil_water    taxonomy=water                   -> (in place)   [if fab.thermal is boiling & org.purity is foul]
+  perf          taxonomy=water                   -> stage=saline_iv   [if org.purity >= 7 & org.salty <= 2]
+  brine         taxonomy=water                   -> stage=brine   [if org.purity >= 3 & org.salty >= 3]
   fry           (any)                            -> (in place)   [if fab.thermal is frying & org.viscosity is thick]
   makefries     taxonomy=potato, stage=sliced    -> stage=fried   [if fab.thermal is frying & org.viscosity is thick]
 
