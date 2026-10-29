@@ -12,8 +12,8 @@ integer STATUS = 918343;
 string DEFAULT_ATLAS = "atlas_buttons";
 string START_PRIM = "P1_CUT";
 string STOP_PRIM = "P1_STOP";
-integer START_FACE = 2;
-integer STOP_FACE = 2;
+integer START_FACE = 0;
+integer STOP_FACE = 0;
 integer DIAGNOSTIC_CHANNEL = 918344; // Owner chat: /918344 buttons (read-only).
 string gAtlas;
 integer gUsed;
@@ -142,7 +142,7 @@ showState(string value, key ticket)
     if (value == "STOPPED" && gUsed) value = "USED";
     integer left = 0; // START
     integer right = 3; // STOP
-    if (value == "PLAYING") left = 2; // PAUSE / STOP; visual selection only.
+    if (value == "PLAYING") { left = 1; right = 2; } // CONT / PAUSE, matching CUT-resume and STOP-suspend.
     else if (value == "PAUSED" || value == "USED" || value == "SPOILED") left = 1;
     else if (value != "STOPPED")
     { reply("ERROR:Unknown button state", ticket); return; }

@@ -64,8 +64,8 @@ llMessageLinked(LINK_THIS, 918341,
 llMessageLinked(LINK_THIS, 918342, "PAUSED", stateTicket);
 ```
 
-STATE uses `START_PRIM = "P1_CUT"`, `STOP_PRIM = "P1_STOP"`, `START_FACE = 2`,
-and `STOP_FACE = 2`. Set both face constants to the visible faces of your actual
+STATE uses `START_PRIM = "P1_CUT"`, `STOP_PRIM = "P1_STOP"`, `START_FACE = 0`,
+and `STOP_FACE = 0`. Set both face constants to the visible faces of your actual
 button meshes. Both targets and faces are validated before either is written.
 The two commands must target different surfaces (two faces on one prim are also
 supported by configuration).
@@ -73,7 +73,7 @@ supported by configuration).
 | STATE | START_PRIM label | STOP_PRIM label |
 |---|---|---|
 | STOPPED | START | STOP |
-| PLAYING | PAUSE | STOP |
+| PLAYING | CONT | PAUSE |
 | PAUSED | CONT | STOP |
 | USED | CONT | STOP |
 | SPOILED | CONT (dimmed) | STOP (dimmed) |
