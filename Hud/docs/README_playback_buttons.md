@@ -29,7 +29,9 @@ The complete generation prompt is in `playback_buttons_prompt_v1.txt`.
 
 Install `MC_Playback_Buttons.lsl` in the HUD root. Import the PNG and place the
 texture in root inventory under `atlas_buttons` (no extension),
-or pass its exact inventory name to LOAD. No script is needed inside buttons.
+or pass its exact inventory name to LOAD. Empty LOAD also accepts
+`atlas_playback_buttons_2x2_v1` and `atlas_playback_buttons_2x2_v1.png`,
+matching the fallback used for confirmed player states. No script is needed inside buttons.
 The library has no timer and sends no craft, animation, or navigation commands.
 It changes only the explicitly selected face's texture, UVs, color/opacity,
 fullbright, and native texture animation. Alpha rendering mode remains a mesh
@@ -62,8 +64,8 @@ llMessageLinked(LINK_THIS, 918341,
 llMessageLinked(LINK_THIS, 918342, "PAUSED", stateTicket);
 ```
 
-STATE uses `START_PRIM = "P1_CUT"`, `STOP_PRIM = "P1_STOP"`, `START_FACE = 0`,
-and `STOP_FACE = 0`. Set both face constants to the visible faces of your actual
+STATE uses `START_PRIM = "P1_CUT"`, `STOP_PRIM = "P1_STOP"`, `START_FACE = 2`,
+and `STOP_FACE = 2`. Set both face constants to the visible faces of your actual
 button meshes. Both targets and faces are validated before either is written.
 The two commands must target different surfaces (two faces on one prim are also
 supported by configuration).
@@ -71,7 +73,7 @@ supported by configuration).
 | STATE | START_PRIM label | STOP_PRIM label |
 |---|---|---|
 | STOPPED | START | STOP |
-| PLAYING | CONT | PAUSE |
+| PLAYING | PAUSE | STOP |
 | PAUSED | CONT | STOP |
 | USED | CONT | STOP |
 | SPOILED | CONT (dimmed) | STOP (dimmed) |
@@ -85,7 +87,7 @@ The right button suspends playback; repeated STOP preserves active time.
 
 Explicit START on an already used preparation spoils it. SPOILED draws dimmed
 CONT/STOP; the preparation controller ignores resume attempts. Only confirmed
-DISCARD_DONE unlocks a new preparation. Later/navigation/reset never unlock it.
+DISCARD_DONE or CRAFT_DONE unlocks a new preparation. Later/navigation/reset never unlock it.
 The texture library remains visual-only; the preparation controller owns this
 lifetime policy. SHOW remains available for custom arrangements.
 
@@ -97,5 +99,30 @@ retries loading without permitting a second preparation START. See
 ## Library verification
 
 Run `./tests/run_playback_buttons_checks.ps1` from Hud. It parses the player,
-controller, button library and progress renderer, then executes 47 AST behavior
-tests. See `README_chop_progress.md` for coverage and Second Life validation limits.
+controller, button library and progress renderer, then executes AST behavior
+tests, including atlas-name fallback, missing button library, lost load replies and read-only diagnostics. See `README_chop_progress.md` for coverage and Second Life validation limits.
+
+## Frozen button textures while the chop animation runs
+
+Button texture loading is independent of animation loading. Empty LOAD previously
+accepted only atlas_buttons, while the direct animation-state observer accepted
+three inventory names. This could leave the preparation controller's visual
+handshake incomplete, especially when restoring the atlas during active playback.
+Both paths now use the same resolver. Explicit custom LOAD names still require an
+exact inventory match and a failed LOAD preserves the prior atlas.
+
+MC_P1_Animation retries only the local visual LOAD at two-second intervals, with
+three attempts. It then reports No button renderer response instead of waiting
+silently. A library READY or inventory change can recover the visual state without
+restarting the preparation, resetting elapsed time or sending a source transaction.
+
+For the actual in-world assembly, owner chat `/918344 buttons` prints the available
+atlas, the active atlas, and the resolved P1_CUT/P1_STOP links, configured faces,
+current textures and UV transforms. This diagnostic only reads state. Missing or
+duplicate prims and invalid faces are named explicitly. No face is guessed or
+changed automatically. If no diagnostic reply appears, that version of the button
+library is not running in ROOT or the command was not issued by its owner.
+
+Local tests reproduce the loading defects; they do not establish the actual face
+visible on a particular in-world mesh, the scripts installed there, or whether
+another in-world script overwrites a button's texture after it is drawn.

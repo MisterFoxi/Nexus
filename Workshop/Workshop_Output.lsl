@@ -13,8 +13,8 @@ integer gUnit;
 integer gDelivered;
 integer gFault;
 integer gBlankCount;
-integer gMenuChannel;
-integer gMenuListen;
+key gTicket = NULL_KEY;
+key gTarget = NULL_KEY;
 integer gCookTime = 20;
 integer gHover = TRUE;
 string gCookSound = "cook_sound";
@@ -65,6 +65,12 @@ parseProduct()
     oTax = llList2String(product, 6); oStage = llList2String(product, 7);
     oProps = llList2String(product, 8); oMed = llList2String(product, 9); oEff = llList2Integer(product, 10);
 }
+string configWire(key container, integer quantity)
+{
+    return "CONFIG|" + (string)container + "|" + oName + "|" + (string)quantity
+        + "|" + (string)oUse + "|" + (string)oLife + "|" + oTax + "|" + oStage
+        + "|" + oProps + "|" + oMed + "|" + (string)oEff;
+}
 fail(string reason)
 {
     if (gDelivered || gPhase == "DISPATCH_CONFIG" || gPhase == "DISPATCH_GIVE")
@@ -92,14 +98,38 @@ ready()
     llSetText(oName + " (" + oTax + "/" + oStage + ")\n" + verdict + " - touch to collect", <0.6,0.9,0.6>, 1.0);
     loopSnd(gReadySound);
 }
-collectMenu()
+// One explicit destination per request. Never distribute to unselected blanks.
+integer receipt(string status)
 {
-    if (gMenuListen) llListenRemove(gMenuListen);
-    gMenuChannel = -2000000 - (integer)llFrand(900000.0);
-    gMenuListen = llListen(gMenuChannel, "", gUser, "");
-    llDialog(gUser, "Ready: " + oName + " x" + (string)gQuantity
-        + "\nEmpty containers present: " + (string)gBlankCount
-        + "\nCollect into the available containers.", ["Collect"], gMenuChannel);
+    string text = status + "|" + (string)gTicket + "|" + (string)gQuantity;
+    if (!write("ws:out:receipt", llList2Json(JSON_ARRAY, [gRun, gTicket, text]))) return FALSE;
+    notify(text);
+    return TRUE;
+}
+finishTransfer()
+{
+    // Quantity is already persisted after dispatch. A reset here only finishes the receipt.
+    if (!receipt("TRANSFERRED")) return;
+    gPhase = "WAIT_CONTAINER";
+    if (gQuantity <= 0) gPhase = "DONE";
+    if (!save()) return;
+    if (gQuantity <= 0) complete();
+    else ready();
+}
+request(string verb, key ticket, key target, key user)
+{
+    list last = llJson2List(llLinksetDataRead("ws:out:receipt"));
+    if (llList2Key(last, 0) == gRun && llList2Key(last, 1) == ticket)
+    { notify(llList2String(last, 2)); return; }
+    if ((ticket == NULL_KEY) || gPhase != "WAIT_CONTAINER") return;
+    gTicket = ticket; gTarget = target; gUser = user;
+    if (!write("ws:out:request", llList2Json(JSON_ARRAY, [gRun, ticket, target, user]))) return;
+    if (verb == "DISCARD")
+    {
+        gQuantity = 0; gPhase = "DONE";
+        if (save()) { receipt("DISCARDED"); complete(); }
+    }
+    else if (target) scan();
 }
 scan()
 {
@@ -121,25 +151,19 @@ clearBlanks()
 deliver()
 {
     if (gQuantity <= 0) { complete(); return; }
-    list keys = llLinksetDataFindKeys("^ws:out:blank:", 0, 1);
-    if (!llGetListLength(keys))
+    string entry = "ws:out:blank:" + (string)gTarget;
+    string capacityText = llLinksetDataRead(entry);
+    if (capacityText == "")
     {
         gPhase = "WAIT_CONTAINER";
-        if (save())
-        {
-            ready();
-            llRegionSayTo(gUser, 0, oName + ": " + (string)gQuantity + " pending. Provide another container and touch the station.");
-        }
+        if (save()) receipt("TRANSFER_NO");
         return;
     }
-    string entry = llList2String(keys, 0);
-    key container = (key)llGetSubString(entry, llStringLength("ws:out:blank:"), -1);
-    integer capacity = (integer)llLinksetDataRead(entry);
+    key container = gTarget;
+    integer capacity = (integer)capacityText;
     integer quantity = gQuantity;
     if (capacity > 0 && quantity > capacity) quantity = capacity;
-    string wire = "CONFIG|" + (string)container + "|" + oName + "|" + (string)quantity
-        + "|" + (string)oUse + "|" + (string)oLife + "|" + oTax + "|" + oStage
-        + "|" + oProps + "|" + oMed + "|" + (string)oEff;
+    string wire = configWire(container, quantity);
     if (llStringLength(llStringToBase64(wire)) > 1364) { fail("Product metadata exceeds one whisper."); return; }
     gPhase = "DISPATCH_CONFIG";
     if (!save()) return; // Persist the boundary before invoking the existing physical protocol.
@@ -147,8 +171,8 @@ deliver()
     gQuantity -= quantity; gDelivered += quantity;
     integer removed = llLinksetDataDelete(entry);
     if (removed != 0 && removed != 4) { fail("Container receipt removal failed."); return; }
-    gPhase = "DELIVERING";
-    if (save()) step();
+    gPhase = "RECEIPTING";
+    if (save()) finishTransfer();
 }
 finishGive()
 {
@@ -178,6 +202,7 @@ start(string choice, key user, key run)
     if (gRun == run)
     {
         if (gPhase == "DONE") notify("OK");
+        else if (gPhase == "WAIT_CONTAINER") notify("READY");
         else if (gPhase == "KEEPING") llMessageLinked(LINK_THIS, 970230, "KEEP", run);
         else if (gPhase == "HOLD") notify("HOLD");
         return;
@@ -196,6 +221,8 @@ start(string choice, key user, key run)
         if (llGetListLength(result) != 11 || llList2Integer(result, 3) <= 0)
         { fail("Invalid product DNA."); return; }
         gQuantity = llList2Integer(result, 3); parseProduct();
+        if (llStringLength(llStringToBase64(configWire(NULL_KEY, gQuantity))) > 1364)
+        { fail("Product metadata exceeds one whisper."); return; }
     }
     if (!write("ws:product", llList2Json(JSON_ARRAY, [run, gResult]))) return;
     gPhase = "COOKING"; gDeadline = llGetUnixTime() + gCookTime;
@@ -216,7 +243,11 @@ default
             gPhase = llList2String(data, 3); gResult = llList2String(data, 4); gQuantity = llList2Integer(data, 5);
             gDeadline = llList2Integer(data, 6); gSourceIndex = llList2Integer(data, 7);
             gUnit = llList2Integer(data, 8); gDelivered = llList2Integer(data, 9); parseProduct();
+            list requestData = llJson2List(llLinksetDataRead("ws:out:request"));
+            if (llList2Key(requestData, 0) == gRun)
+            { gTicket = llList2Key(requestData, 1); gTarget = llList2Key(requestData, 2); gUser = llList2Key(requestData, 3); }
             if (gPhase == "DISPATCH_CONFIG" || gPhase == "DISPATCH_GIVE") fail("Reset at a physical dispatch boundary.");
+            else if (gPhase == "RECEIPTING") finishTransfer();
             else if (gPhase == "SCANNING" || gPhase == "CLEAR_BLANKS") scan();
             else if (gPhase == "GIVING" || gPhase == "DELIVERING") step();
         }
@@ -240,7 +271,14 @@ default
             if (text == "FAIL_SOUND") { oneSnd(gFailSound); return; }
             list fields = llParseStringKeepNulls(text, ["|"], []);
             if (llList2String(fields, 0) == "START") start(llList2String(fields, 1), llList2Key(fields, 2), run);
-            else if (text == "COLLECT" && run == gRun && gPhase == "WAIT_CONTAINER") scan();
+            else if (run == gRun && llGetListLength(fields) == 4
+                && (llList2String(fields, 0) == "TRANSFER" || llList2String(fields, 0) == "DISCARD"))
+                request(llList2String(fields, 0), llList2Key(fields, 1), llList2Key(fields, 2), llList2Key(fields, 3));
+            else if (text == "STATUS" && run == gRun)
+            {
+                if (gPhase == "WAIT_CONTAINER") notify("READY");
+                else if (gPhase == "DONE") notify("OK");
+            }
             return;
         }
         if (run != gRun) return;
@@ -259,14 +297,7 @@ default
     listen(integer channel, string name, key source, string text)
     {
         if (gFault) return;
-        if (channel == gMenuChannel && source == gUser && text == "Collect" && gPhase == "WAIT_CONTAINER")
-        {
-            if (gMenuListen) { llListenRemove(gMenuListen); gMenuListen = 0; }
-            gPhase = "DELIVERING";
-            if (save()) step();
-            return;
-        }
-        if (channel != CHANNEL || gPhase != "SCANNING" || llGetOwnerKey(source) != llGetOwner()) return;
+        if (channel != CHANNEL || gPhase != "SCANNING" || llGetOwnerKey(source) != gUser) return;
         list fields = llParseStringKeepNulls(text, ["|"], []);
         integer capacity = llList2Integer(fields, 2);
         if (llGetListLength(fields) != 3 || llList2String(fields, 0) != "BLANK"
@@ -278,17 +309,28 @@ default
     timer()
     {
         if (gFault) return;
+        if (gPhase == "DONE")
+        {
+            list pending = llJson2List(llLinksetDataRead("ws:out:request"));
+            list last = llJson2List(llLinksetDataRead("ws:out:receipt"));
+            if (llList2Key(pending, 0) == gRun && llList2Key(pending, 1) != llList2Key(last, 1)) receipt("DISCARDED");
+            return;
+        }
         if (gPhase == "COOKING" && llGetUnixTime() >= gDeadline)
         {
             if (llGetSubString(gResult, 0, 0) == "2") { gPhase = "GIVING"; if (save()) step(); }
             else if (gChoice == "KEEP")
             { gPhase = "KEEPING"; if (save()) llMessageLinked(LINK_THIS, 970230, "KEEP", gRun); }
-            else { ready(); scan(); }
+            else
+            {
+                gPhase = "WAIT_CONTAINER";
+                if (save()) { ready(); notify("READY"); }
+            }
         }
         else if (gPhase == "SCANNING" && llGetUnixTime() >= gDeadline)
         {
-            gPhase = "WAIT_CONTAINER";
-            if (save()) { ready(); collectMenu(); }
+            gPhase = "DELIVERING";
+            if (save()) step();
         }
     }
 }

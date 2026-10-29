@@ -23,6 +23,8 @@ float gClockAt;
 key gStartTicket = NULL_KEY;
 float gStartAt;
 integer gButtonsLoaded;
+float gButtonsLoadAt;
+integer gButtonsAttempts;
 key gButtonsLoadTicket;
 key gButtonsStateTicket;
 integer gProgressLoaded;
@@ -82,6 +84,7 @@ restoreSession()
 updateTimer()
 {
     if (gClockActive || gStartTicket != NULL_KEY
+        || (!gButtonsLoaded && gButtonsAttempts > 0 && gButtonsAttempts < 4)
         || (!gProgressLoaded && gProgressAttempts > 0 && gProgressAttempts < 4)) llSetTimerEvent(TICK);
     else llSetTimerEvent(0.0);
 }
@@ -89,8 +92,11 @@ updateTimer()
 loadButtons()
 {
     gButtonsLoaded = FALSE;
+    ++gButtonsAttempts;
+    gButtonsLoadAt = llGetTime();
     gButtonsLoadTicket = llGenerateKey();
     llMessageLinked(LINK_THIS, 918340, "", gButtonsLoadTicket);
+    updateTimer();
 }
 
 loadProgress()
@@ -217,7 +223,7 @@ visualStatus(integer number, string text, key ticket)
     integer buttons = number == 918343;
     if (text == "READY")
     {
-        if (buttons) loadButtons();
+        if (buttons) { gButtonsAttempts = 0; loadButtons(); }
         else { gProgressAttempts = 0; loadProgress(); }
         return;
     }
@@ -225,20 +231,21 @@ visualStatus(integer number, string text, key ticket)
     {
         gVisualError = "";
         if (buttons && ticket == gButtonsLoadTicket)
-        { gButtonsLoadTicket = NULL_KEY; gButtonsLoaded = TRUE; showVisuals(); }
+        { gButtonsLoadTicket = NULL_KEY; gButtonsLoaded = TRUE; gButtonsAttempts = 0; showVisuals(); updateTimer(); }
         else if (!buttons && ticket == gProgressLoadTicket)
         { gProgressLoadTicket = NULL_KEY; gProgressLoaded = TRUE; gProgressAttempts = 0; showVisuals(); updateTimer(); }
         return;
     }
     if (text == "UNLOADED")
     {
-        if (buttons) { gButtonsLoaded = FALSE; gButtonsLoadTicket = NULL_KEY; }
+        if (buttons) { gButtonsLoaded = FALSE; gButtonsLoadTicket = NULL_KEY; gButtonsAttempts = 0; updateTimer(); }
         else { gProgressLoaded = FALSE; gProgressLoadTicket = NULL_KEY; }
         return;
     }
     if (llSubStringIndex(text, "ERROR:") == 0)
     {
-        if (ticket == gButtonsLoadTicket) { gButtonsLoadTicket = NULL_KEY; gButtonsLoaded = FALSE; }
+        if (ticket == gButtonsLoadTicket)
+        { gButtonsLoadTicket = NULL_KEY; gButtonsLoaded = FALSE; gButtonsAttempts = 4; updateTimer(); }
         else if (ticket == gProgressLoadTicket) { gProgressLoadTicket = NULL_KEY; gProgressLoaded = FALSE; gProgressAttempts = 4; updateTimer(); }
         else if (ticket != gButtonsStateTicket && ticket != gProgressShowTicket) return;
         if (text != gVisualError) llOwnerSay("[Chop visual] " + text);
@@ -363,6 +370,17 @@ default
     timer()
     {
         clock();
+        if (!gButtonsLoaded && gButtonsAttempts > 0 && gButtonsAttempts < 4
+            && llGetTime() - gButtonsLoadAt >= 2.0)
+        {
+            // Retry only the local visual LOAD, never START, a source operation or a craft.
+            if (gButtonsAttempts < 3) loadButtons();
+            else
+            {
+                gButtonsAttempts = 4; gButtonsLoadTicket = NULL_KEY;
+                llOwnerSay("[Chop buttons] No button renderer response. Install/run MC_Playback_Buttons in ROOT with MC_P1_Animation.");
+            }
+        }
         if (!gProgressLoaded && gProgressAttempts > 0 && gProgressAttempts < 4
             && llGetTime() - gProgressLoadAt >= 2.0)
         {
@@ -393,7 +411,7 @@ default
         if (change & CHANGED_OWNER) { llResetScript(); return; }
         if (change & CHANGED_INVENTORY)
         {
-            if (!gButtonsLoaded && gButtonsLoadTicket == NULL_KEY) loadButtons();
+            if (!gButtonsLoaded && gButtonsLoadTicket == NULL_KEY) { gButtonsAttempts = 0; loadButtons(); }
             if (!gProgressLoaded && gProgressLoadTicket == NULL_KEY) { gProgressAttempts = 0; loadProgress(); }
             if (!gLoaded && gLoadTicket == NULL_KEY) loadAtlas();
         }

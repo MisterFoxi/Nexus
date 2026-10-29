@@ -1,6 +1,10 @@
 # Development HUD - simple Selected basket
 
-Active guide. Crafting, Component, Workshop, and Workshop_Eval are unchanged.
+> P3 update: see [README_P3.md](README_P3.md) for current collection, player and closure protocols.
+> Historical future-integration notes below are superseded by that guide.
+
+
+Active guide for P0 source selection. Workshop/P3 integration is described in README_P3.md.
 Test channel: **-918274**. Keep this test on the test channel.
 
 ## Installation
@@ -30,7 +34,7 @@ Once created, new data survives ordinary resets.
 - Multiple additions from the same source share a row.
 - Continue sends only `CONTINUE` on 918310 and rotates the HUD. The basket
   stays in Selected. There is no second debit, COMMIT, or manufacturing step.
-- The choice to use or return ingredients from crafting will be connected later.
+- Workshop success closes used ingredients; finished-product handling is documented in README_P3.md.
 - An unanswered request is never resent automatically. After 15 seconds,
   other sources become accessible. The uncertain source remains blocked and
   its ingredients remain visible but excluded from the available basket.
@@ -45,8 +49,9 @@ pending requests.
 
 ## Storage and messages
 
-LSL scripts use no JSON, session, individual-take ledger, TX2 journal, global
-registry, or automatic basket settlement.
+Selected source rows use no JSON, individual-take ledger, TX2 journal, or global
+registry. Workshop association uses its separate session record; only matching
+Workshop success initiates ingredient settlement.
 
 `mc:simple:row:SOURCE` contains six pipe-separated fields: confirmed quantity,
 last applied request, pending request, TAKE/RETURN, requested amount, and HERE

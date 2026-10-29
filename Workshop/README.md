@@ -75,8 +75,7 @@ laws. As before, configured action values use round(activeSeconds * GrindScale)
 bounded to 0..GrindMax. No Action means an empty action header. Laws and
 compiler/axes.src are unchanged by this segmentation.
 
-The current MCW/HUD/Component access policy is same owner. This is not a change
-to shared-station authorization.
+MCW authorizes the touched player and associated HUD/session. Ingredient stock access remains same-owner. See the P3 guide for visitor HUD provisioning.
 
 ## Session and physical output
 
@@ -92,18 +91,19 @@ before sending its reference to the coordinator. The coordinator passes only
 the run UUID/choice/player to Output; product DNA is read there. No source
 TAKE, RETURN or COMMIT is sent by any Workshop subsystem.
 
-After the existing cook delay, CONTAINER scans empty recipients and opens the
-existing collection popup for the recorded player. Collect fills recipients;
-partial collection retains the remaining quantity. Touching the station with
-the same player scans again. Keep is a HUD choice and is delegated to Storage
-where permitted. Mesh/organ output uses the existing CUT/GIVE flow for each
-held source unit.
+After the cook delay, a valid CONTAINER product enters WAIT_CONTAINER and is
+collected through HUD P3. See [P3 installation and protocol](../Hud/docs/README_P3.md).
+The existing RESULT OK now starts ingredient COMMIT closure when the durable
+product is ready, independently of physical collection. CLOSED records ingredient
+closure; the PRODUCT phase retains the output remainder. Transfer uses only
+explicitly selected recipient UUIDs, revalidated by Output. P3 Discard deletes
+only the finished remainder. Mesh/organ CUT/GIVE and KEEP retain their existing flow.
 
-Only completed output/Keep sends RESULT OK to the HUD. The HUD then COMMITs
-its held sources and sends CLOSED after the matching stock acknowledgements.
-Only CLOSED opens the next preparation. Missing containers keep the treatment
-and player lease pending. An inert/invalid evaluation returns NO and leaves
-the confirmed basket with the HUD.
+Touching pending output identifies its current collector, including a different
+player with their own dedicated HUD. Origin stock closure and collector identity
+are persisted separately. A new preparation requires both confirmed ingredient
+closure and terminal product output. A missing original COMMIT acknowledgement
+does not block another player's recovery/Discard, but still blocks a new craft.
 
 Exit is accepted after the HUD's own stock cleanup. The release receipt is
 stored before clearing the lease, allowing an exact duplicate EXIT to receive
@@ -130,10 +130,10 @@ Each subsystem owns its namespace:
 
 | Namespace | Owner |
 |---|---|
-| ws:core, ws:released | Coordinator |
+| ws:core, ws:released, ws:collector, ws:closed | Coordinator |
 | ws:input, ws:in:* | HUD input |
 | ws:eval:result | Eval |
-| ws:output, ws:product, ws:out:blank:* | Output |
+| ws:output, ws:product, ws:out:blank:*, ws:out:request, ws:out:receipt | Output |
 | ws:kept:*, ws:storage:* | Storage |
 
 Input groups/label indexes are derived caches. A reset during grouping clears

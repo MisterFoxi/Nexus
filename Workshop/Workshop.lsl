@@ -1,6 +1,10 @@
 // Workshop v0.7 - small session/configuration coordinator.
 // Same ROOT: Workshop_HUD, Workshop_Eval, Workshop_Output, Workshop_Storage.
 // No ingredient, container, output-DNA or kept-source collection in this script.
+// Origin session closes ingredients; collector session only controls the finished product.
+key gCollectorUser = NULL_KEY;
+key gCollectorHUD = NULL_KEY;
+key gCollectorSession = NULL_KEY;
 key gUser = NULL_KEY;
 key gHUD = NULL_KEY;
 key gSession = NULL_KEY;
@@ -59,6 +63,89 @@ offer()
 {
     sendTo(gUser, gSession, NULL_KEY, "OFFER", gKind + "|" + (string)gSingle
         + "|" + (string)gKeep + "|" + (string)(!gDev));
+}
+integer saveCollector()
+{
+    return write("ws:collector", llList2Json(JSON_ARRAY, [gRun, gCollectorUser, gCollectorHUD, gCollectorSession]));
+}
+integer productPending()
+{
+    list output = llJson2List(llLinksetDataRead("ws:output"));
+    return llList2Key(output, 0) == gRun && llList2String(output, 3) == "WAIT_CONTAINER"
+        && llList2Integer(output, 5) > 0;
+}
+outputState()
+{
+    if ((gCollectorHUD == NULL_KEY)) return;
+    list output = llJson2List(llLinksetDataRead("ws:output"));
+    list dna = llParseStringKeepNulls(llList2String(output, 4), ["|"], []);
+    sendTo(gCollectorHUD, gCollectorSession, gRun, "OUTPUT_STATE",
+        llList2String(output, 3) + "|" + (string)llList2Integer(output, 5) + "|" + llEscapeURL(llGetSubString(llList2String(dna, 2), 0, 63)));
+}
+collectorOffer()
+{
+    sendTo(gCollectorUser, gCollectorSession, NULL_KEY, "OFFER", gKind + "|" + (string)gSingle
+        + "|" + (string)gKeep + "|" + (string)(!gDev) + "|OUTPUT");
+}
+provision(key player)
+{
+    if (gDev) return;
+    if (player == llGetOwner())
+        llRezObject(gHudObject, llGetPos() + <0.0, 0.0, 1.0>, ZERO_VECTOR, ZERO_ROTATION, 0);
+    else
+    {
+        // A rezzed inventory object keeps the station owner's ownership.
+        // Give the dedicated HUD so its stock transactions belong to the actual player.
+        llGiveInventory(player, gHudObject);
+        llRegionSayTo(player, 0, "Wear the workshop HUD you just received. Association will follow automatically.");
+    }
+}
+finishProduct()
+{
+    // Both independently persisted facts are required before another preparation.
+    list output = llJson2List(llLinksetDataRead("ws:output"));
+    if (llList2Key(output, 0) != gRun || llList2String(output, 3) != "DONE"
+        || llLinksetDataRead("ws:closed") != (string)gRun) return;
+    key originHUD = gHUD; key originSession = gSession;
+    if (gCollectorHUD)
+    { gUser = gCollectorUser; gHUD = gCollectorHUD; gSession = gCollectorSession; }
+    gPhase = "BOUND";
+    if (!save()) return;
+    if (originHUD != gHUD)
+    {
+        if (!write("ws:released", llList2Json(JSON_ARRAY, [originHUD, originSession, gRun]))) return;
+        sendTo(originHUD, originSession, gRun, "RELEASED", "");
+    }
+    sendTo(gHUD, gSession, gRun, "OUTPUT_CLOSED", "");
+    llMessageLinked(LINK_THIS, 970213, "CLEAN", gRun);
+}
+integer collectorControl(key source, list fields)
+{
+    if (llList2Key(fields, 3) != gCollectorSession || (gCollectorSession == NULL_KEY)) return FALSE;
+    string verb = llList2String(fields, 1);
+    key run = llList2Key(fields, 4);
+    if (verb == "ACCEPT" && run == NULL_KEY && llGetListLength(fields) == 7
+        && llGetOwnerKey(source) == gCollectorUser && llList2Key(fields, 5) == gCollectorUser
+        && llList2String(fields, 6) == gKind && productPending())
+    {
+        if ((gCollectorHUD != NULL_KEY) && source != gCollectorHUD) return TRUE;
+        gCollectorHUD = source;
+        if (saveCollector())
+        { sendTo(source, gCollectorSession, NULL_KEY, "BOUND", ""); outputState(); }
+        return TRUE;
+    }
+    if (source != gCollectorHUD || run != gRun) return FALSE;
+    if (verb == "OUTPUT_STATUS") { outputState(); finishProduct(); return TRUE; }
+    if ((verb == "TRANSFER" || verb == "OUTPUT_DISCARD") && llGetListLength(fields) == 7
+        && llList2Key(fields, 5) != NULL_KEY)
+    {
+        string command = "TRANSFER";
+        if (verb == "OUTPUT_DISCARD") command = "DISCARD";
+        llMessageLinked(LINK_THIS, 970220, command + "|" + llList2String(fields, 5)
+            + "|" + llList2String(fields, 6) + "|" + (string)gCollectorUser, gRun);
+        return TRUE;
+    }
+    return FALSE;
 }
 failure(string reason)
 {
@@ -138,11 +225,13 @@ resume()
 {
     if (gFault || !gConfigReady || gReady != 15) return;
     configureOutput();
+    if (gPhase == "OUTPUT") llMessageLinked(LINK_THIS, 970220, "STATUS", gRun);
     if (gPhase == "RECEIVING" || gPhase == "BUILDING") llMessageLinked(LINK_THIS, 970213, "STATUS", gRun);
     else if (gPhase == "EVALUATING") llMessageLinked(LINK_THIS, 970202, gAction, gRun);
     else if (gPhase == "OUTPUT") llMessageLinked(LINK_THIS, 970220,
         "START|" + gChoice + "|" + (string)gUser, gRun);
-    else if (gPhase == "SETTLING") reply("RESULT", "OK");
+    else if (gPhase == "SETTLING") { reply("RESULT", "OK"); outputState(); }
+    else if (gPhase == "PRODUCT") { outputState(); finishProduct(); }
 }
 receiveControl(key source, string wire)
 {
@@ -151,13 +240,14 @@ receiveControl(key source, string wire)
     string verb = llList2String(fields, 1);
     key session = llList2Key(fields, 3);
     key run = llList2Key(fields, 4);
-    if (verb == "EXIT")
+    if (verb == "EXIT" || verb == "CLOSED" || verb == "OUTPUT_STATUS")
     {
         list released = llJson2List(llLinksetDataRead("ws:released"));
         if (llList2Key(released, 0) == source && llList2Key(released, 1) == session
             && llList2Key(released, 2) == run)
         { sendTo(source, session, run, "RELEASED", ""); return; }
     }
+    if (collectorControl(source, fields)) return;
     if (session != gSession || !validKey(session)) return;
     if (verb == "ACCEPT")
     {
@@ -182,6 +272,7 @@ receiveControl(key source, string wire)
             || llList2String(fields, 7) != "0")
         { sendTo(gHUD, gSession, run, "RESULT", "NO|Invalid%20choice%20or%20gesture"); return; }
         gRun = run; gChoice = choice; gSeconds = (float)seconds; gLastResult = ""; gAction = "";
+        gCollectorUser = NULL_KEY; gCollectorHUD = NULL_KEY; gCollectorSession = NULL_KEY;
         integer value = llRound(gSeconds * gScale);
         if (value < 0) value = 0;
         if (value > gMax) value = gMax;
@@ -207,10 +298,16 @@ receiveControl(key source, string wire)
         gPhase = "BOUND"; gLastResult = "NO|Upload%20cancelled";
         if (save()) llMessageLinked(LINK_THIS, 970213, "CLEAN", run);
     }
-    else if (verb == "CLOSED" && run == gRun && gPhase == "SETTLING")
+    else if (verb == "CLOSED" && run == gRun && (gPhase == "SETTLING" || gPhase == "PRODUCT"))
     {
-        gPhase = "BOUND";
-        if (save()) llMessageLinked(LINK_THIS, 970213, "CLEAN", run);
+        if (!write("ws:closed", (string)run)) return;
+        gPhase = "PRODUCT";
+        if (save())
+        {
+            // Raw input is no longer needed for container output; GIVE has already finished here.
+            llMessageLinked(LINK_THIS, 970213, "CLEAN", run);
+            finishProduct();
+        }
         if (gConfigPending) { gConfigPending = FALSE; loadConfig(); }
     }
     else if (verb == "EXIT" && gPhase == "BOUND")
@@ -235,6 +332,9 @@ default
             gRun = llList2Key(data, 3); gPhase = llList2String(data, 4); gLastResult = llList2String(data, 5);
             gChoice = llList2String(data, 6); gSeconds = (float)llList2String(data, 7); gAction = llList2String(data, 12);
         }
+        list collector = llJson2List(llLinksetDataRead("ws:collector"));
+        if (llList2Key(collector, 0) == gRun)
+        { gCollectorUser = llList2Key(collector, 1); gCollectorHUD = llList2Key(collector, 2); gCollectorSession = llList2Key(collector, 3); }
         loadConfig(); llSetTimerEvent(5.0);
         llMessageLinked(LINK_THIS, 970298, "READY?", NULL_KEY);
         llOwnerSay("[Workshop] v0.7 coordinator. No ingredient/output collections.");
@@ -262,11 +362,25 @@ default
     touch_start(integer count)
     {
         key user = llDetectedKey(0);
-        if (user != llGetOwner()) { llOwnerSay("[Workshop] Current HUD/source policy requires the same owner."); return; }
         if (gFault || !gConfigReady || gReady != 15)
         { llOwnerSay("[Workshop] Waiting for configuration/subsystems. Touch again when ready."); return; }
-        if (gPhase == "OUTPUT" && user == gUser)
-        { llMessageLinked(LINK_THIS, 970220, "COLLECT", gRun); return; }
+        if (productPending())
+        {
+            // Do not replace a collector while a transfer is being dispatched.
+            if (user == gCollectorUser)
+            { if (gCollectorHUD) outputState(); else collectorOffer(); return; }
+            if (!gDev && llGetInventoryType(gHudObject) != INVENTORY_OBJECT)
+            { llOwnerSay("[Workshop] Missing configured HUDObject."); return; }
+            key previousHUD = gCollectorHUD; key previousSession = gCollectorSession;
+            gCollectorUser = user; gCollectorHUD = NULL_KEY; gCollectorSession = llGenerateKey();
+            if (user == gUser) { gCollectorHUD = gHUD; gCollectorSession = gSession; }
+            if (!saveCollector()) return;
+            if (previousHUD != NULL_KEY && previousHUD != gHUD)
+                sendTo(previousHUD, previousSession, gRun, "RELEASED", "");
+            if (gCollectorHUD) outputState();
+            else { provision(user); collectorOffer(); }
+            return;
+        }
         if (gPhase == "OFFERED" && user == gUser) { offer(); return; }
         if (gPhase == "BOUND" && user == gUser)
         {
@@ -278,10 +392,14 @@ default
         { llOwnerSay("[Workshop] Missing configured HUDObject."); return; }
         gUser = user; gSession = llGenerateKey(); gPhase = "OFFERED";
         if (!save()) return;
-        if (!gDev) llRezObject(gHudObject, llGetPos() + <0.0, 0.0, 1.0>, ZERO_VECTOR, ZERO_ROTATION, 0);
+        provision(user);
         offer();
     }
-    object_rez(key object) { if (gPhase == "OFFERED") offer(); }
+    object_rez(key object)
+    {
+        if (gPhase == "OFFERED") offer();
+        else if (productPending() && gCollectorHUD == NULL_KEY) collectorOffer();
+    }
     listen(integer channel, string name, key user, string choice)
     {
         if (gFault || channel != gSessionMenu || !gSessionListen || user != gUser
@@ -341,16 +459,38 @@ default
             }
             else if (llSubStringIndex(text, "ERROR|") == 0) failure(llGetSubString(text, 6, -1));
         }
-        else if (number == 970221 && gPhase == "OUTPUT")
+        else if (number == 970221)
         {
-            if (text == "OK") { gPhase = "SETTLING"; gLastResult = "OK"; if (save()) reply("RESULT", "OK"); }
-            else if (llSubStringIndex(text, "ERROR|") == 0) failure(llGetSubString(text, 6, -1));
+            if (text == "READY" && gPhase == "OUTPUT")
+            {
+                gCollectorUser = gUser; gCollectorHUD = gHUD; gCollectorSession = gSession;
+                if (!saveCollector()) return;
+                gPhase = "SETTLING"; gLastResult = "OK";
+                if (save()) { reply("RESULT", "OK"); outputState(); }
+            }
+            else if (text == "OK")
+            {
+                if (gPhase == "OUTPUT")
+                { gPhase = "SETTLING"; gLastResult = "OK"; if (save()) reply("RESULT", "OK"); }
+                else finishProduct();
+            }
+            else if (llSubStringIndex(text, "TRANSFERRED|") == 0 || llSubStringIndex(text, "TRANSFER_NO|") == 0
+                || llSubStringIndex(text, "DISCARDED|") == 0)
+            {
+                sendTo(gCollectorHUD, gCollectorSession, gRun, "OUTPUT_REPLY", text);
+                outputState();
+                finishProduct();
+            }
+            else if (llSubStringIndex(text, "ERROR|") == 0 && gPhase == "OUTPUT") failure(llGetSubString(text, 6, -1));
         }
     }
     timer()
     {
         if (gReady != 15) llMessageLinked(LINK_THIS, 970298, "READY?", NULL_KEY);
+        if (gPhase == "OFFERED") offer();
+        else if (productPending() && gCollectorSession != NULL_KEY && gCollectorHUD == NULL_KEY) collectorOffer();
         if (gPhase == "EVALUATING" && gDeadline && llGetUnixTime() >= gDeadline)
         { gDeadline = 0; llOwnerSay("[Workshop] Evaluation pending. Lock retained; no stock operation sent."); }
     }
 }
+

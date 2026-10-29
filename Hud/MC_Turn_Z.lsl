@@ -1,7 +1,10 @@
-// ROOT. Continue rotates 180 degrees; Take/Discard immediately return local Z to zero.
+// ROOT. Continue opens P1; authenticated output state opens P3; product closure returns P0.
 // MC_Selected_Controller sends 918310 only after checking the basket.
 key gLastTicket;
 key gLastDiscard;
+integer gProductPage;
+// P3 occupies local Z=90 degrees. Adjust this installation value to the mesh.
+float P3_Z = PI_BY_TWO;
 
 // Reapply an absolute local Euler Z=0; repeated Discard notifications are harmless.
 pageZero()
@@ -14,6 +17,7 @@ pageZero()
 
 default
 {
+    state_entry() { llMessageLinked(LINK_THIS, 918390, "STATUS", NULL_KEY); }
     touch_start(integer count)
     {
         integer i;
@@ -21,16 +25,28 @@ default
             if (llDetectedKey(i) == llGetOwner())
             {
                 string name = llToLower(llStringTrim(llGetLinkName(llDetectedLinkNumber(i)), STRING_TRIM));
-                if (name == "p1_discard" || name == "p1_take") pageZero();
+                if (name == "p1_discard" && !gProductPage) pageZero();
             }
     }
     link_message(integer sender, integer number, string payload, key ticket)
     {
+        if (sender == llGetLinkNumber() && number == 918391)
+        {
+            string outputPhase = llList2String(llParseStringKeepNulls(payload, ["|"], []), 0);
+            gProductPage = outputPhase != "CLOSED" && outputPhase != "RELEASED";
+            if (!gProductPage) pageZero();
+            else
+            {
+                vector angles = llRot2Euler(llGetLocalRot());
+                llSetLinkPrimitiveParamsFast(LINK_ROOT, [PRIM_ROT_LOCAL, llEuler2Rot(<angles.x, angles.y, P3_Z>)]);
+            }
+            return;
+        }
         if (sender == llGetLinkNumber() && number == 918317
             && (payload == "DISCARD_DONE" || payload == "CRAFT_DONE") && ticket != NULL_KEY && ticket != gLastDiscard)
         {
             gLastDiscard = ticket;
-            pageZero();
+            if (!gProductPage) pageZero();
             return;
         }
         if (sender != llGetLinkNumber() || number != 918310

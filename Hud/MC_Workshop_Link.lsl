@@ -129,12 +129,25 @@ default
         else if (gPhase != "IDLE")
             llOwnerSay("[Workshop HUD] Session restored with a pending treatment. Waiting; nothing resent.");
         announce();
+        if (gPhase == "OUTPUT") llWhisper(CHANNEL, header("OUTPUT_STATUS"));
     }
     on_rez(integer parameter) { llResetScript(); }
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber() || gFault) return;
         if (number == 918370) { choose(text); return; }
+        if (number == 918390)
+        {
+            if (text == "STATUS" && gRun != NULL_KEY && gSession != NULL_KEY)
+            { llWhisper(CHANNEL, header("OUTPUT_STATUS")); return; }
+            if (gPhase != "OUTPUT" || (ticket == NULL_KEY)) return;
+            list command = llParseStringKeepNulls(text, ["|"], []);
+            if (llList2String(command, 0) == "TRANSFER" && llList2Key(command, 1) != NULL_KEY)
+                send(header("TRANSFER") + "|" + (string)ticket + "|" + llList2String(command, 1), "WAIT_TRANSFER");
+            else if (text == "DISCARD")
+                send(header("OUTPUT_DISCARD") + "|" + (string)ticket + "|" + (string)NULL_KEY, "WAIT_TRANSFER");
+            return;
+        }
         if (number == 918373 && gPhase == "GESTURE" && ticket == gRun)
         {
             list result = llParseStringKeepNulls(text, ["|"], []);
@@ -175,7 +188,9 @@ default
         {
             if (text == "CRAFT_DONE" && ticket == gRun && gPhase == "SETTLING")
             {
-                gPhase = "IDLE"; gWire = "";
+                gPhase = "IDLE";
+                if (gChoice == "CONTAINER") gPhase = "OUTPUT";
+                gWire = "";
                 if (save()) { announce(); llWhisper(CHANNEL, header("CLOSED")); }
                 return;
             }
@@ -187,15 +202,16 @@ default
     }
     listen(integer channel, string name, key source, string text)
     {
-        if (channel != CHANNEL || gFault || llGetOwnerKey(source) != llGetOwner()) return;
+        if (channel != CHANNEL || gFault) return;
         list fields = llParseStringKeepNulls(text, ["|"], []);
         if (llGetListLength(fields) < 5 || llList2String(fields, 0) != "MCW") return;
         string verb = llList2String(fields, 1);
         if (verb == "OFFER")
         {
-            if (llGetListLength(fields) != 9 || llList2Key(fields, 2) != llGetOwner()
+            if ((llGetListLength(fields) != 9 && llGetListLength(fields) != 10) || llList2Key(fields, 2) != llGetOwner()
                 || !validKey(llList2Key(fields, 3)) || llList2Key(fields, 4) != NULL_KEY
-                || llList2String(fields, 5) != HUD_KIND) return;
+                || llList2String(fields, 5) != HUD_KIND
+                || (llGetListLength(fields) == 10 && llList2String(fields, 9) != "OUTPUT")) return;
             if (gSession != NULL_KEY)
             {
                 // Only repeat the association response to the very same pending offer.
@@ -210,6 +226,12 @@ default
                 || (temporary != 0 && temporary != 1)) return;
             gBench = source; gSession = llList2Key(fields, 3); gRun = NULL_KEY;
             gSingle = single; gKeep = keep; gTemporary = temporary;
+            gChoice = "";
+            if (llGetListLength(fields) == 10)
+            {
+                if (llList2String(fields, 9) != "OUTPUT") return;
+                gChoice = "RECOVERY";
+            }
             if (HUD_KIND == "cutting_board") gKeep = FALSE;
             send(header("ACCEPT") + "|" + (string)llGetOwner() + "|" + HUD_KIND, "BINDING");
             return;
@@ -224,14 +246,55 @@ default
         }
         if (verb == "BOUND" && gPhase == "BINDING" && llList2Key(fields, 4) == NULL_KEY)
         {
-            gPhase = "IDLE"; gWire = "";
+            gPhase = "IDLE";
+            if (gChoice == "RECOVERY") gPhase = "OUTPUT";
+            gWire = "";
             if (!save()) return;
             announce();
             llOwnerSay("[Workshop HUD] Associated with workshop.");
             if (gTemporary && !llGetAttached()) llRequestPermissions(llGetOwner(), PERMISSION_ATTACH);
             return;
         }
+        if (verb == "OUTPUT_STATE" && llGetListLength(fields) == 8)
+        {
+            key product = llList2Key(fields, 4);
+            if ((product == NULL_KEY) || (gRun != NULL_KEY && product != gRun)) return;
+            if (gPhase != "OUTPUT" && gPhase != "WAIT_TRANSFER" && gPhase != "SETTLING") return;
+            gRun = product;
+            if (!save()) return;
+            string outputPhase = llDumpList2String(llList2List(fields, 5, 7), "|");
+            integer stored = llLinksetDataWrite("mc:p3:output", (string)product + "|" + outputPhase);
+            if (stored != 0 && stored != 5) { gFault = TRUE; return; }
+            llMessageLinked(LINK_THIS, 918391, outputPhase, product);
+            return;
+        }
+        if (verb == "RELEASED" && llList2Key(fields, 4) == gRun
+            && (gPhase == "OUTPUT" || gPhase == "WAIT_TRANSFER"))
+        {
+            integer removed = llLinksetDataDelete(STORE);
+            if (removed != 0 && removed != 4) { gFault = TRUE; return; }
+            gSession = NULL_KEY; gBench = NULL_KEY; gPhase = ""; gWire = "";
+            llMessageLinked(LINK_THIS, 918391, "RELEASED|0|", gRun);
+            announce();
+            if (gTemporary && llGetAttached()) llRequestPermissions(llGetOwner(), PERMISSION_ATTACH);
+            return;
+        }
         if (llList2Key(fields, 4) != gRun || gRun == NULL_KEY) return;
+        if (verb == "OUTPUT_REPLY" && llGetListLength(fields) == 8 && gPhase == "WAIT_TRANSFER")
+        {
+            list pending = llParseStringKeepNulls(gWire, ["|"], []);
+            if (llList2Key(fields, 6) != llList2Key(pending, 5)) return;
+            gPhase = "OUTPUT"; gWire = "";
+            if (save())
+            { announce(); llMessageLinked(LINK_THIS, 918392, llDumpList2String(llList2List(fields, 5, 7), "|"), gRun); }
+            return;
+        }
+        if (verb == "OUTPUT_CLOSED" && (gPhase == "OUTPUT" || gPhase == "IDLE" || gPhase == "WAIT_TRANSFER"))
+        {
+            gPhase = "IDLE"; gWire = "";
+            if (save()) { announce(); llMessageLinked(LINK_THIS, 918391, "CLOSED|0|", gRun); }
+            return;
+        }
         if (verb == "ACK")
         {
             string part = llList2String(fields, 5);

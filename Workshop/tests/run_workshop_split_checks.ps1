@@ -6,3 +6,6 @@ if ($LASTEXITCODE) { throw 'Workshop split LSL analysis failed' }
 if ($LASTEXITCODE) { throw 'Workshop split behavior checks failed' }
 & (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_idle_session.py')
 if ($LASTEXITCODE) { throw 'Workshop idle session checks failed' }
+
+& (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_p3_recovery.py')
+if ($LASTEXITCODE) { throw 'P3 recovery checks failed' }

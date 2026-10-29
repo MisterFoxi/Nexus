@@ -1,9 +1,12 @@
 # P1 craft page - the same Selected basket
 
+> P3 update: see [README_P3.md](README_P3.md) for current collection, player and closure protocols.
+> Historical future-integration notes below are superseded by that guide.
+
+
 Companion to `README_simple.md`. P0 remains the generic selection page: its
-prims, rendering, and pagination are unchanged. `MC_Transactions`, Component,
-and Workshop are unchanged. The basket controller now handles Discard and a
-craft-start flag; the crafting engine still needs integration.
+prims, rendering, and pagination are unchanged. The source relay and Component stock contract remain unchanged. The basket controller now handles Discard and a
+craft-start flag; Workshop integration is active; P3 owns finished-product collection.
 
 ## Installation
 
@@ -65,8 +68,7 @@ the HUD page number does not identify a prim's texture face. Use the
   `README_Atlas.md`: `MC_Atlas_Player`, `MC_P1_Animation`, `MC_Playback_Buttons`,
   plus MC_Chop_Progress and all three atlas textures belong in ROOT. STOP,
   Later and page navigation suspend without clearing progress or the used latch.
-  Only confirmed Discard releases the preparation. Final craft output, `+`
-  buttons and Take behavior still need integration.
+  Confirmed ingredient Discard or craft closure releases the preparation. Take submits to Workshop; P3 handles container output with its own selection buttons.
 
 ## Discard and the craft flag
 
@@ -174,8 +176,7 @@ validate the 64 KiB Mono limit per script.
 `REVIEW` comments mark unresolved limits without changing behavior: Discard and
 craft flags are written separately, views share persistent records without a
 snapshot transaction, and P1's closed state is not persisted. Pending rows are
-intentionally visible without a distinct uncertainty indicator. The animation
-remains separate from actual crafting and does not set the craft-start flag.
+intentionally visible without a distinct uncertainty indicator. The animation requests and waits for the persisted CRAFT_STARTED handshake.
 
 ## Playback controls, progress and used preparations
 
@@ -183,7 +184,7 @@ remains separate from actual crafting and does not set the craft-start flag.
 P1_CUT becomes CONT immediately after the first committed start and never reverts
 to START for that preparation. P1_STOP suspends, including repeated clicks. CONT
 resumes the same active time. Later and page CONTINUE navigation also suspend.
-Only confirmed DISCARD_DONE clears the used latch. Explicit restart marks Spoiled.
+Confirmed DISCARD_DONE or CRAFT_DONE clears the used latch. Explicit restart marks Spoiled.
 Import `atlas_buttons` and `atlas_progress` into ROOT, configure visible faces,
 and use the unique prim P1_PROGRESS. Full timing/installation details are in
 `README_chop_progress.md`; its default duration to Over the top is 10 active seconds.

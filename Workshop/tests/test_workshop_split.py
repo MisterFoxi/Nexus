@@ -158,8 +158,11 @@ class SplitTests(unittest.TestCase):
         self.output.call('timer',[]);self.core.call('timer',[]);self.w.drain(20000)
 
     def collect(self):
-        self.output.call('listen',[self.output.global_vars['gMenuChannel'],'',h.Key(h.OWNER),'Collect'])
-        self.w.drain(20000)
+        # P3 sends one explicitly selected recipient, then Output revalidates it by PING.
+        destination=next(iter(self.w.containers),CONTAINER)
+        ticket=h.Key(str(uuid.uuid4()))
+        self.w.chat(HUD,-918275,f'MCW|TRANSFER|{BENCH}|{self.core.global_vars["gCollectorSession"]}|{self.core.global_vars["gRun"]}|{ticket}|{destination}')
+        self.w.drain(20000);self.advance(2)
 
     def restart(self,attr,name):
         self.w.scripts.remove(getattr(self,attr));setattr(self,attr,Script(self.w,name,BENCH));self.w.drain(20000)
@@ -203,8 +206,8 @@ class SplitTests(unittest.TestCase):
     def test_no_container_keeps_output_and_player_lock_until_collection(self):
         self.bind();self.prepare();self.submit();self.advance(1);self.advance(2);self.collect()
         self.assertEqual(self.output.global_vars['gPhase'],'WAIT_CONTAINER')
-        self.assertEqual(self.link.global_vars['gPhase'],'WAIT_RESULT')
-        self.assertEqual(self.w.stock[SOURCE],[9,1])
+        self.assertEqual(self.link.global_vars['gPhase'],'OUTPUT')
+        self.assertEqual(self.w.stock[SOURCE],[9,0])
         self.w.containers[CONTAINER]=0
         self.core.call('touch_start',[1]);self.w.drain(20000);self.advance(2);self.collect()
         self.assertEqual(self.link.global_vars['gPhase'],'IDLE')
@@ -213,7 +216,7 @@ class SplitTests(unittest.TestCase):
         self.bind();self.prepare();self.submit();self.w.containers[CONTAINER]=2
         self.advance(1);self.advance(2);self.collect()
         self.assertEqual(self.output.global_vars['gQuantity'],3)
-        self.assertEqual(self.link.global_vars['gPhase'],'WAIT_RESULT')
+        self.assertEqual(self.link.global_vars['gPhase'],'OUTPUT')
         self.restart('output','Workshop_Output.lsl')
         self.w.containers={SOURCE2:0}
         self.core.call('touch_start',[1]);self.w.drain(20000);self.advance(2);self.collect()

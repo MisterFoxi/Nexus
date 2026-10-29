@@ -141,7 +141,7 @@ default
     }
     listen(integer channel, string name, key source, string wire)
     {
-        if (channel != CHANNEL || gFault || llGetOwnerKey(source) != llGetOwner()) return;
+        if (channel != CHANNEL || gFault) return; // Coordinator authenticates the touched player/HUD/session.
         list fields = llParseStringKeepNulls(wire, ["|"], []);
         if (llGetListLength(fields) < 5 || llList2String(fields, 0) != "MCW"
             || llList2Key(fields, 2) != llGetKey()) return;

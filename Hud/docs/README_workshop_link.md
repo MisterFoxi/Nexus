@@ -1,5 +1,9 @@
 # HUD endpoint for Workshop
 
+> P3 update: see [README_P3.md](README_P3.md) for current collection, player and closure protocols.
+> Historical future-integration notes below are superseded by that guide.
+
+
 The five-script Workshop counterpart now implements MCW; see
 [Workshop installation and memory checks](../../Workshop/README.md).
 In-world memory and physical delivery still need verification. No product law
@@ -22,7 +26,7 @@ P1_RETRY are also recognized, but this change adds no UI geometry.
 Without a Workshop association, the existing DEV selection, gesture and Discard
 remain usable. Take reports that an association is required. The stock relay
 still uses its existing -918274 channel. MCW uses a separate -918275 whisper
-channel. Its current access policy is same owner, matching the stock relay.
+channel. MCW binds the touched player and their HUD; source stock operations retain their same-owner policy.
 
 ## Association and lock
 
@@ -48,14 +52,12 @@ one per event and does not maintain another ingredient list.
 
 If temporary=1 and the HUD is rezzed, after BOUND it requests its owner's attach
 permission and temporarily attaches at ATTACH_HUD_TOP_LEFT. Already attached
-HUDs are left in place. Rez/provisioning of the dedicated object belongs to the
-future Workshop change. Temporary attach/detach still needs in-world testing.
+HUDs are left in place. Provisioning is implemented by Workshop; see README_P3.md for owner/visitor behavior. Temporary attach/detach still needs in-world testing.
 
 ## Treatment: stop-and-wait transmission
 
 The HUD freezes/saves the existing active clock. It sends the measured active
-seconds and spoiled flag, not a recipe or new law. The later Workshop wiring
-can feed its existing action configuration and evaluator input from these values.
+seconds and spoiled flag, not a recipe or new law. Workshop feeds its action configuration and evaluator input from these values.
 
 1. HUD -> Workshop: `MCW|BEGIN|bench|session|treatment|CONTAINER/KEEP|activeSeconds|0`
 2. Workshop -> HUD: `MCW|ACK|hud|session|treatment|BEGIN`
@@ -66,8 +68,8 @@ can feed its existing action configuration and evaluator input from these values
 7. After matching OK, Selected closes the existing held balances through the
    unchanged COMMIT relay. Only matching source OK replies reduce the basket.
 8. Once all source closures are confirmed, HUD -> Workshop:
-   `MCW|CLOSED|bench|session|treatment`. The HUD rearms and returns to P0, keeping
-   the Workshop association for the next preparation.
+   `MCW|CLOSED|bench|session|treatment`. The HUD keeps P3 active for container output. OUTPUT_CLOSED rearms
+   the current collector for the next preparation; see README_P3.md.
 
 sequence starts at 0. escapedHERE is llEscapeURL of the complete saved HERE v5;
 it contains name, quantity at discovery, use, lifetime, taxonomy, stage, props,
@@ -75,11 +77,11 @@ protocol, freshness snapshot, mesh and organ. heldQuantity is authoritative for
 the treatment; discovery quantity is not the selected quantity. Preserve source
 metadata separately when converting rows to evaluator input.
 
-The future Workshop receiver must accept each sequence once, acknowledge exact
+The Workshop receiver must accept each sequence once, acknowledge exact
 duplicates, validate the complete row count at END, and evaluate/produce once
 per treatment UUID. RESULT OK means Workshop has accepted responsibility for
-the successful treatment under its existing output flow. Missing/no container
-or pending physical output must be handled there before reporting the outcome.
+the successful treatment under its existing output flow. For CONTAINER, OK means the valid product is durably ready: missing containers
+no longer delay ingredient closure. Product recovery has its own P3 outcome.
 
 The HUD never commits on BEGIN, ACK or timeout. A NO retains the basket and
 allows the paused gesture to resume. ABORT is sent for a failed local preflight
@@ -127,7 +129,7 @@ All messages are between cooperating ROOT scripts.
 | 918315 | COMPLETE after matching Workshop success | treatment UUID |
 | 918317 | CRAFT_DONE after confirmed stock closure | treatment UUID |
 
-CRAFT_DONE resets the existing preparation and returns to P0. The public API
+CRAFT_DONE resets the ingredient preparation. P3 remains visible until product closure. The public API
 does not expose writes to basket records, an evaluator or a second source ledger.
 
 ## Verification
