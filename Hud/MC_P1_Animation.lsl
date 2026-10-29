@@ -163,9 +163,15 @@ applyDesired()
 suspend()
 {
     // STOP is resumable for the preparation, even when pressed repeatedly.
+    // Freeze the authoritative craft clock at the input, before any visual request.
+    clock();
+    gClockActive = FALSE;
+    if (gStarted) saveSession();
     gWanted = "STOPPED";
     if (gStarted && !gSpoiled) gWanted = "PAUSED";
     applyDesired();
+    updateTimer();
+    showVisuals();
 }
 
 spoil()
@@ -202,9 +208,13 @@ startPreparation()
 continuePreparation()
 {
     if (!gStarted || gSpoiled || gFinalizing) return;
+    clock(); // Rebase while paused so none of the pause duration enters active time.
+    gClockActive = TRUE;
     gWanted = "PLAYING";
+    if (!saveSession()) { applyDesired(); updateTimer(); showVisuals(); return; }
     if (gLoaded) applyDesired();
     else if (gLoadTicket == NULL_KEY) loadAtlas();
+    updateTimer();
 }
 
 button(string name)
@@ -305,6 +315,8 @@ default
             gStarted = TRUE;
             gElapsed = 0.0; // The sole first-start initialization for this preparation.
             gClockAt = llGetTime();
+            // Stock commitment authorizes the action. Visual PLAYING is not a clock ACK.
+            gClockActive = gWanted == "PLAYING" && !gSpoiled && !gFinalizing;
             if (!saveSession()) { showVisuals(); updateTimer(); return; }
             showVisuals();
             applyDesired();
@@ -350,7 +362,7 @@ default
             clock();
             gState = text;
             if (text == "REST") gState = "STOPPED";
-            gClockActive = gStarted && !gSpoiled && !gFinalizing && gState == "PLAYING";
+            // Visual state updates never start or resume the authoritative craft clock.
             integer ownCommand = ticket == gCommandTicket && ticket != NULL_KEY;
             if (ownCommand) gCommandTicket = NULL_KEY;
             else if (gCommandTicket == NULL_KEY) gWanted = gState;

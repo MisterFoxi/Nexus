@@ -45,3 +45,19 @@ actual LSL ASTs, including the empty initial frame, active thresholds and stop/c
 Visual verification in Second Life is still required.
 
 Edited with the built-in image_gen tool. Prompt: ../assets/sources/chop_progress_prompt_v2.txt.
+
+
+## Pause input and the authoritative clock
+
+After the basket confirms CRAFT_STARTED, the controller starts active time without
+waiting for the visual PLAYING reply. Pause/STOP and page suspension account for
+the elapsed active interval, then freeze and save time immediately at input.
+CONT rebases the clock at input and resumes from the saved elapsed time.
+PLAYING/PAUSED/REST replies update visual state only; a delayed reply cannot add
+pause latency or restart the craft clock. Existing visual-unavailability/reset
+safeguards still suspend preparation rather than inventing activity during reset.
+
+Regression tests cover pause at 0.1 seconds while Coarse, a three-second delayed
+PAUSED reply, an absent visual reply, a delayed resume and a late PLAYING status.
+The grade stays Coarse during pause; no extra stock commitment or clock restart
+is introduced. Existing threshold values and atlas mapping remain unchanged.
