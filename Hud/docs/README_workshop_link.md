@@ -16,8 +16,9 @@ MC_P1_Animation and MC_Turn_Z. Add MC_Workshop_Link. Keep MC_Transactions,
 scan/render scripts, FURWARE, atlas player, button library and textures.
 Remove the obsolete MC_Bench_Test_Bridge from the in-world HUD.
 
-No prim, face, texture or table is added or renamed. P1_TAKE requests container
-output; P1_LATER requests Keep. Keep is rejected for HUD_KIND=cutting_board,
+No prim, face, texture or table is added or renamed. P1_TAKE opens recipient
+selection on P3 locally; P3_ACTION submits container output after selection.
+P1_LATER requests Keep. Keep is rejected for HUD_KIND=cutting_board,
 even if an offered configuration enables it. P1_DISCARD retains its existing
 stock rules and is blocked during a submitted treatment. EXIT and RETRY are
 available through the linked API; optional existing prims named P1_EXIT and

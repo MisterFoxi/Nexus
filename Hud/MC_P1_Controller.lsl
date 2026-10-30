@@ -93,7 +93,12 @@ pump()
 
 button(string name)
 {
-    if (name == "p1_take" || name == "p1_later" || name == "p1_exit" || name == "p1_retry")
+    if (name == "p1_take")
+    {
+        llMessageLinked(LINK_THIS, 918389, "OPEN", llGenerateKey());
+        return;
+    }
+    if (name == "p1_later" || name == "p1_exit" || name == "p1_retry")
     {
         string choice = "CONTAINER";
         if (name == "p1_later") choice = "KEEP";

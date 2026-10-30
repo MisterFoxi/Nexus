@@ -68,7 +68,7 @@ the HUD page number does not identify a prim's texture face. Use the
   `README_Atlas.md`: `MC_Atlas_Player`, `MC_P1_Animation`, `MC_Playback_Buttons`,
   plus MC_Chop_Progress and all three atlas textures belong in ROOT. STOP,
   Later and page navigation suspend without clearing progress or the used latch.
-  Confirmed ingredient Discard or craft closure releases the preparation. Take submits to Workshop; P3 handles container output with its own selection buttons.
+  Confirmed ingredient Discard or craft closure releases the preparation. Take opens P3 locally; P3 Transfer submits to Workshop after recipient selection.
 
 ## Discard and the craft flag
 

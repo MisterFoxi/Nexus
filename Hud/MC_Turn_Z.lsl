@@ -17,7 +17,11 @@ pageZero()
 
 default
 {
-    state_entry() { llMessageLinked(LINK_THIS, 918390, "STATUS", NULL_KEY); }
+    state_entry()
+    {
+        llMessageLinked(LINK_THIS, 918390, "STATUS", NULL_KEY);
+        llMessageLinked(LINK_THIS, 918389, "STATUS", NULL_KEY);
+    }
     touch_start(integer count)
     {
         integer i;

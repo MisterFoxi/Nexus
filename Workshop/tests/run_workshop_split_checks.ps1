@@ -9,3 +9,5 @@ if ($LASTEXITCODE) { throw 'Workshop idle session checks failed' }
 
 & (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_p3_recovery.py')
 if ($LASTEXITCODE) { throw 'P3 recovery checks failed' }
+& (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_post_collect.py')
+if ($LASTEXITCODE) { throw 'Post-collection closure recovery checks failed' }

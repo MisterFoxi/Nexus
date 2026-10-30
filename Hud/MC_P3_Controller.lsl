@@ -16,6 +16,9 @@ integer gOpen;
 integer gBatch;
 key gOperation = NULL_KEY;
 key gDestination = NULL_KEY;
+// 0: existing product collection; 1: recipients before submission; 2: submitted.
+integer gMode;
+key gSubmission = NULL_KEY;
 
 integer pages(list rows)
 {
@@ -33,7 +36,7 @@ integer find(list rows, key source)
 integer save()
 {
     integer result = llLinksetDataWrite("mc:p3:selection", llList2Json(JSON_ARRAY,
-        [gProduct, llList2Json(JSON_ARRAY, gSelected), gOperation, gDestination]));
+        [gProduct, llList2Json(JSON_ARRAY, gSelected), gOperation, gDestination, gMode, gSubmission]));
     if (result == 0 || result == 5) return TRUE;
     gOpen = FALSE; gBatch = FALSE;
     llOwnerSay("[Containers] Cannot save selection. Actions stopped.");
@@ -76,14 +79,36 @@ refresh()
 nextTransfer()
 {
     if (!gBatch || (gOperation != NULL_KEY) || !gOpen || gRemaining <= 0) return;
+    list session = llJson2List(llLinksetDataRead("mc:workshop:session"));
+    if (llList2String(session, 5) != "OUTPUT" || llList2Key(session, 6) != gProduct) return;
     if (!llGetListLength(gSelected)) { gBatch = FALSE; return; }
     gDestination = llList2Key(gSelected, 0); gOperation = llGenerateKey();
     if (save()) llMessageLinked(LINK_THIS, 918390, "TRANSFER|" + (string)gDestination, gOperation);
+}
+openRecipients()
+{
+    list session = llJson2List(llLinksetDataRead("mc:workshop:session"));
+    string phase = llList2String(session, 5);
+    if (gOperation != NULL_KEY || gMode == 2 || (phase != "" && phase != "IDLE"))
+    { llOwnerSay("[Containers] Workshop treatment pending."); return; }
+    if (llLinksetDataRead("mc:simple:craft_started") != "1")
+    { llOwnerSay("[Containers] No started preparation to submit."); return; }
+    if (gMode != 1)
+    {
+        gSelected = []; gNear = []; gNearPage = 0; gSelectedPage = 0;
+    }
+    gMode = 1; gProduct = NULL_KEY; gRemaining = 0;
+    gOpen = TRUE; gBatch = FALSE; gSubmission = NULL_KEY;
+    if (!save()) return;
+    llMessageLinked(LINK_THIS, 918391, "SELECTING|0|", NULL_KEY);
+    refresh();
 }
 product(string text, key run)
 {
     list fields = llParseStringKeepNulls(text, ["|"], []);
     string outputPhase = llList2String(fields, 0);
+    // Local page notification, not a Workshop product state.
+    if (outputPhase == "SELECTING") { render(); return; }
     gOpen = outputPhase != "CLOSED" && outputPhase != "RELEASED";
     if (gProduct != run)
     {
@@ -92,10 +117,21 @@ product(string text, key run)
     }
     integer wasOpen = gProduct == run && llGetListLength(gNear) > 0;
     gProduct = run; gRemaining = llList2Integer(fields, 1);
-    if (!gOpen) { gBatch = FALSE; gOperation = NULL_KEY; gSelected = []; gNear = []; }
+    if (!gOpen)
+    {
+        gMode = 0; gSubmission = NULL_KEY;
+        gBatch = FALSE; gOperation = NULL_KEY; gSelected = []; gNear = [];
+        gScanning = FALSE; gReceiving = FALSE; gPending = []; gScan = NULL_KEY;
+        llSetTimerEvent(0.0);
+    }
     if (!save()) return;
     render();
-    if (gOpen && outputPhase == "WAIT_CONTAINER" && !wasOpen && (gOperation == NULL_KEY)) refresh();
+    if (gOpen && outputPhase == "WAIT_CONTAINER")
+    {
+        if (gMode == 2) { gMode = 0; gSubmission = NULL_KEY; if (!save()) return; }
+        if (!wasOpen && !gBatch && (gOperation == NULL_KEY)) refresh();
+        nextTransfer();
+    }
 }
 button(string name)
 {
@@ -106,9 +142,21 @@ button(string name)
     if (name == "p3_selected_prev") { gSelectedPage = (gSelectedPage + pages(gSelected) - 1) % pages(gSelected); render(); return; }
     if (name == "p3_selected_next") { gSelectedPage = (gSelectedPage + 1) % pages(gSelected); render(); return; }
     if (gOperation) { llOwnerSay("[Containers] Request pending. Retry repeats the saved request."); return; }
+    if (gMode == 2 || gBatch)
+    { llOwnerSay("[Containers] Treatment or transfer pending. Selection retained."); return; }
     if (name == "p3_refresh") { refresh(); return; }
     if (name == "p3_action")
     {
+        if (!llGetListLength(gSelected))
+        { llOwnerSay("[Containers] Select at least one recipient first."); return; }
+        if (gScanning)
+        { llOwnerSay("[Containers] Wait for the recipient scan."); return; }
+        if (gMode == 1)
+        {
+            gMode = 2; gSubmission = llGenerateKey();
+            if (save()) llMessageLinked(LINK_THIS, 918389, "SUBMIT", gSubmission);
+            return;
+        }
         list session = llJson2List(llLinksetDataRead("mc:workshop:session"));
         if (llList2String(session, 5) != "OUTPUT")
         { llOwnerSay("[Containers] Ingredient closure is still pending in this HUD."); return; }
@@ -150,13 +198,24 @@ default
     state_entry()
     {
         list saved = llJson2List(llLinksetDataRead("mc:p3:selection"));
-        if (llGetListLength(saved) == 4)
+        if (llGetListLength(saved) == 4 || llGetListLength(saved) == 6)
         {
             gProduct = llList2Key(saved, 0); gSelected = llJson2List(llList2String(saved, 1));
             gOperation = llList2Key(saved, 2); gDestination = llList2Key(saved, 3);
+            if (llGetListLength(saved) == 6)
+            { gMode = llList2Integer(saved, 4); gSubmission = llList2Key(saved, 5); }
         }
         list outputPhase = llParseStringKeepNulls(llLinksetDataRead("mc:p3:output"), ["|"], []);
         list session = llJson2List(llLinksetDataRead("mc:workshop:session"));
+        if (gMode == 2 && (llList2String(session, 5) == "IDLE" || llGetListLength(session) == 0))
+        { gMode = 1; gProduct = NULL_KEY; gSubmission = NULL_KEY; save(); }
+        else if (gMode == 2) gProduct = llList2Key(session, 6);
+        if (gMode == 1 || gMode == 2)
+        {
+            gOpen = TRUE;
+            llMessageLinked(LINK_THIS, 918391, "SELECTING|0|", NULL_KEY);
+            if (gMode == 1) refresh();
+        }
         if (llGetListLength(outputPhase) == 4 && llList2Key(outputPhase, 0) == llList2Key(session, 6)
             && (llList2String(session, 5) == "OUTPUT" || llList2String(session, 5) == "WAIT_TRANSFER"
                 || llList2String(session, 5) == "SETTLING"))
@@ -175,6 +234,31 @@ default
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber()) return;
+        if (number == 918389)
+        {
+            if (text == "OPEN") openRecipients();
+            else if (text == "STATUS" && gMode != 0)
+                llMessageLinked(LINK_THIS, 918391, "SELECTING|0|", NULL_KEY);
+            return;
+        }
+        if (number == 918393 && gMode == 2 && ticket == gSubmission)
+        {
+            list reply = llParseStringKeepNulls(text, ["|"], []);
+            if (llList2String(reply, 0) == "SUBMITTED" && llList2Key(reply, 1) != NULL_KEY)
+            { gProduct = llList2Key(reply, 1); gBatch = TRUE; }
+            else { gMode = 1; gSubmission = NULL_KEY; gBatch = FALSE; }
+            save(); return;
+        }
+        if (number == 918371)
+        {
+            if (text == "IDLE" && gMode == 2)
+            {
+                gMode = 1; gProduct = NULL_KEY; gSubmission = NULL_KEY; gBatch = FALSE;
+                save(); render();
+            }
+            else if (text == "OUTPUT") nextTransfer();
+            return;
+        }
         if (number == 918391) { product(text, ticket); return; }
         if (number == 918291 && (text == "P3_NEAR" || text == "P3_SEL")) { render(); return; }
         if (number == 918392 && ticket == gProduct)

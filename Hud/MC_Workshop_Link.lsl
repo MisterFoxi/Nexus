@@ -17,6 +17,7 @@ integer gSequence;
 string gWire;
 integer gDeadline;
 integer gFault;
+integer gNextOutputStatus;
 
 integer validKey(key value)
 {
@@ -38,6 +39,15 @@ integer save()
 announce()
 {
     llMessageLinked(LINK_THIS, 918371, gPhase, gSession);
+}
+
+// Rebuild P0 through its existing scan/validation path after confirmed product closure.
+restoreIngredients()
+{
+    gNextOutputStatus = 0;
+    llMessageLinked(LINK_THIS, 918291, "NEARBY", NULL_KEY);
+    llMessageLinked(LINK_THIS, 918291, "SELECTED", NULL_KEY);
+    llMessageLinked(LINK_THIS, 918287, "KEEP_PAGE", NULL_KEY);
 }
 
 string header(string verb)
@@ -135,6 +145,20 @@ default
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber() || gFault) return;
+        if (number == 918389 && text == "SUBMIT" && ticket != NULL_KEY)
+        {
+            if (gPhase != "IDLE" || gSession == NULL_KEY)
+            {
+                llOwnerSay("[Workshop HUD] Associate an idle workshop before Transfer.");
+                llMessageLinked(LINK_THIS, 918393, "REJECTED", ticket);
+                return;
+            }
+            choose("CONTAINER");
+            string result = "REJECTED";
+            if (gPhase == "GESTURE" && !gFault) result = "SUBMITTED|" + (string)gRun;
+            llMessageLinked(LINK_THIS, 918393, result, ticket);
+            return;
+        }
         if (number == 918370) { choose(text); return; }
         if (number == 918390)
         {
@@ -276,6 +300,7 @@ default
             gSession = NULL_KEY; gBench = NULL_KEY; gPhase = ""; gWire = "";
             llMessageLinked(LINK_THIS, 918391, "RELEASED|0|", gRun);
             announce();
+            restoreIngredients();
             if (gTemporary && llGetAttached()) llRequestPermissions(llGetOwner(), PERMISSION_ATTACH);
             return;
         }
@@ -291,8 +316,13 @@ default
         }
         if (verb == "OUTPUT_CLOSED" && (gPhase == "OUTPUT" || gPhase == "IDLE" || gPhase == "WAIT_TRANSFER"))
         {
+            integer returning = gPhase != "IDLE";
             gPhase = "IDLE"; gWire = "";
-            if (save()) { announce(); llMessageLinked(LINK_THIS, 918391, "CLOSED|0|", gRun); }
+            if (save())
+            {
+                announce(); llMessageLinked(LINK_THIS, 918391, "CLOSED|0|", gRun);
+                if (returning) restoreIngredients();
+            }
             return;
         }
         if (verb == "ACK")
@@ -341,6 +371,12 @@ default
     {
         // These local requests are idempotent. Source operations are NEVER resent here.
         if (gFault) return;
+        // Status can recover a lost final confirmation. Never replay TRANSFER or CONFIG.
+        if ((gPhase == "OUTPUT" || gPhase == "WAIT_TRANSFER") && llGetUnixTime() >= gNextOutputStatus)
+        {
+            gNextOutputStatus = llGetUnixTime() + 10;
+            llWhisper(CHANNEL, header("OUTPUT_STATUS"));
+        }
         if ((gPhase == "GESTURE" || gPhase == "SNAPSHOT" || gPhase == "ROWS")
             && gDeadline && llGetUnixTime() >= gDeadline)
         { abort("Local HUD response timed out."); return; }
