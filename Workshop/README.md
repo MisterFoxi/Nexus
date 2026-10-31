@@ -168,6 +168,15 @@ required for the five production responsibilities.
 
 ## Verification
 
+Identity conditions retain their dimension during evaluation: taxonomic ancestry
+named plant does not satisfy meta.stage=plant on an already harvested leaf.
+Organ names and eligibility tags likewise cannot stand in for a stage or a
+taxonomy. Unqualified token presence and numeric aggregation retain their rules.
+Whole-plant GIVE/organ mesh output remains available; leaf transformations still
+produce container DNA under the loaded laws. No world records or recipes change.
+After replacing Eval, submit a new treatment to evaluate again; an existing run's
+cached result is intentionally not recalculated or replayed.
+
 Run `Workshop/tests/run_workshop_split_checks.ps1`. The runner uses the installed
 Tailslide parser and exercises the actual script ASTs, including the actual HUD
 endpoint, basket and stock relay. Test doubles provide LSL services, containers
@@ -178,3 +187,9 @@ script or a reference for current cutting-board recipes.
 These tests do not replace Mono compilation, memory measurements, permissions
 or inventory-delivery checks in Second Life. The scripts report existing
 persistent errors instead of dropping products or silently retrying dispatch.
+
+`tests/test_stage_routing.py` reproduces the Kanda leaf failure using the taxonomy
+ancestry and harvest/chop/mince conditions from the supplied in-world dump. It
+checks leaf without a mesh reaching CONFIG to a selected recipient, whole plant
+retaining GIVE, whole species retaining multi-organ output, stage progression,
+dimension collisions and aggregate cleanup between evaluations.

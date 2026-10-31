@@ -36,7 +36,7 @@ integer EVAL_RES = 970201;           // evaluator -> main: result
 integer NOTOK    = -999999;          // Sentinel for an unknown token.
 
 integer GS = 8;                      // Fields per basket group (v0.7: + organ).
-string  VERSION = "Workshop_Eval v0.7.1 (2026-10-27)";
+string  VERSION = "Workshop_Eval v0.7.2 (2026-10-30)";
 
 // ---- configuration subset used by this evaluator ----
 list    gGenres;
@@ -60,6 +60,12 @@ integer FLUX_ABS = 1;
 // ---- aggregate ----
 list gAxId; list gAxVal;
 list gToks;
+// Identity conditions keep their dimension: a taxonomic ancestor named plant
+// must not satisfy meta.stage=plant for an already harvested leaf.
+list gCats;                         // Stride 2: dimension token ID, value token ID.
+integer gTaxDim;
+integer gStageDim;
+integer gOrganDim;
 list gInert;                         // Inert axis IDs: material does not react to these axes (tax:<id>:inert).
 list gNeed;                          // Tokens required for a reaction (tax:<id>:need).
 
@@ -150,6 +156,16 @@ integer axGet(integer id){
 }
 tokAdd(integer id){ if(llListFindList(gToks,[id])==-1) gToks += id; }
 integer tokHas(integer id){ return llListFindList(gToks,[id]) != -1; }
+integer catHas(integer dimension, integer value){
+    integer i;
+    for(i=0; i<llGetListLength(gCats); i+=2)
+        if(llList2Integer(gCats,i) == dimension && llList2Integer(gCats,i+1) == value) return TRUE;
+    return FALSE;
+}
+catAdd(integer dimension, integer value){
+    tokAdd(value); // Retain the existing unqualified presence/need semantics.
+    if(dimension != NOTOK && !catHas(dimension,value)) gCats += [dimension,value];
+}
 integer inertHas(integer id){ return llListFindList(gInert,[id]) != -1; }
 
 // ---------- batch curve and natural variation ----------
@@ -175,7 +191,10 @@ integer fluxAxis(integer v){                        // Apply +/- FLUX_ABS while 
 // Basket groups (stride 7) -> aggregate: batch-scale duplicates, then sum groups.
 // Build a new aggregate per request; token presence, inert axes, and required tokens are unioned across inputs.
 clearAggregate(){
-    gAxId=[]; gAxVal=[]; gToks=[]; gInert=[]; gNeed=[]; gBatchSpoilMul=1000;
+    gAxId=[]; gAxVal=[]; gToks=[]; gCats=[]; gInert=[]; gNeed=[]; gBatchSpoilMul=1000;
+    gTaxDim=nameToId("meta.taxonomy");
+    gStageDim=nameToId("meta.stage");
+    gOrganDim=nameToId("meta.organ");
 }
 addGroup(list groups, integer gi){
         integer c  = (integer)llList2String(groups, gi+1);
@@ -194,7 +213,7 @@ addGroup(list groups, integer gi){
             string tk = llLinksetDataRead("tax:"+(string)taxId+":toks");
             if(tk != ""){
                 list tl = llParseString2List(tk, ["^"], []); integer j;
-                for(j=0;j<llGetListLength(tl);j++) tokAdd((integer)llList2String(tl,j));
+                for(j=0;j<llGetListLength(tl);j++) catAdd(gTaxDim,(integer)llList2String(tl,j));
             }
             string tr = llLinksetDataRead("tax:"+(string)taxId+":trait");
             if(tr != ""){
@@ -223,7 +242,7 @@ addGroup(list groups, integer gi){
             }
         }
         integer stgId = nameToId(stg);
-        if(stgId != NOTOK) tokAdd(stgId);
+        if(stgId != NOTOK) catAdd(gStageDim,stgId);
         if(pr != ""){
             list pl = llParseString2List(pr, ["^"], []); integer m;
             for(m=0;m<llGetListLength(pl);m++){
@@ -237,11 +256,11 @@ addGroup(list groups, integer gi){
         if(org != "" && taxId != NOTOK){
             integer oid = nameToId(org);
             if(oid != NOTOK){
-                tokAdd(oid);
+                catAdd(gOrganDim,oid);
                 string otg = llLinksetDataRead("tax:"+(string)taxId+":organ:"+(string)oid+":tags");
                 if(otg != ""){
                     list otl = llParseString2List(otg, ["^"], []); integer ot;
-                    for(ot=0;ot<llGetListLength(otl);ot++) tokAdd((integer)llList2String(otl,ot));
+                    for(ot=0;ot<llGetListLength(otl);ot++) catAdd(gOrganDim,(integer)llList2String(otl,ot));
                 }
                 string otr = llLinksetDataRead("tax:"+(string)taxId+":organ:"+(string)oid+":trait");
                 if(otr != ""){
@@ -303,8 +322,11 @@ integer evalWhen(string when){
         } else {
             integer eq = llSubStringIndex(t, "=");
             if(eq != -1){
+                integer dimension = (integer)llGetSubString(t,0,eq-1);
                 integer vid = (integer)llGetSubString(t,eq+1,-1);
-                if(!tokHas(vid)) return FALSE;
+                if(dimension == gTaxDim || dimension == gStageDim || dimension == gOrganDim){
+                    if(!catHas(dimension,vid)) return FALSE;
+                } else if(!tokHas(vid)) return FALSE;
             } else {
                 if(!tokHas((integer)t)) return FALSE;
             }
@@ -514,7 +536,7 @@ evaluate(list groups, string actHdr, key request){
             }
             if(giveList != ""){
                 sendResult("2|"+giveList, request);
-                gAxId=[]; gAxVal=[]; gToks=[]; gInert=[]; gNeed=[]; rYieldGives=[];
+                gAxId=[]; gAxVal=[]; gToks=[]; gCats=[]; gInert=[]; gNeed=[]; rYieldGives=[];
                 return;
             }
         }
@@ -529,7 +551,7 @@ evaluate(list groups, string actHdr, key request){
             sendResult(res, request);
         }
 
-    gAxId=[]; gAxVal=[]; gToks=[]; gInert=[]; gNeed=[]; rYieldGives=[];
+    gAxId=[]; gAxVal=[]; gToks=[]; gCats=[]; gInert=[]; gNeed=[]; rYieldGives=[];
     gPrincipal=[]; gStreaming=FALSE;
 }
 streamStep(){
