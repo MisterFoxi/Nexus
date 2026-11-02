@@ -1,6 +1,6 @@
 # P3 — finished product collection
 
-P3 replaces only Workshop_Output's Collect dialog for container products. Ingredient
+Take opens P3 locally; Transfer submits the preparation after recipient selection. Ingredient
 selection, recipe evaluation, KEEP and mesh/organ CUT/GIVE retain their existing owners.
 Install the updated scripts together on an idle station/HUD; do not mix old MCW endpoints.
 
@@ -11,8 +11,7 @@ HUD ROOT: replace MC_P1_Controller.lsl, MC_Workshop_Link.lsl and MC_Turn_Z.lsl; 
 MC_Render_P3_NEAR.lsl and MC_Render_P3_SEL.lsl. Keep MC_Scan, P0/P1 controllers,
 renderers, animation, stock relay and FURWARE.
 
-Apply the existing assets/Hud-p3.png to the P3 panel. No Discard button is installed or required at this stage. The product Discard
-protocol remains available internally for a future UI. Buttons have no scripts; touches reach ROOT.
+Apply the existing assets/Hud-p3.png to the P3 panel. There is no P3 Discard button or product Discard protocol. Buttons have no scripts; touches reach ROOT.
 The script files cannot create or verify the in-world HUD assembly.
 
 Physical rows are indexed n=0..3. Names follow the enumerated HUD assembly:
@@ -97,8 +96,7 @@ MCW|verb|targetUUID|sessionUUID|productRunUUID|fields...
 | Workshop → HUD | OUTPUT_STATE|outputPhase|remaining|escapedProductName |
 | HUD → Workshop | OUTPUT_STATUS |
 | HUD → Workshop | TRANSFER|operationUUID|containerUUID |
-| HUD → Workshop | OUTPUT_DISCARD|operationUUID|NULL_KEY |
-| Workshop → HUD | OUTPUT_REPLY|TRANSFERRED/TRANSFER_NO/DISCARDED|operationUUID|remaining |
+| Workshop → HUD | OUTPUT_REPLY|TRANSFERRED/TRANSFER_NO/TRANSFER_EXPIRED|operationUUID|remaining |
 | Workshop → HUD | OUTPUT_CLOSED |
 
 Existing ACCEPT/BOUND establish the collection association. Actual speaker UUID,
@@ -106,29 +104,28 @@ target, session, run and collector HUD are checked. The latest exact operation
 receipt can answer an explicit retry without repeating CONFIG. Requests are
 serialized; starting another command while a reply is pending is blocked.
 
-HUD linked API: 918390 TRANSFER|containerUUID / DISCARD (id=operation UUID), or
+HUD linked API: 918390 TRANSFER|containerUUID (id=operation UUID), or
 STATUS; 918391 outputPhase|remaining|escapedName (id=product run); 918392
 status|operationUUID|remaining (id=product run). Renderers reuse 918290/918291 and
 the 18 escaped fields with panel identities P3_NEAR and P3_SEL.
 
 ## Ingredient closure and product closure
 
-After valid container product creation and CookTime, Output persists WAIT_CONTAINER
+Immediately after valid container product creation, Output persists WAIT_CONTAINER
 and reports READY internally. The existing RESULT OK then starts the original HUD's
 COMPLETE/COMMIT path immediately, without waiting for collection. It produces no
 second user-facing craft-completion notification.
 
 CRAFT_DONE still means confirmed ingredient stock closure, followed by CLOSED.
 The Workshop records ws:closed and moves to PRODUCT while output remains. P1
-Discard still means RETURN before Start or COMMIT after Start. P3 Discard only
-sets the finished product remainder to zero; it never calls the basket Discard API.
+Discard still means RETURN before Start or COMMIT after Start. P3 provides no product Discard command.
 
 Touching a pending product selects the current player, then opens P3 on that
 player's dedicated HUD. No reservation or handover command is introduced. Origin
 identity in ws:core remains separate from ws:collector. Only the origin can close
 its ingredient commitments. A different collector cannot COMMIT the origin's stock.
 
-Transfer/Discard by another collector can finish even if the original HUD has
+Transfer by another collector can finish even if the original HUD has
 unconfirmed COMMIT replies. Another preparation remains blocked until those replies
 arrive and CLOSED is recorded. Once both closures are confirmed, the collector's
 session becomes BOUND/IDLE and the previous HUD is released. A missing origin HUD
@@ -140,6 +137,21 @@ to their inventory and asks them to wear it. OFFER is repeated during associatio
 not stock commands. Inventory copy/transfer permissions and actual attachment must
 be checked in Second Life. Merely rezzing a station-owned object cannot give a
 different player an owned HUD. Ingredient stock access remains same-owner.
+
+## Product lifetime and effects (Workshop 0.8.0)
+
+Partial transfers share the lot's absolute expiry. Time waiting in the Workshop,
+including offline time across resets, reduces its remaining lifetime. Output
+retires an expired remainder and closes product output; it does not resend stock
+operations. Recipient Component v0.7.3 honors the optional expiryUnix CONFIG field.
+Old perishable pending products without an expiry are retained in HOLD for
+inspection; no new age is invented. See Workshop/README.md for installation.
+
+HUD MC_P1_Animation emits 918394 with 0/1 for the actual active clock.
+MC_Workshop_Link sends authenticated MCW ACTIVITY while idle, and Workshop
+forwards cosmetic state to Output. Smoke/CookSound follow activity; there is no
+additional cooking duration. Ready and failure sounds and the component HOVER
+menu are retained. Player information is informative and adds no reservation.
 
 ## Persistence and physical limits
 
@@ -167,6 +179,6 @@ Run Workshop/tests/run_workshop_split_checks.ps1 and Hud/tests/run_workshop_hud_
 Tests include test_p3_take_sequence.py for Take without submission, required
 recipient selection, delayed stock closure, refusal, duplicate clicks and resets.
 They parse the actual scripts and execute AST scenarios for stock closure,
-different owners, partial delivery, stale collectors, Discard, resets, selection,
+different owners, partial delivery, stale collectors, removed-Discard rejection, resets, selection,
 independent pagination and request matching. These do not establish Mono compilation,
 64 KiB memory use, mesh orientation, FURWARE geometry or inventory/attach permissions.

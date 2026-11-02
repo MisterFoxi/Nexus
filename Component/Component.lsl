@@ -38,7 +38,7 @@
 //   workshop -> all   : PING
 //   elem     -> ws    : HERE|key|name|qty|use|life|taxonomy|stage|propsPacked|proto|eff|mesh|organ
 //   blank    -> ws    : BLANK|key|capacity       (available container, on PING)
-//   ws       -> blank : CONFIG|key|name|qty|use|life|taxonomy|stage|propsPacked|med[|eff]
+//   ws       -> blank : CONFIG|key|name|qty|use|life|taxonomy|stage|propsPacked|med[|eff[|expiryUnix]]
 //   ws       -> elem  : CUT|key|avatarKey                 (record recipient)
 //   ws       -> elem  : GIVE|key            (give single Mesh)
 //   ws       -> elem  : GIVE|key|leaf^root  (harvest: give each listed organ's mesh)
@@ -63,7 +63,7 @@ integer HS = 7;
 integer gStockFault;
 string  SEP = "|";
 integer PROTO = 5;          // v5 adds the organ field in HERE and organ->mesh harvest delivery.
-string  VERSION = "Component v0.7.2 (2026-10-27)"; // Bump script revision on changes; PROTO is independent.
+string  VERSION = "Component v0.7.3 (2026-10-31)"; // Bump script revision on changes; PROTO is independent.
 
 integer ROLE_NONE  = 0;
 integer ROLE_NC    = 1;     // Defined by a notecard.
@@ -558,6 +558,16 @@ default{
         else if(verb == "CONFIG"){
             if(gRole != ROLE_BLANK || gReady) return;
             if(llList2String(p,1) != (string)llGetKey()) return;
+            // Optional absolute lot expiry preserves time already spent in the Workshop.
+            integer absoluteExpiry;
+            if (llGetListLength(p) > 11)
+            {
+                string value = llList2String(p, 11);
+                absoluteExpiry = (integer)value;
+                if ((string)absoluteExpiry != value || absoluteExpiry < 0) return;
+                if ((integer)llList2String(p, 5) > 0 && absoluteExpiry <= llGetUnixTime()) return;
+                if ((integer)llList2String(p, 5) <= 0 && absoluteExpiry != 0) return;
+            }
             // REVIEW: validate field count, identity, positive quantity/use, lifetime, and gCapacity before accepting CONFIG.
             gName     = llList2String(p,2);
             gQuantity = (integer)llList2String(p,3);
@@ -570,8 +580,9 @@ default{
             integer effInit = 1000;
             if(llGetListLength(p) > 10) effInit = (integer)llList2String(p,10);
             // Inherit ingredient freshness instead of starting with a fully fresh product.
-            // REVIEW: clamp effInit to 0..1000 and avoid integer overflow in effInit * gLifeSecs.
-            if(gLifeSecs > 0 && effInit < 1000) gExpiry = llGetUnixTime() + (effInit * gLifeSecs) / 1000;
+            // REVIEW: clamp legacy effInit to 0..1000. Float multiplication avoids integer product overflow.
+            if (llGetListLength(p) > 11) gExpiry = absoluteExpiry;
+            else if(gLifeSecs > 0 && effInit < 1000) gExpiry = llGetUnixTime() + (integer)((float)effInit * (float)gLifeSecs / 1000.0);
             finalize();
         }
         else if(verb == "HOVER"){

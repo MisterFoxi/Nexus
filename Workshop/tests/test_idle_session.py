@@ -42,8 +42,8 @@ class IdleSessionTests(unittest.TestCase):
         self.core.call('touch_start',[1]);self.w.drain(20000)
         channel=self.core.global_vars['gSessionMenu'];self.submit()
         self.core.call('listen',[channel,'',s.h.Key(s.h.OWNER),'Exit']);self.w.drain(20000)
-        self.assertEqual(self.core.global_vars['gPhase'],'OUTPUT')
-        self.assertEqual(self.w.stock[s.SOURCE],[9,1])
+        self.assertEqual(self.core.global_vars['gPhase'],'PRODUCT')
+        self.assertEqual(self.w.stock[s.SOURCE],[9,0])
 
     def test_foreign_exit_request_is_ignored(self):
         self.bind();lease=self.core.global_vars['gSession']

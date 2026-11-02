@@ -1,3 +1,4 @@
+string VERSION = "MC_P1_Animation v0.8.0 (2026-10-31)";
 // ROOT. One preparation: first START commits craft_started, CONT never consumes again.
 // 918360 START/CONT/STOP: explicit preparation actions, unique non-null request id.
 // START on an already used preparation spoils it. Normal P1_CUT becomes CONT.
@@ -83,6 +84,8 @@ restoreSession()
 
 updateTimer()
 {
+    // Cosmetic activity only. The Workshop never advances the preparation clock.
+    llMessageLinked(LINK_THIS, 918394, (string)gClockActive, NULL_KEY);
     if (gClockActive || gStartTicket != NULL_KEY
         || (!gButtonsLoaded && gButtonsAttempts > 0 && gButtonsAttempts < 4)
         || (!gProgressLoaded && gProgressAttempts > 0 && gProgressAttempts < 4)) llSetTimerEvent(TICK);
@@ -265,7 +268,7 @@ visualStatus(integer number, string text, key ticket)
 
 default
 {
-    state_entry() { restoreSession(); loadAtlas(); loadButtons(); loadProgress(); }
+    state_entry() { llOwnerSay("[Nexus] " + VERSION); restoreSession(); loadAtlas(); loadButtons(); loadProgress(); }
     touch_start(integer count)
     {
         integer i;

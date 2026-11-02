@@ -1,3 +1,4 @@
+# Workshop v0.8.0: HUD preparation; no autonomous CookTime.
 # Cutting tool config -- OWNER-ONLY notecard.
 # IN-WORLD: rename this notecard to EXACTLY "bench_config" inside the
 # cutting tool's prim (the Workshop script only looks for that name).
@@ -7,8 +8,6 @@
 # A cutting tool runs the cutting_board laws (e.g. 'cut' : plant -> leaf).
 Genre = cutting_board
 
-# REVIEW: Channel is fixed in the scripts; this legacy setting is ignored.
-Channel = -918273
 MaxEffect = 50
 FluxAbs = 1              # natural per-axis variation (+/-), 0 = fixed axes
 
@@ -18,7 +17,7 @@ FluxAbs = 1              # natural per-axis variation (+/-), 0 = fixed axes
 #    bell curve instead of summing x N. Distinct ingredients are not
 #    affected. Values are [min,max] PAIRS, per-mille (1000 = x1.0):
 #    pair #1 = n=1 copy, pair #2 = n=2, ... one pair per count.
-#    At cook, a random draw in the pair's [min,max] scales the group's
+#    At evaluation, a random draw in the pair's [min,max] scales the group's
 #    axis contribution (the spread = natural fuzz). Shape rises to a
 #    sweet spot then falls. Keep an EVEN count of values.
 #    n >= NMax => batch spoiled: potency collapses to a draw in
@@ -31,14 +30,8 @@ SpoilMax = 150
 Batch = 950,1050, 1200,1300, 1400,1500, 1350,1500, 950,1150, 550,800
 # ============================================================
 
-# REVIEW: MaxQuantity and MinLifetime are not read by the current Workshop/Eval scripts.
-MaxQuantity = 20
-MinLifetime = 1h
 ShowHover = 1
 
-CookTime = 5s            # chopping is quick -- shorter than a cauldron
-# REVIEW: CollectWindow is ignored; output waits for manual collection without this timeout.
-CollectWindow = 15s      # time to click to collect the output
 
 # Sounds: names of sounds present in the cutting tool's inventory.
 # Swap for chop/slice clips; leave as-is if those sounds are loaded.

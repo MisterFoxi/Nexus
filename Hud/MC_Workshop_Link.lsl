@@ -1,3 +1,4 @@
+string VERSION = "MC_Workshop_Link v0.8.0 (2026-10-31)";
 // ROOT. HUD-only Workshop endpoint. MCW contract: docs/README_workshop_link.md.
 // Basket/stock belongs to Selected; active time belongs to MC_P1_Animation.
 integer CHANNEL = -918275;
@@ -18,6 +19,7 @@ string gWire;
 integer gDeadline;
 integer gFault;
 integer gNextOutputStatus;
+integer gActivity;
 
 integer validKey(key value)
 {
@@ -118,6 +120,7 @@ default
 {
     state_entry()
     {
+        llOwnerSay("[Nexus] " + VERSION);
         llListen(CHANNEL, "", NULL_KEY, "");
         llSetTimerEvent(2.0);
         string stored = llLinksetDataRead(STORE);
@@ -145,6 +148,13 @@ default
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber() || gFault) return;
+        if (number == 918394)
+        {
+            gActivity = text == "1";
+            if (gPhase == "IDLE" && gSession != NULL_KEY)
+                llWhisper(CHANNEL, header("ACTIVITY") + "|" + (string)gActivity);
+            return;
+        }
         if (number == 918389 && text == "SUBMIT" && ticket != NULL_KEY)
         {
             if (gPhase != "IDLE" || gSession == NULL_KEY)
@@ -168,8 +178,6 @@ default
             list command = llParseStringKeepNulls(text, ["|"], []);
             if (llList2String(command, 0) == "TRANSFER" && llList2Key(command, 1) != NULL_KEY)
                 send(header("TRANSFER") + "|" + (string)ticket + "|" + llList2String(command, 1), "WAIT_TRANSFER");
-            else if (text == "DISCARD")
-                send(header("OUTPUT_DISCARD") + "|" + (string)ticket + "|" + (string)NULL_KEY, "WAIT_TRANSFER");
             return;
         }
         if (number == 918373 && gPhase == "GESTURE" && ticket == gRun)
@@ -371,6 +379,8 @@ default
     {
         // These local requests are idempotent. Source operations are NEVER resent here.
         if (gFault) return;
+        if (gActivity && gPhase == "IDLE" && gSession != NULL_KEY)
+            llWhisper(CHANNEL, header("ACTIVITY") + "|1");
         // Status can recover a lost final confirmation. Never replay TRANSFER or CONFIG.
         if ((gPhase == "OUTPUT" || gPhase == "WAIT_TRANSFER") && llGetUnixTime() >= gNextOutputStatus)
         {

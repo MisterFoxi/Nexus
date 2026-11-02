@@ -1,4 +1,4 @@
-# Workshop v0.7: separated subsystems
+# Workshop v0.8.1: HUD preparation, Workshop result and output
 
 Install these five scripts together in the same ROOT prim of an idle workshop:
 
@@ -47,10 +47,69 @@ from about 35.5 kB to about 13.6 kB; actual free memory must be checked in-world
 including Eval with the loaded world rules. Rule lookup/aggregation still run
 in Eval and retain their existing vocabulary-dependent cost.
 
+## Version 0.8.1 type information
+
+Workshop and Workshop_Output now announce v0.8.1. Replace both together; the
+other three Workshop scripts remain v0.8.0. After bench_config finishes loading,
+the coordinator reports `WS type (Genre) = ... | HUDKind = ...`. Both fields also
+appear in touch/menu information and the pending-product hover. Genre is retained
+separately from HUDKind, so an explicit HUDKind does not mask the station type.
+Omitted HUDKind still defaults to the first Genre. Recipe selection and MCW
+association are unchanged. Multiple Genre entries are all shown as configured.
+
+## Version 0.8.0 installation and lifetime
+
+All five Workshop scripts print their own name, revision and date at state_entry,
+before loading configuration or restoring records. Eval's v0.7.2 dimensional
+routing correction is retained; only its revision banner changes in this release.
+Update the five ROOT scripts together on an idle station. Update HUD
+MC_P1_Animation, MC_Workshop_Link and MC_P3_Controller together. Keep the existing
+HUD geometry and P0/P1/P3 rotations (0/180/90 degrees). DEV=1 still uses the
+already worn HUD. No reset or data clear is part of this source update.
+
+Update Component to v0.7.3 in recipient containers to honor the optional absolute
+expiry sent in CONFIG. Existing components remain readable as ingredient sources;
+older recipient scripts ignore that field and cannot guarantee the lot's expiry.
+
+The HUD measures P1 active seconds and owns preparation/selection/stock closure.
+The Workshop converts those seconds into configured action intensity, evaluates
+the laws and owns the result, physical delivery and remaining product. No autonomous
+CookTime step runs after submission. CookTime, CollectWindow, MaxQuantity,
+MinLifetime and Channel have been removed from the example bench configurations;
+older notecards containing them remain readable and those options have no effect.
+
+The product lot receives one absolute expiry when Output persists the evaluated
+product: now + lifetime * inherited freshness / 1000. Each partial transfer and
+reset keeps this same expiry. `ws:output` now has 11 fields, appending expiry to
+the former 10 fields; 0 means unlimited and -1 means unknown legacy age.
+CONFIG carries current freshness and this expiry; Component keeps the base
+lifetime and stores that exact expiry in rz_exp. Time inside the WS is counted.
+Expired remaining quantity is retired without CONFIG or another stock operation;
+ingredient acknowledgements must still be settled before another preparation.
+
+Old 10-field records remain readable. A pending perishable lot with no recorded
+expiry is retained in HOLD with its quantity, rather than receiving a fabricated
+fresh lifetime. A legacy RECEIPTING record finishes its receipt without CONFIG;
+an unknown-age remainder enters HOLD. Old unlimited COOKING records move directly
+to output. Physical dispatch boundaries still restore as HOLD. No automatic purge
+or replay is introduced. Install idle for a straightforward upgrade.
+
+CookSound and smoke now follow authenticated HUD P1 activity (918394 locally,
+MCW ACTIVITY over radio). This is cosmetic; it never advances the craft clock.
+The HUD refreshes active effects, and an eight-second loss of cosmetic activity
+stops them. Stop, pause, submission and exit stop them immediately. ReadySound
+and FailSound retain their purpose. The existing Resume/Exit/Text menu and the
+component HOVER command remain available.
+
+Touch reports the current player and, for a treatment, its originating player.
+Product hover shows the current collector, remaining quantity and seconds to
+expiry. Player names fall back to UUIDs if unavailable. Touching by another
+player still changes the current collector; the information grants no reservation.
+
 ## Configuration
 
 The existing bench_config remains valid. Existing Genre, Action, GrindScale,
-GrindMax, CookTime, ShowHover and sound fields are retained. Numeric evaluator
+GrindMax, ShowHover and sound fields are retained. CookTime is no longer used. Numeric evaluator
 configuration (MaxEffect, FluxAbs, Batch, NMax, SpoilMin/Max) is still read by Eval.
 
 Additional optional fields, owned by the coordinator:
@@ -91,19 +150,18 @@ before sending its reference to the coordinator. The coordinator passes only
 the run UUID/choice/player to Output; product DNA is read there. No source
 TAKE, RETURN or COMMIT is sent by any Workshop subsystem.
 
-After the cook delay, a valid CONTAINER product enters WAIT_CONTAINER and is
+Immediately after evaluation, a valid CONTAINER product enters WAIT_CONTAINER and is
 collected through HUD P3. See [P3 installation and protocol](../Hud/docs/README_P3.md).
 The existing RESULT OK now starts ingredient COMMIT closure when the durable
 product is ready, independently of physical collection. CLOSED records ingredient
 closure; the PRODUCT phase retains the output remainder. Transfer uses only
-explicitly selected recipient UUIDs, revalidated by Output. P3 Discard deletes
-only the finished remainder. Mesh/organ CUT/GIVE and KEEP retain their existing flow.
+explicitly selected recipient UUIDs, revalidated by Output. There is no P3 Discard UI or protocol. Mesh/organ CUT/GIVE and KEEP retain their existing flow.
 
 Touching pending output identifies its current collector, including a different
 player with their own dedicated HUD. Origin stock closure and collector identity
 are persisted separately. A new preparation requires both confirmed ingredient
 closure and terminal product output. A missing original COMMIT acknowledgement
-does not block another player's recovery/Discard, but still blocks a new craft.
+does not block another player's recovery, but still blocks a new craft.
 
 Exit is accepted after the HUD's own stock cleanup. The release receipt is
 stored before clearing the lease, allowing an exact duplicate EXIT to receive
@@ -133,7 +191,7 @@ Each subsystem owns its namespace:
 | ws:core, ws:released, ws:collector, ws:closed | Coordinator |
 | ws:input, ws:in:* | HUD input |
 | ws:eval:result | Eval |
-| ws:output, ws:product, ws:out:blank:*, ws:out:request, ws:out:receipt | Output |
+| ws:output (including absolute expiry), ws:product, ws:out:blank:*, ws:out:request, ws:out:receipt | Output |
 | ws:kept:*, ws:storage:* | Storage |
 
 Input groups/label indexes are derived caches. A reset during grouping clears
@@ -177,7 +235,7 @@ produce container DNA under the loaded laws. No world records or recipes change.
 After replacing Eval, submit a new treatment to evaluate again; an existing run's
 cached result is intentionally not recalculated or replayed.
 
-Run `Workshop/tests/run_workshop_split_checks.ps1`. The runner uses the installed
+Run `Workshop/tests/run_workshop_split_checks.ps1` (including `test_cleanup.py`). The runner uses the installed
 Tailslide parser and exercises the actual script ASTs, including the actual HUD
 endpoint, basket and stock relay. Test doubles provide LSL services, containers
 and source replies. The before-split Eval fixture is used only for arithmetic

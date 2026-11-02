@@ -63,14 +63,14 @@ class RecoveryTests(s.SplitTests):
         self.assertEqual(self.output.global_vars['gQuantity'],5)
         self.assertEqual(self.w.physical,[])
 
-    def test_discard_product_by_other_player_never_commits_their_basket(self):
+    def test_removed_discard_is_ignored_by_hud_and_bench(self):
         self.ready();self.other_player();before=list(self.w.receipts)
         self.request('OUTPUT_DISCARD',script=self.other)
-        self.assertEqual(self.output.global_vars['gQuantity'],0)
-        self.assertEqual(self.output.global_vars['gPhase'],'DONE')
+        self.w.chat(HUD2,-918275,f'MCW|OUTPUT_DISCARD|{s.BENCH}|{self.other.global_vars["gSession"]}|{self.other.global_vars["gRun"]}|{uuid.uuid4()}|{h.NULL}')
+        self.w.drain(20000)
+        self.assertEqual(self.output.global_vars['gQuantity'],5)
+        self.assertEqual(self.output.global_vars['gPhase'],'WAIT_CONTAINER')
         self.assertEqual(self.w.receipts,before)
-        self.assertEqual(self.core.global_vars['gPhase'],'BOUND')
-        self.assertEqual(self.other.global_vars['gPhase'],'IDLE')
         self.assertEqual(self.w.physical,[])
 
     def test_only_selected_container_is_filled_and_capacity_preserves_remainder(self):
@@ -98,13 +98,14 @@ class RecoveryTests(s.SplitTests):
         self.assertEqual(self.w.physical,before)
         self.assertEqual(self.output.global_vars['gQuantity'],3)
 
-    def test_pending_origin_commit_does_not_prevent_other_player_discard(self):
+    def test_pending_origin_commit_does_not_prevent_other_player_collection(self):
         self.w.drop_commit=True;self.ready();self.other_player()
         self.assertEqual(self.core.global_vars['gPhase'],'SETTLING')
-        self.request('OUTPUT_DISCARD',script=self.other)
+        self.w.containers={BLANK2:0}
+        self.request('TRANSFER',BLANK2,self.other);self.advance(2)
         self.assertEqual(self.output.global_vars['gPhase'],'DONE')
         self.assertEqual(self.core.global_vars['gPhase'],'SETTLING')
-        # A new craft remains locked, but the product has been discarded independently.
+        # A new craft remains locked, but the product has been collected independently.
         receipt=self.w.receipts[-1];before=len(self.w.receipts)
         self.w.chat(*receipt);self.w.drain(20000)
         self.assertEqual(len(self.w.receipts),before)
@@ -142,13 +143,14 @@ class RecoveryTests(s.SplitTests):
         self.assertEqual(len(self.w.physical),1)
 
     def test_origin_hud_absent_collection_works_and_late_closure_is_still_required(self):
-        self.bind();self.prepare();self.submit()
+        self.bind();self.prepare();self.w.drop_commit=True;self.submit()
         self.w.scripts.remove(self.link);self.advance(1)
-        self.other_player();self.request('OUTPUT_DISCARD',script=self.other)
+        self.other_player();self.w.containers={BLANK2:0}
+        self.request('TRANSFER',BLANK2,self.other);self.advance(2)
         self.assertEqual(self.core.global_vars['gPhase'],'SETTLING')
-        self.assertEqual(self.w.stock[s.SOURCE],[9,1])
+        self.assertEqual(self.w.stock[s.SOURCE],[9,0])
         self.w.scripts.append(self.link)
-        self.link.call('choose',['RETRY']);self.w.drain(20000)
+        self.w.chat(*self.w.receipts[-1]);self.w.drain(20000)
         self.assertEqual(self.w.stock[s.SOURCE],[9,0])
         self.assertEqual(self.core.global_vars['gPhase'],'BOUND')
         self.assertEqual(self.other.global_vars['gPhase'],'IDLE')

@@ -54,6 +54,7 @@ class World(h.World):
 class Script(h.Script):
     def builtin(self,name,a):
         w=self.world
+        if name=='llKey2Name':return 'Player '+str(a[0])[-8:]
         if name=='llGetFreeMemory':return 50000
         if name=='llGetUnixTime':return int(w.now)
         if name=='llGetOwnerKey':return h.Key(w.owners.get(a[0],h.OWNER))
@@ -171,9 +172,9 @@ class SplitTests(unittest.TestCase):
         self.bind();self.prepare();self.add(SOURCE2)
         # Sources may be added only before Start; begin this case with one held source.
         self.submit()
-        self.assertEqual(self.core.global_vars['gPhase'],'OUTPUT')
-        self.assertEqual(self.link.global_vars['gPhase'],'WAIT_RESULT')
-        self.assertEqual(self.w.stock[SOURCE],[9,1])
+        self.assertEqual(self.core.global_vars['gPhase'],'PRODUCT')
+        self.assertEqual(self.link.global_vars['gPhase'],'OUTPUT')
+        self.assertEqual(self.w.stock[SOURCE],[9,0])
         self.assertEqual(self.w.physical,[])
         self.w.containers[CONTAINER]=0
         self.advance(1);self.advance(2);self.collect()
@@ -230,7 +231,7 @@ class SplitTests(unittest.TestCase):
         self.restart('output','Workshop_Output.lsl')
         self.assertEqual(self.output.global_vars['gPhase'],'HOLD')
         self.assertEqual(self.w.physical,[])
-        self.assertEqual(self.w.stock[SOURCE],[9,1])
+        self.assertEqual(self.w.stock[SOURCE],[9,0])
 
     def test_core_reset_restores_session_and_pending_output_without_recreating_product(self):
         self.bind();self.prepare();self.submit()
@@ -241,7 +242,7 @@ class SplitTests(unittest.TestCase):
         self.assertEqual(self.w.physical,[])
 
     def test_stock_ack_pending_does_not_replay_output_after_core_reset(self):
-        self.bind();self.prepare();self.submit();self.w.containers[CONTAINER]=0;self.w.drop_commit=True
+        self.bind();self.prepare();self.w.drop_commit=True;self.submit();self.w.containers[CONTAINER]=0
         self.advance(1);self.advance(2);self.collect()
         self.assertEqual(self.core.global_vars['gPhase'],'SETTLING')
         self.restart('core','Workshop.lsl');self.advance(5)
@@ -280,7 +281,7 @@ class SplitTests(unittest.TestCase):
         self.prepare();self.submit()
         self.assertNotEqual(self.core.global_vars['gRun'],first)
         self.assertEqual(self.core.global_vars['gSession'],lease)
-        self.assertEqual(self.core.global_vars['gPhase'],'OUTPUT')
+        self.assertEqual(self.core.global_vars['gPhase'],'PRODUCT')
         self.advance(1);self.advance(2);self.collect()
         self.assertEqual(len(self.w.physical),2)
         self.assertEqual(self.w.stock[SOURCE],[8,0])
@@ -290,14 +291,14 @@ class SplitTests(unittest.TestCase):
         self.assertEqual(self.core.global_vars['gPhase'],'BUILDING')
         self.assertIn((BENCH,'ws:in:row:0'),self.w.storage)
         self.w.pause_build=False;self.restart('endpoint','Workshop_HUD.lsl')
-        self.assertEqual(self.core.global_vars['gPhase'],'OUTPUT')
+        self.assertEqual(self.core.global_vars['gPhase'],'PRODUCT')
         self.assertEqual(json.loads(self.w.storage[BENCH,'ws:eval:result'])[1].split('|')[3],'5')
 
     def test_evaluator_reset_before_result_reads_the_stored_groups_again(self):
         self.bind();self.prepare();self.w.pause_codes.add(970203);self.submit()
         self.assertEqual(self.core.global_vars['gPhase'],'EVALUATING')
         self.w.pause_codes.clear();self.restart('evaluator','Workshop_Eval.lsl')
-        self.assertEqual(self.core.global_vars['gPhase'],'OUTPUT')
+        self.assertEqual(self.core.global_vars['gPhase'],'PRODUCT')
         self.assertEqual(self.w.physical,[])
 
     def test_yield_uses_existing_cut_give_output_for_each_held_source_unit(self):
@@ -338,7 +339,7 @@ class SplitTests(unittest.TestCase):
             self.w.chat(HUD,-918275,f'MCW|ROW|{BENCH}|{lease}|{RUN}|{index}|{source}|1|{quote(here,safe="")}')
             self.w.drain(20000)
         self.w.chat(HUD,-918275,f'MCW|END|{BENCH}|{lease}|{RUN}|64');self.w.drain(20000)
-        self.assertEqual(self.core.global_vars['gPhase'],'OUTPUT')
+        self.assertEqual(self.core.global_vars['gPhase'],'SETTLING')
         self.assertEqual(self.endpoint.global_vars['gGroups'],64)
         self.assertEqual([len(v) for v in self.core.global_vars.values() if isinstance(v,list)],[1])
         self.assertFalse(any(isinstance(v,list) for v in self.endpoint.global_vars.values()))

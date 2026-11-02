@@ -1,3 +1,4 @@
+string VERSION = "MC_P3_Controller v0.8.0 (2026-10-31)";
 // ROOT. Finished-product recipients only. Never sends ingredient TAKE/RETURN/COMMIT.
 // Shared MC_Scan, shared 18-field renderer format; independent four-row pages.
 list gNear; // stride 3: UUID, display name, capacity
@@ -162,15 +163,6 @@ button(string name)
         { llOwnerSay("[Containers] Ingredient closure is still pending in this HUD."); return; }
         gBatch = TRUE; nextTransfer(); return;
     }
-    if (name == "p3_discard")
-    {
-        if (gRemaining <= 0) return;
-        list session = llJson2List(llLinksetDataRead("mc:workshop:session"));
-        if (llList2String(session, 5) != "OUTPUT") return;
-        gBatch = FALSE; gOperation = llGenerateKey(); gDestination = NULL_KEY;
-        if (save()) llMessageLinked(LINK_THIS, 918390, "DISCARD", gOperation);
-        return;
-    }
     if (gScanning) return;
     integer i;
     for (i = 0; i < 4; ++i)
@@ -197,6 +189,7 @@ default
 {
     state_entry()
     {
+        llOwnerSay("[Nexus] " + VERSION);
         list saved = llJson2List(llLinksetDataRead("mc:p3:selection"));
         if (llGetListLength(saved) == 4 || llGetListLength(saved) == 6)
         {

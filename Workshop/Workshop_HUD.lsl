@@ -1,4 +1,5 @@
-// Workshop v0.7 - MCW whisper endpoint and progressive input spool.
+string VERSION = "Workshop_HUD v0.8.0 (2026-10-31)";
+// Workshop v0.8.0 - MCW whisper endpoint and progressive input spool.
 // No stock operations. Input rows/groups live in Linkset Data, not in a basket list.
 integer CHANNEL = -918275;
 key gRun = NULL_KEY;
@@ -125,6 +126,7 @@ default
 {
     state_entry()
     {
+        llOwnerSay("[Nexus] " + VERSION);
         llListen(CHANNEL, "", NULL_KEY, "");
         string saved = llLinksetDataRead("ws:input");
         if (saved != "")

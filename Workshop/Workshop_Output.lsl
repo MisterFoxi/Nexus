@@ -1,4 +1,5 @@
-// Workshop v0.7 - output owner: product, containers, CUT/GIVE, sounds/particles.
+string VERSION = "Workshop_Output v0.8.1 (2026-10-31)";
+// Workshop v0.8.0 - output owner: product, containers, CUT/GIVE, sounds/particles.
 // Container discovery is spooled one key per object; no gRec list or ingredient basket.
 integer CHANNEL = -918273;
 key gRun = NULL_KEY;
@@ -15,8 +16,11 @@ integer gFault;
 integer gBlankCount;
 key gTicket = NULL_KEY;
 key gTarget = NULL_KEY;
-integer gCookTime = 20;
+integer gExpiry; // Absolute lot expiry; 0 means unlimited, -1 means unknown legacy age.
+integer gActivityUntil;
 integer gHover = TRUE;
+string gWorkshopType;
+string gHUDKind;
 string gCookSound = "cook_sound";
 string gReadySound = "ready_sound";
 string gFailSound = "fail_sound";
@@ -39,7 +43,7 @@ integer write(string name, string value)
 integer save()
 {
     return write("ws:output", llList2Json(JSON_ARRAY, [gRun, gUser, gChoice, gPhase,
-        gResult, gQuantity, gDeadline, gSourceIndex, gUnit, gDelivered]));
+        gResult, gQuantity, gDeadline, gSourceIndex, gUnit, gDelivered, gExpiry]));
 }
 notify(string text) { llMessageLinked(LINK_THIS, 970221, text, gRun); }
 step() { llMessageLinked(LINK_THIS, 970223, "", gRun); }
@@ -65,11 +69,20 @@ parseProduct()
     oTax = llList2String(product, 6); oStage = llList2String(product, 7);
     oProps = llList2String(product, 8); oMed = llList2String(product, 9); oEff = llList2Integer(product, 10);
 }
+integer currentFreshness()
+{
+    if (oLife <= 0) return 1000;
+    integer left = gExpiry - llGetUnixTime();
+    if (left <= 0) return 0;
+    integer value = (integer)((float)left * 1000.0 / (float)oLife);
+    if (value > 1000) value = 1000;
+    return value;
+}
 string configWire(key container, integer quantity)
 {
     return "CONFIG|" + (string)container + "|" + oName + "|" + (string)quantity
         + "|" + (string)oUse + "|" + (string)oLife + "|" + oTax + "|" + oStage
-        + "|" + oProps + "|" + oMed + "|" + (string)oEff;
+        + "|" + oProps + "|" + oMed + "|" + (string)currentFreshness() + "|" + (string)gExpiry;
 }
 fail(string reason)
 {
@@ -90,13 +103,51 @@ complete()
     llWhisper(CHANNEL, "HOVER|" + (string)gHover);
     notify("OK");
 }
+showProduct()
+{
+    list core = llJson2List(llLinksetDataRead("ws:core"));
+    list collector = llJson2List(llLinksetDataRead("ws:collector"));
+    key player = llList2Key(core, 0);
+    if (llList2Key(collector, 0) == gRun && llList2Key(collector, 1) != NULL_KEY) player = llList2Key(collector, 1);
+    string name = llKey2Name(player);
+    if (name == "") name = (string)player;
+    string left = "unlimited";
+    if (gExpiry > 0) left = (string)(gExpiry - llGetUnixTime()) + "s";
+    string verdict = "ready";
+    if (oVerdict == 1) verdict = "DANGEROUS";
+    llSetText("WS type (Genre) = " + gWorkshopType + "\nHUDKind = " + gHUDKind + "\n"
+        + oName + " (" + oTax + "/" + oStage + ")\n" + verdict
+        + " | remaining: " + (string)gQuantity + " | life: " + left
+        + "\nPlayer: " + name + "\nTouch to collect", <0.6,0.9,0.6>, 1.0);
+}
 ready()
 {
+    gActivityUntil = 0;
     benchSmoke(FALSE); llStopSound();
-    string verdict = "ready";
-    if (oVerdict == 1) verdict = "a DANGEROUS brew";
-    llSetText(oName + " (" + oTax + "/" + oStage + ")\n" + verdict + " - touch to collect", <0.6,0.9,0.6>, 1.0);
-    loopSnd(gReadySound);
+    showProduct(); loopSnd(gReadySound);
+}
+integer expireProduct()
+{
+    if (gExpiry <= 0 || llGetUnixTime() < gExpiry) return FALSE;
+    gQuantity = 0;
+    if (!save()) return TRUE;
+    if (gTicket != NULL_KEY && (gPhase == "SCANNING" || gPhase == "DELIVERING" || gPhase == "CLEAR_BLANKS"))
+        if (!receipt("TRANSFER_EXPIRED")) return TRUE;
+    llOwnerSay("[Workshop Output] Product expired. No further transfer.");
+    complete();
+    return TRUE;
+}
+activateProduct()
+{
+    if (llGetSubString(gResult, 0, 0) == "2") { gPhase = "GIVING"; if (save()) step(); }
+    else if (gChoice == "KEEP")
+    { gPhase = "KEEPING"; if (save()) llMessageLinked(LINK_THIS, 970230, "KEEP", gRun); }
+    else
+    {
+        gPhase = "WAIT_CONTAINER";
+        // READY transfers responsibility and closes used ingredients even for an expired lot.
+        if (save()) { ready(); notify("READY"); expireProduct(); }
+    }
 }
 // One explicit destination per request. Never distribute to unselected blanks.
 integer receipt(string status)
@@ -114,9 +165,14 @@ finishTransfer()
     if (gQuantity <= 0) gPhase = "DONE";
     if (!save()) return;
     if (gQuantity <= 0) complete();
-    else ready();
+    else if (gExpiry < 0)
+    {
+        gPhase = "HOLD"; save();
+        llOwnerSay("[Workshop Output] Legacy remainder retained: unknown expiry.");
+    }
+    else if (!expireProduct()) ready();
 }
-request(string verb, key ticket, key target, key user)
+request(key ticket, key target, key user)
 {
     list last = llJson2List(llLinksetDataRead("ws:out:receipt"));
     if (llList2Key(last, 0) == gRun && llList2Key(last, 1) == ticket)
@@ -124,12 +180,8 @@ request(string verb, key ticket, key target, key user)
     if ((ticket == NULL_KEY) || gPhase != "WAIT_CONTAINER") return;
     gTicket = ticket; gTarget = target; gUser = user;
     if (!write("ws:out:request", llList2Json(JSON_ARRAY, [gRun, ticket, target, user]))) return;
-    if (verb == "DISCARD")
-    {
-        gQuantity = 0; gPhase = "DONE";
-        if (save()) { receipt("DISCARDED"); complete(); }
-    }
-    else if (target) scan();
+    if (expireProduct()) { receipt("TRANSFER_EXPIRED"); return; }
+    if (target) scan();
 }
 scan()
 {
@@ -150,6 +202,7 @@ clearBlanks()
 }
 deliver()
 {
+    if (expireProduct()) return;
     if (gQuantity <= 0) { complete(); return; }
     string entry = "ws:out:blank:" + (string)gTarget;
     string capacityText = llLinksetDataRead(entry);
@@ -211,7 +264,7 @@ start(string choice, key user, key run)
     list cached = llJson2List(llLinksetDataRead("ws:eval:result"));
     if (llList2Key(cached, 0) != run) return;
     gRun = run; gUser = user; gChoice = choice; gResult = llList2String(cached, 1);
-    gDelivered = 0; gSourceIndex = 0; gUnit = 0; gQuantity = 0;
+    gDelivered = 0; gSourceIndex = 0; gUnit = 0; gQuantity = 0; gExpiry = 0;
     list result = llParseStringKeepNulls(gResult, ["|"], []);
     string code = llList2String(result, 0);
     if (code == "0") { fail("Nothing reacts."); return; }
@@ -221,35 +274,52 @@ start(string choice, key user, key run)
         if (llGetListLength(result) != 11 || llList2Integer(result, 3) <= 0)
         { fail("Invalid product DNA."); return; }
         gQuantity = llList2Integer(result, 3); parseProduct();
+        if (oEff < 0) oEff = 0;
+        if (oEff > 1000) oEff = 1000;
+        if (oLife > 0) gExpiry = llGetUnixTime() + (integer)((float)oLife * (float)oEff / 1000.0);
         if (llStringLength(llStringToBase64(configWire(NULL_KEY, gQuantity))) > 1364)
         { fail("Product metadata exceeds one whisper."); return; }
     }
     if (!write("ws:product", llList2Json(JSON_ARRAY, [run, gResult]))) return;
-    gPhase = "COOKING"; gDeadline = llGetUnixTime() + gCookTime;
-    if (!save()) return;
-    llSetText("Cooking...", <0.95,0.85,0.5>, 1.0); benchSmoke(TRUE); loopSnd(gCookSound);
+    activateProduct();
 }
+
 default
 {
     state_entry()
     {
+        llOwnerSay("[Nexus] " + VERSION);
+        benchSmoke(FALSE); llStopSound();
         llListen(CHANNEL, "", NULL_KEY, ""); llSetTimerEvent(1.0);
         string saved = llLinksetDataRead("ws:output");
         if (saved != "")
         {
             list data = llJson2List(saved);
-            if (llGetListLength(data) != 10) { gFault = TRUE; return; }
+            integer fields = llGetListLength(data);
+            if (fields != 10 && fields != 11) { gFault = TRUE; return; }
             gRun = llList2Key(data, 0); gUser = llList2Key(data, 1); gChoice = llList2String(data, 2);
             gPhase = llList2String(data, 3); gResult = llList2String(data, 4); gQuantity = llList2Integer(data, 5);
             gDeadline = llList2Integer(data, 6); gSourceIndex = llList2Integer(data, 7);
             gUnit = llList2Integer(data, 8); gDelivered = llList2Integer(data, 9); parseProduct();
+            gExpiry = llList2Integer(data, 10);
+            if (fields == 10 && oLife > 0 && llGetSubString(gResult, 0, 0) == "1"
+                && gPhase != "DONE" && gPhase != "FAILED") gExpiry = -1;
             list requestData = llJson2List(llLinksetDataRead("ws:out:request"));
             if (llList2Key(requestData, 0) == gRun)
             { gTicket = llList2Key(requestData, 1); gTarget = llList2Key(requestData, 2); gUser = llList2Key(requestData, 3); }
             if (gPhase == "DISPATCH_CONFIG" || gPhase == "DISPATCH_GIVE") fail("Reset at a physical dispatch boundary.");
             else if (gPhase == "RECEIPTING") finishTransfer();
+            else if (gExpiry == -1)
+            {
+                gPhase = "HOLD";
+                if (!save()) return;
+                llOwnerSay("[Workshop Output] Legacy perishable product has no known expiry. Quantity retained; transfer held for inspection.");
+                llSetText("Product retained: unknown legacy expiry\nQuantity: " + (string)gQuantity, <1.0,0.7,0.2>, 1.0);
+            }
+            else if (gPhase == "COOKING") activateProduct(); // Read old unlimited-product state only; no cooking delay.
             else if (gPhase == "SCANNING" || gPhase == "CLEAR_BLANKS") scan();
             else if (gPhase == "GIVING" || gPhase == "DELIVERING") step();
+            else if (gPhase == "WAIT_CONTAINER") { if (!expireProduct()) ready(); }
         }
         llMessageLinked(LINK_THIS, 970299, "OUTPUT", NULL_KEY);
     }
@@ -260,20 +330,30 @@ default
         if (number == 970222)
         {
             list config = llJson2List(text);
-            gCookTime = llList2Integer(config, 0); if (gCookTime <= 0) gCookTime = 1;
-            gHover = llList2Integer(config, 1); gCookSound = llList2String(config, 2);
-            gReadySound = llList2String(config, 3); gFailSound = llList2String(config, 4);
+            if (llGetListLength(config) != 7) return;
+            gHover = llList2Integer(config, 0); gCookSound = llList2String(config, 1);
+            gReadySound = llList2String(config, 2); gFailSound = llList2String(config, 3);
+            gWorkshopType = llList2String(config, 5); gHUDKind = llList2String(config, 6);
+            if (gPhase == "WAIT_CONTAINER") showProduct();
             return;
         }
         if (number == 970290) { llOwnerSay("[Workshop Output] Free: " + (string)llGetFreeMemory()); return; }
         if (number == 970220)
         {
+            if (text == "INFO") { if (gPhase == "WAIT_CONTAINER") showProduct(); return; }
+            if (text == "ACTIVITY|1")
+            {
+                if (!gActivityUntil) { benchSmoke(TRUE); loopSnd(gCookSound); }
+                gActivityUntil = llGetUnixTime() + 8; return;
+            }
+            if (text == "ACTIVITY|0")
+            { gActivityUntil = 0; benchSmoke(FALSE); llStopSound(); return; }
             if (text == "FAIL_SOUND") { oneSnd(gFailSound); return; }
             list fields = llParseStringKeepNulls(text, ["|"], []);
             if (llList2String(fields, 0) == "START") start(llList2String(fields, 1), llList2Key(fields, 2), run);
             else if (run == gRun && llGetListLength(fields) == 4
-                && (llList2String(fields, 0) == "TRANSFER" || llList2String(fields, 0) == "DISCARD"))
-                request(llList2String(fields, 0), llList2Key(fields, 1), llList2Key(fields, 2), llList2Key(fields, 3));
+                && llList2String(fields, 0) == "TRANSFER")
+                request(llList2Key(fields, 1), llList2Key(fields, 2), llList2Key(fields, 3));
             else if (text == "STATUS" && run == gRun)
             {
                 if (gPhase == "WAIT_CONTAINER") notify("READY");
@@ -309,25 +389,12 @@ default
     timer()
     {
         if (gFault) return;
-        if (gPhase == "DONE")
-        {
-            list pending = llJson2List(llLinksetDataRead("ws:out:request"));
-            list last = llJson2List(llLinksetDataRead("ws:out:receipt"));
-            if (llList2Key(pending, 0) == gRun && llList2Key(pending, 1) != llList2Key(last, 1)) receipt("DISCARDED");
-            return;
-        }
-        if (gPhase == "COOKING" && llGetUnixTime() >= gDeadline)
-        {
-            if (llGetSubString(gResult, 0, 0) == "2") { gPhase = "GIVING"; if (save()) step(); }
-            else if (gChoice == "KEEP")
-            { gPhase = "KEEPING"; if (save()) llMessageLinked(LINK_THIS, 970230, "KEEP", gRun); }
-            else
-            {
-                gPhase = "WAIT_CONTAINER";
-                if (save()) { ready(); notify("READY"); }
-            }
-        }
-        else if (gPhase == "SCANNING" && llGetUnixTime() >= gDeadline)
+        if (gActivityUntil && llGetUnixTime() >= gActivityUntil)
+        { gActivityUntil = 0; benchSmoke(FALSE); llStopSound(); }
+        if (gPhase == "WAIT_CONTAINER" || gPhase == "SCANNING" || gPhase == "CLEAR_BLANKS" || gPhase == "DELIVERING")
+            if (expireProduct()) return;
+        if (gPhase == "WAIT_CONTAINER") showProduct();
+        if (gPhase == "SCANNING" && llGetUnixTime() >= gDeadline)
         {
             gPhase = "DELIVERING";
             if (save()) step();

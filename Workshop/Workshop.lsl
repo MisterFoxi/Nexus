@@ -1,4 +1,5 @@
-// Workshop v0.7 - small session/configuration coordinator.
+string VERSION = "Workshop v0.8.1 (2026-10-31)";
+// Workshop v0.8.0 - small session/configuration coordinator.
 // Same ROOT: Workshop_HUD, Workshop_Eval, Workshop_Output, Workshop_Storage.
 // No ingredient, container, output-DNA or kept-source collection in this script.
 // Origin session closes ingredients; collector session only controls the finished product.
@@ -14,11 +15,11 @@ string gLastResult;
 string gChoice;
 float gSeconds;
 string gKind;
+string gWorkshopType; // Configured Genre, separate from HUDKind.
 string gHudObject;
 integer gSingle = 1;
 integer gKeep;
 integer gDev = TRUE;
-integer gCookTime = 20;
 integer gHover = TRUE;
 string gCookSound = "cook_sound";
 string gReadySound = "ready_sound";
@@ -136,12 +137,10 @@ integer collectorControl(key source, list fields)
     }
     if (source != gCollectorHUD || run != gRun) return FALSE;
     if (verb == "OUTPUT_STATUS") { outputState(); finishProduct(); return TRUE; }
-    if ((verb == "TRANSFER" || verb == "OUTPUT_DISCARD") && llGetListLength(fields) == 7
+    if (verb == "TRANSFER" && llGetListLength(fields) == 7
         && llList2Key(fields, 5) != NULL_KEY)
     {
-        string command = "TRANSFER";
-        if (verb == "OUTPUT_DISCARD") command = "DISCARD";
-        llMessageLinked(LINK_THIS, 970220, command + "|" + llList2String(fields, 5)
+        llMessageLinked(LINK_THIS, 970220, "TRANSFER|" + llList2String(fields, 5)
             + "|" + llList2String(fields, 6) + "|" + (string)gCollectorUser, gRun);
         return TRUE;
     }
@@ -165,9 +164,9 @@ string configNotecard()
 }
 loadConfig()
 {
-    gConfigReady = FALSE; gActions = []; gKind = ""; gHudObject = "";
+    gConfigReady = FALSE; gActions = []; gKind = ""; gWorkshopType = ""; gHudObject = "";
     gSingle = TRUE; gKeep = FALSE; gDev = TRUE; gScale = 1.0; gMax = 10;
-    gCookTime = 20; gHover = TRUE;
+    gHover = TRUE;
     gCookSound = "cook_sound"; gReadySound = "ready_sound"; gFailSound = "fail_sound";
     gNotecard = configNotecard();
     if (gNotecard == "") { llOwnerSay("[Workshop] Missing bench_config."); return; }
@@ -182,21 +181,17 @@ applyConfig(string data)
     if (eq < 1) return;
     string name = llToLower(trim(llGetSubString(data, 0, eq - 1)));
     string value = trim(llGetSubString(data, eq + 1, -1));
-    if (name == "genre" && gKind == "") gKind = trim(llList2String(llParseString2List(value, [","], []), 0));
+    if (name == "genre")
+    {
+        if (gWorkshopType != "" && value != "") gWorkshopType += ", ";
+        gWorkshopType += value;
+        if (gKind == "") gKind = trim(llList2String(llParseString2List(value, [","], []), 0));
+    }
     else if (name == "hudkind") gKind = value;
     else if (name == "hudobject") gHudObject = value;
     else if (name == "singleingredient") gSingle = (integer)value != 0;
     else if (name == "allowkeep") gKeep = (integer)value != 0;
     else if (name == "dev") gDev = (integer)value != 0;
-    else if (name == "cooktime")
-    {
-        integer seconds = (integer)value;
-        string suffix = llToLower(llGetSubString(value, -1, -1));
-        if (suffix == "m") seconds *= 60;
-        else if (suffix == "h") seconds *= 3600;
-        else if (suffix == "d") seconds *= 86400;
-        if (seconds > 0) gCookTime = seconds;
-    }
     else if (name == "showhover") gHover = (integer)value != 0;
     else if (name == "cooksound") gCookSound = value;
     else if (name == "readysound") gReadySound = value;
@@ -208,7 +203,24 @@ applyConfig(string data)
 configureOutput()
 {
     llMessageLinked(LINK_THIS, 970222, llList2Json(JSON_ARRAY,
-        [gCookTime, gHover, gCookSound, gReadySound, gFailSound, gKeep]), NULL_KEY);
+        [gHover, gCookSound, gReadySound, gFailSound, gKeep, gWorkshopType, gKind]), NULL_KEY);
+}
+string playerLabel(key player)
+{
+    if (player == NULL_KEY) return "none";
+    string name = llKey2Name(player);
+    if (name == "") return (string)player;
+    return name + " (" + (string)player + ")";
+}
+string sessionInfo()
+{
+    key current = gUser;
+    if ((gPhase == "PRODUCT" || gPhase == "SETTLING") && gCollectorUser != NULL_KEY) current = gCollectorUser;
+    string info = "WS type (Genre) = " + gWorkshopType + "\nHUDKind = " + gKind
+        + "\nWorkshop: " + gPhase + "\nPlayer: " + playerLabel(current);
+    if (gPhase != "FREE" && gPhase != "OFFERED" && gPhase != "BOUND")
+        info += "\nPrepared by: " + playerLabel(gUser);
+    return info;
 }
 sessionMenu()
 {
@@ -218,7 +230,7 @@ sessionMenu()
     gSessionListen = llListen(gSessionMenu, "", gUser, "");
     string hover = "Text: OFF";
     if (gHover) hover = "Text: ON";
-    llDialog(gUser, "Resume, exit through the HUD stock cleanup, or toggle nearby component text.",
+    llDialog(gUser, sessionInfo() + "\nResume, exit through the HUD stock cleanup, or toggle nearby component text.",
         ["Resume", "Exit", hover], gSessionMenu);
 }
 resume()
@@ -258,6 +270,10 @@ receiveControl(key source, string wire)
         if (source == gHUD) sendTo(gHUD, gSession, NULL_KEY, "BOUND", "");
         return;
     }
+    if (source == gHUD && verb == "ACTIVITY" && gPhase == "BOUND"
+        && llGetListLength(fields) == 6 && (run == NULL_KEY || run == gRun)
+        && (llList2String(fields, 5) == "0" || llList2String(fields, 5) == "1"))
+    { llMessageLinked(LINK_THIS, 970220, "ACTIVITY|" + llList2String(fields, 5), gRun); return; }
     if (source != gHUD || !validKey(run)) return;
     if (verb == "BEGIN")
     {
@@ -271,6 +287,7 @@ receiveControl(key source, string wire)
             || llJsonValueType(seconds, []) != JSON_NUMBER || (float)seconds < 0.0
             || llList2String(fields, 7) != "0")
         { sendTo(gHUD, gSession, run, "RESULT", "NO|Invalid%20choice%20or%20gesture"); return; }
+        llMessageLinked(LINK_THIS, 970220, "ACTIVITY|0", gRun);
         gRun = run; gChoice = choice; gSeconds = (float)seconds; gLastResult = ""; gAction = "";
         gCollectorUser = NULL_KEY; gCollectorHUD = NULL_KEY; gCollectorSession = NULL_KEY;
         integer value = llRound(gSeconds * gScale);
@@ -316,13 +333,14 @@ receiveControl(key source, string wire)
         key hud = gHUD; key lease = gSession;
         gUser = NULL_KEY; gHUD = NULL_KEY; gSession = NULL_KEY; gRun = NULL_KEY;
         gPhase = "FREE"; gLastResult = "";
-        if (save()) sendTo(hud, lease, run, "RELEASED", "");
+        if (save()) { llMessageLinked(LINK_THIS, 970220, "ACTIVITY|0", run); sendTo(hud, lease, run, "RELEASED", ""); }
     }
 }
 default
 {
     state_entry()
     {
+        llOwnerSay("[Nexus] " + VERSION);
         string saved = llLinksetDataRead("ws:core");
         if (saved != "")
         {
@@ -337,7 +355,7 @@ default
         { gCollectorUser = llList2Key(collector, 1); gCollectorHUD = llList2Key(collector, 2); gCollectorSession = llList2Key(collector, 3); }
         loadConfig(); llSetTimerEvent(5.0);
         llMessageLinked(LINK_THIS, 970298, "READY?", NULL_KEY);
-        llOwnerSay("[Workshop] v0.7 coordinator. No ingredient/output collections.");
+
     }
     changed(integer flags)
     {
@@ -354,7 +372,11 @@ default
         {
             if (gKind == "cutting_board") gKeep = FALSE;
             gConfigReady = gKind != "" && gMax >= 0 && gScale >= 0.0;
-            if (gConfigReady && save()) resume();
+            if (gConfigReady && save())
+            {
+                llOwnerSay("[Workshop] WS type (Genre) = " + gWorkshopType + " | HUDKind = " + gKind);
+                resume();
+            }
             return;
         }
         applyConfig(data); ++gLine; gQuery = llGetNotecardLine(gNotecard, gLine);
@@ -362,6 +384,7 @@ default
     touch_start(integer count)
     {
         key user = llDetectedKey(0);
+        llRegionSayTo(user, 0, sessionInfo());
         if (gFault || !gConfigReady || gReady != 15)
         { llOwnerSay("[Workshop] Waiting for configuration/subsystems. Touch again when ready."); return; }
         if (productPending())
@@ -375,6 +398,7 @@ default
             gCollectorUser = user; gCollectorHUD = NULL_KEY; gCollectorSession = llGenerateKey();
             if (user == gUser) { gCollectorHUD = gHUD; gCollectorSession = gSession; }
             if (!saveCollector()) return;
+            llMessageLinked(LINK_THIS, 970220, "INFO", gRun);
             if (previousHUD != NULL_KEY && previousHUD != gHUD)
                 sendTo(previousHUD, previousSession, gRun, "RELEASED", "");
             if (gCollectorHUD) outputState();
@@ -475,7 +499,7 @@ default
                 else finishProduct();
             }
             else if (llSubStringIndex(text, "TRANSFERRED|") == 0 || llSubStringIndex(text, "TRANSFER_NO|") == 0
-                || llSubStringIndex(text, "DISCARDED|") == 0)
+                || llSubStringIndex(text, "TRANSFER_EXPIRED|") == 0)
             {
                 sendTo(gCollectorHUD, gCollectorSession, gRun, "OUTPUT_REPLY", text);
                 outputState();

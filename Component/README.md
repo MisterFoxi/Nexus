@@ -1,4 +1,4 @@
-# Component v0.6 — HUD source migration
+# Component v0.7.3 — HUD stock and persistent lot expiry
 
 The component retains its stock, notecard identity, original lifetime/expiry,
 container CONFIG behavior and CUT/GIVE mesh delivery. Product evaluation stays
@@ -6,7 +6,7 @@ in Workshop_Eval. Axis names follow `compiler/axes.src`.
 
 ## HUD protocol
 
-Discovery uses the existing `PING`, `HERE` (proto 4), `BLANK` and `GONE` formats.
+Discovery uses the existing `PING`, `HERE` (proto 5), `BLANK` and `GONE` formats.
 Production listens on **-918273**; **-918274** supports the current development
 HUD without modifying it. Component replies use **llWhisper**, on the request
 channel. MC requests follow the current HUD's same-owner access policy.
@@ -67,3 +67,13 @@ The full Workshop/product-output integration is still pending.
 Local verification uses Tailslide syntax/type checking and deterministic tests
 executing the actual Component LSL AST. These do not replace Mono compilation,
 memory measurements or in-world verification.
+
+## Workshop 0.8.0 recipient expiry
+
+CONFIG accepts an optional absolute Unix expiry after freshness:
+`CONFIG|key|name|qty|use|life|taxonomy|stage|propsPacked|med|eff|expiryUnix`.
+Base lifetime is retained for freshness calculations. When supplied, the exact
+expiry is saved in rz_exp rather than restarted at receipt; already expired or
+invalid absolute dates are refused before mutating the blank. Zero is reserved
+for unlimited lifetime. Old CONFIG without an absolute expiry retains its
+relative-lifetime behavior. HERE remains protocol 5. Startup announces v0.7.3.

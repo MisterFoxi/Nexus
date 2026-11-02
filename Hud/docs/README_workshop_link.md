@@ -140,3 +140,15 @@ installed Tailslide parser and exercises the actual HUD ASTs. The Workshop side
 and source balances in these new scenarios are explicit test doubles. Existing
 button, gesture and progress tests also run. These checks do not establish Mono
 memory use, inventory permissions, physical delivery or in-world operation.
+
+## Workshop 0.8.0 cosmetic activity
+
+MC_P1_Animation sends ROOT linked message 918394 with `0` or `1` when it updates
+the authoritative active-clock state. MC_Workshop_Link forwards
+`MCW|ACTIVITY|bench|session|run|0/1` only in IDLE; an active state is refreshed
+by its timer. Workshop accepts only its associated HUD/session in BOUND and
+only NULL_KEY or the session's current run. Activity drives sounds/smoke, never
+evaluation, ingredient transactions or product delivery. The eight-second
+cosmetic timeout only stops effects when the activity signal disappears.
+All changed HUD scripts and all five Workshop scripts announce their version
+at startup. No P3 product DISCARD command remains.

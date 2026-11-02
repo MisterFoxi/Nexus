@@ -36,7 +36,7 @@ integer EVAL_RES = 970201;           // evaluator -> main: result
 integer NOTOK    = -999999;          // Sentinel for an unknown token.
 
 integer GS = 8;                      // Fields per basket group (v0.7: + organ).
-string  VERSION = "Workshop_Eval v0.7.2 (2026-10-30)";
+string  VERSION = "Workshop_Eval v0.8.0 (2026-10-31)";
 
 // ---- configuration subset used by this evaluator ----
 list    gGenres;

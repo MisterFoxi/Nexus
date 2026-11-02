@@ -1,4 +1,5 @@
-// Workshop v0.7 - kept products, one durable record per lot.
+string VERSION = "Workshop_Storage v0.8.0 (2026-10-31)";
+// Workshop v0.8.0 - kept products, one durable record per lot.
 // No gKept list. The old state:kept value is migrated without deleting data first.
 integer gFault;
 integer gReady;
@@ -80,6 +81,7 @@ default
 {
     state_entry()
     {
+        llOwnerSay("[Nexus] " + VERSION);
         gImportIndex = (integer)llLinksetDataRead("ws:storage:import");
         llMessageLinked(LINK_THIS, 970232, "", NULL_KEY);
     }
