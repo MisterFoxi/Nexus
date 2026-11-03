@@ -152,3 +152,7 @@ evaluation, ingredient transactions or product delivery. The eight-second
 cosmetic timeout only stops effects when the activity signal disappears.
 All changed HUD scripts and all five Workshop scripts announce their version
 at startup. No P3 product DISCARD command remains.
+
+## Two-input extension — v0.9.0
+
+BEGIN optionally appends heatIntensity (0..30) after the existing spoiled flag. HeatAction requires that field; DurationAction receives separately mapped active seconds. INSPECT/INSPECT_REPLY reserve an authenticated read-only consultation path and do not submit a treatment. See [independent cooking inputs](README_cooking_inputs.md) for persistence, optional controls, configuration and the future adapter contract.

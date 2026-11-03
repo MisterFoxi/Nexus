@@ -16,3 +16,9 @@ if ($LASTEXITCODE) { throw 'Post-collection closure recovery checks failed' }
 
 & (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_cleanup.py')
 if ($LASTEXITCODE) { throw 'Workshop 0.8 cleanup/lifetime checks failed' }
+
+& (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_cooking_inputs.py')
+if ($LASTEXITCODE) { throw 'Independent cooking inputs and inspection hook checks failed' }
+
+& (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_factorization.py')
+if ($LASTEXITCODE) { throw 'Workshop module factorization checks failed' }

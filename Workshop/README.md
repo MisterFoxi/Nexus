@@ -1,27 +1,35 @@
-# Workshop v0.8.1: HUD preparation, Workshop result and output
+# Workshop v0.9.1: factored coordinator, configuration and interface
 
-Install these five scripts together in the same ROOT prim of an idle workshop:
+Run these seven scripts together in the same ROOT prim of an idle workshop:
 
 | Script | Owns |
 |---|---|
-| Workshop | Configuration, player/HUD lease, current treatment phase |
+| Workshop | Player/HUD lease, collector identity, current treatment phase, durable input acceptance |
+| Workshop_Config | Notecard parsing, action list, heat/duration input mapping, future consultation hook |
+| Workshop_Interface | Player information, Resume/Exit/Text menu, HUD provisioning, product-state display |
 | Workshop_HUD | MCW radio endpoint, durable input rows, derived evaluation groups |
 | Workshop_Eval | Existing aggregation, rule resolution, yield and product calculation |
 | Workshop_Output | Product pending delivery, container discovery, CONFIG and CUT/GIVE, sounds/particles |
 | Workshop_Storage | Kept products, expiry, progressive migration/read access |
 
-Replace Workshop and Workshop_Eval; add the other three. Keep bench_config,
-compiled tok:/tax:/law:/idx: data and inventory objects/sounds. Do not run an old
-Workshop coordinator beside the new one. Field keeps its existing Eval request
-in its own linkset. No HUD script, Component or compiler source changes are part
-of this split.
+For this v0.9.1 update, replace Workshop and add Workshop_Config and
+Workshop_Interface. Keep the existing HUD, Eval, Output and Storage scripts,
+bench_config, compiled tok:/tax:/law:/idx: data and inventory objects/sounds.
+Do not run an old coordinator beside the new one. Both new scripts are required:
+the coordinator blocks association until configuration and interface are ready.
+Install idle; there is no reset, purge, recipe change or in-world installation
+performed by the source update. monde.nc and every compiler file are unchanged.
+Field retains its existing evaluator interface.
 
 ## Memory ownership
 
 Workshop no longer owns gIng, gPicks, gCons, gRec, gKept, output DNA, ingredient
 menus or the action stepper. Selection, gesture and source-stock transactions
-are owned by the HUD. The coordinator's only growing list is its configured
-action names; it never receives a complete serialized basket.
+are owned by the HUD. The coordinator now has no global list: configured action
+names move to Workshop_Config. Configuration parsing, input calculations and the
+read-only consultation extension are removed from its heap/code. Interface owns
+menu listeners, provisioning and product-DNA decoding for HUD display. No module
+receives a complete serialized basket as part of this factorization.
 
 Workshop_HUD saves one incoming source per ws:in:row:N key. Stop-and-wait ROW
 acknowledgements are sent only after persistence. Duplicates must match the
@@ -42,10 +50,41 @@ stored one per key and consumed one per event. Storage keeps one product per
 record and returns one record per page request. The former state:kept is
 imported with deterministic keys and deleted only after all rows were copied.
 
-Source size is not a Mono memory measurement. The coordinator source shrank
-from about 35.5 kB to about 13.6 kB; actual free memory must be checked in-world,
+Source size is not a Mono memory measurement. This factorization reduces the
+coordinator from about 27.6 kB / 611 lines to 19.7 kB / 421 lines. Actual free
+memory must be checked in-world with 970290, which reports all seven scripts,
 including Eval with the loaded world rules. Rule lookup/aggregation still run
 in Eval and retain their existing vocabulary-dependent cost.
+
+## Module boundaries and recovery
+
+Workshop remains the sole writer of ws:core and ws:collector. Their formats are
+unchanged; gAction remains in the durable core record for evaluation recovery.
+Workshop_Config publishes the small ws:config record and keeps only its action
+configuration, never source rows. Workshop_Interface reads durable identities;
+it cannot create a lease or change treatment phase. ws:hover carries the current
+display preference; it is initialized from the existing notecard on config load.
+
+The new internal ROOT messages are:
+
+| Code | Direction / purpose |
+|---|---|
+| 970250 / 970251 | Core requests configuration; Config replies with a correlated snapshot or ERROR; RESET asks Core to reload |
+| 970252 | Core requests Output configuration from Config |
+| 970254 / 970255 | Core requests pure input mapping; Config replies with choice, raw seconds, heat and action header, or NO |
+| 970256 | Core delegates an authenticated read-only INSPECT request to Config |
+| 970260 / 970261 | Core requests interface display/menu/provisioning; Interface sends a session-correlated menu choice |
+
+BEGIN/ROW/END and all MCW radio messages keep their existing formats. A new
+BEGIN is acknowledged only after the matching input calculation returns and
+ws:inputs plus ws:core are persisted. A second or late mapping result cannot
+replace a pending run. Mapping requests are transient, have a timeout, and are
+never replayed after coordinator reset. A configuration restart rebuilds settings
+without replaying stock transactions or recreating pending output. Inspection
+timeouts now belong to Config; the future adapter API 970240/970241 is unchanged.
+
+The standard check runner includes test_factorization.py for module ordering,
+missing modules, stale replies, resets, storage failure and unchanged stock.
 
 ## Version 0.8.1 type information
 
@@ -251,3 +290,7 @@ ancestry and harvest/chop/mince conditions from the supplied in-world dump. It
 checks leaf without a mesh reaching CONFIG to a selected recipient, whole plant
 retaining GIVE, whole species retaining multi-organ output, stage progression,
 dimension collisions and aggregate cleanup between evaluations.
+
+## Independent cooking inputs — v0.9.0
+
+Workshop v0.9.0 and HUD MC_P1_Animation/MC_Workshop_Link v0.9.0 add independent heat and active-duration inputs, plus a future read-only product consultation hook. See [cooking inputs](../Hud/docs/README_cooking_inputs.md). Existing single-input configurations remain valid. The other four Workshop scripts retain their current revisions.

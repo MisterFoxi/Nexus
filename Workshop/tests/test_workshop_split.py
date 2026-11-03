@@ -103,7 +103,7 @@ class Script(h.Script):
                 return
             result=super().builtin(name,a)
             if self.object==HUD and a[1:3]==[918372,'SNAPSHOT']:
-                w.emit(HUD,918373,'OK|4.75|0',a[3])
+                w.emit(HUD,918373,getattr(w,'gesture','OK|4.75|0'),a[3])
             return result
         if name=='llWhisper':
             result=super().builtin(name,a)
@@ -127,6 +127,8 @@ class SplitTests(unittest.TestCase):
     def setUp(self):
         self.w=World()
         self.core=Script(self.w,'Workshop.lsl',BENCH)
+        self.config=Script(self.w,'Workshop_Config.lsl',BENCH)
+        self.interface=Script(self.w,'Workshop_Interface.lsl',BENCH)
         self.endpoint=Script(self.w,'Workshop_HUD.lsl',BENCH)
         self.evaluator=Script(self.w,'Workshop_Eval.lsl',BENCH)
         self.output=Script(self.w,'Workshop_Output.lsl',BENCH)
@@ -156,7 +158,7 @@ class SplitTests(unittest.TestCase):
 
     def advance(self,seconds):
         self.w.now+=seconds
-        self.output.call('timer',[]);self.core.call('timer',[]);self.w.drain(20000)
+        self.output.call('timer',[]);self.core.call('timer',[]);self.config.call('timer',[]);self.w.drain(20000)
 
     def collect(self):
         # P3 sends one explicitly selected recipient, then Output revalidates it by PING.
@@ -183,7 +185,7 @@ class SplitTests(unittest.TestCase):
         self.assertEqual(self.core.global_vars['gPhase'],'BOUND')
         self.assertEqual(self.link.global_vars['gPhase'],'IDLE')
         self.assertEqual(self.w.stock[SOURCE],[9,0])
-        self.assertEqual(self.core.global_vars['gReady'],15)
+        self.assertEqual(self.core.global_vars['gReady'],31)
 
     def test_multiple_sources_form_existing_name_stage_batch_without_core_copy(self):
         self.bind();self.add();self.add(SOURCE2)
@@ -341,13 +343,13 @@ class SplitTests(unittest.TestCase):
         self.w.chat(HUD,-918275,f'MCW|END|{BENCH}|{lease}|{RUN}|64');self.w.drain(20000)
         self.assertEqual(self.core.global_vars['gPhase'],'SETTLING')
         self.assertEqual(self.endpoint.global_vars['gGroups'],64)
-        self.assertEqual([len(v) for v in self.core.global_vars.values() if isinstance(v,list)],[1])
+        self.assertEqual([len(v) for v in self.core.global_vars.values() if isinstance(v,list)],[])
         self.assertFalse(any(isinstance(v,list) for v in self.endpoint.global_vars.values()))
 
     def test_memory_query_reaches_all_five_subsystems_with_no_treatment(self):
         self.w.emit(BENCH,970290);self.w.drain(20000)
         messages=[text for obj,text in self.w.logs if obj==BENCH and 'Free:' in text]
-        self.assertEqual(len(messages),5)
+        self.assertEqual(len(messages),7)
 
     def test_container_object_and_here_scan_publish_transformed_name(self):
         class ContainerScript(Script):

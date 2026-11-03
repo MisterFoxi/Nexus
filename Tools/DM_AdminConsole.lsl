@@ -57,7 +57,7 @@ reportVersion()
 
 // ── CHANNELS ────────────────────────────────────────────────
 
-integer COMMAND_CHANNEL = 77810;
+integer COMMAND_CHANNEL = 77809;
 
 
 // ── ENGINE OPCODES ──────────────────────────────────────────

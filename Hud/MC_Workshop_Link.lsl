@@ -1,4 +1,4 @@
-string VERSION = "MC_Workshop_Link v0.8.0 (2026-10-31)";
+string VERSION = "MC_Workshop_Link v0.9.0 (2026-11-02)";
 // ROOT. HUD-only Workshop endpoint. MCW contract: docs/README_workshop_link.md.
 // Basket/stock belongs to Selected; active time belongs to MC_P1_Animation.
 integer CHANNEL = -918275;
@@ -20,6 +20,17 @@ integer gDeadline;
 integer gFault;
 integer gNextOutputStatus;
 integer gActivity;
+// Read-only requests are deliberately transient: never replay after reset.
+key gInspectTicket = NULL_KEY;
+integer gInspectDeadline;
+
+inspectReply(string text)
+{
+    key ticket = gInspectTicket;
+    gInspectTicket = NULL_KEY; gInspectDeadline = 0;
+    llMessageLinked(LINK_THIS, 918398, text, ticket);
+    llOwnerSay("[Product test] " + text);
+}
 
 integer validKey(key value)
 {
@@ -99,6 +110,7 @@ choose(string choice)
         else llOwnerSay("[Workshop HUD] Treatment pending. No new treatment sent.");
         return;
     }
+    if (gInspectTicket != NULL_KEY) inspectReply("UNAVAILABLE");
     if (choice == "EXIT")
     {
         gRun = llGenerateKey(); gPhase = "EXITING"; gWire = "";
@@ -148,6 +160,23 @@ default
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber() || gFault) return;
+        if (number == 918397 && text == "TEST" && ticket != NULL_KEY)
+        {
+            if (gSession == NULL_KEY || gPhase != "IDLE" || gInspectTicket != NULL_KEY)
+            { llMessageLinked(LINK_THIS, 918398, "UNAVAILABLE", ticket); return; }
+            gInspectTicket = ticket; gInspectDeadline = llGetUnixTime() + 15;
+            llMessageLinked(LINK_THIS, 918372, "INSPECT", ticket);
+            return;
+        }
+        if (number == 918399 && ticket == gInspectTicket && ticket != NULL_KEY)
+        {
+            list inputs = llParseStringKeepNulls(text, ["|"], []);
+            if (gPhase != "IDLE" || llGetListLength(inputs) != 3 || llList2String(inputs, 0) != "OK")
+            { inspectReply("UNAVAILABLE"); return; }
+            llWhisper(CHANNEL, "MCW|INSPECT|" + (string)gBench + "|" + (string)gSession
+                + "|" + (string)ticket + "|" + llList2String(inputs, 1) + "|" + llList2String(inputs, 2));
+            return;
+        }
         if (number == 918394)
         {
             gActivity = text == "1";
@@ -183,10 +212,17 @@ default
         if (number == 918373 && gPhase == "GESTURE" && ticket == gRun)
         {
             list result = llParseStringKeepNulls(text, ["|"], []);
-            if (llGetListLength(result) != 3 || llList2String(result, 0) != "OK"
+            if ((llGetListLength(result) != 3 && llGetListLength(result) != 4) || llList2String(result, 0) != "OK"
                 || (float)llList2String(result, 1) < 0.0 || llList2Integer(result, 2))
             { abort("No usable gesture. Start the preparation, or discard a spoiled one."); return; }
             gGesture = llList2String(result, 1) + "|0";
+            if (llGetListLength(result) == 4)
+            {
+                string heat = llList2String(result, 3);
+                if ((string)((integer)heat) != heat || (integer)heat < 0 || (integer)heat > 30)
+                { abort("Invalid heat input."); return; }
+                gGesture += "|" + heat;
+            }
             gPhase = "SNAPSHOT";
             gDeadline = llGetUnixTime() + 15;
             if (save()) llMessageLinked(LINK_THIS, 918380, "EXPORT", gRun);
@@ -270,6 +306,13 @@ default
         }
         if (source != gBench || llList2Key(fields, 2) != llGetKey()
             || llList2Key(fields, 3) != gSession || gSession == NULL_KEY) return;
+        if (verb == "INSPECT_REPLY" && llGetListLength(fields) == 6
+            && llList2Key(fields, 4) == gInspectTicket && gInspectTicket != NULL_KEY)
+        {
+            if (gPhase == "IDLE") inspectReply(llUnescapeURL(llList2String(fields, 5)));
+            else inspectReply("UNAVAILABLE");
+            return;
+        }
         if (verb == "EXIT_REQUEST" && llList2Key(fields, 4) == NULL_KEY)
         {
             if (gPhase == "IDLE") choose("EXIT");
@@ -347,10 +390,11 @@ default
             }
             return;
         }
-        if (verb == "RESULT" && gPhase == "WAIT_RESULT")
+        if (verb == "RESULT" && (gPhase == "WAIT_BEGIN" || gPhase == "WAIT_ROW" || gPhase == "WAIT_RESULT"))
         {
             string status = llList2String(fields, 5);
             if (status == "NO") { abort(llUnescapeURL(llList2String(fields, 6))); return; }
+            if (gPhase != "WAIT_RESULT") return;
             if (status != "OK") return;
             gPhase = "SETTLING"; gWire = "";
             if (save()) { announce(); llMessageLinked(LINK_THIS, 918315, "COMPLETE", gRun); }
@@ -379,6 +423,7 @@ default
     {
         // These local requests are idempotent. Source operations are NEVER resent here.
         if (gFault) return;
+        if (gInspectTicket != NULL_KEY && llGetUnixTime() >= gInspectDeadline) inspectReply("UNAVAILABLE");
         if (gActivity && gPhase == "IDLE" && gSession != NULL_KEY)
             llWhisper(CHANNEL, header("ACTIVITY") + "|1");
         // Status can recover a lost final confirmation. Never replay TRANSFER or CONFIG.

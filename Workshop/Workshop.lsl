@@ -1,6 +1,6 @@
-string VERSION = "Workshop v0.8.1 (2026-10-31)";
-// Workshop v0.8.0 - small session/configuration coordinator.
-// Same ROOT: Workshop_HUD, Workshop_Eval, Workshop_Output, Workshop_Storage.
+string VERSION = "Workshop v0.9.1 (2026-11-02)";
+// Session and treatment coordinator; sole writer of ws:core and ws:collector.
+// ROOT: Config, Interface, HUD, Eval, Output, Storage. See README.md.
 // No ingredient, container, output-DNA or kept-source collection in this script.
 // Origin session closes ingredients; collector session only controls the finished product.
 key gCollectorUser = NULL_KEY;
@@ -15,32 +15,22 @@ string gLastResult;
 string gChoice;
 float gSeconds;
 string gKind;
-string gWorkshopType; // Configured Genre, separate from HUDKind.
 string gHudObject;
 integer gSingle = 1;
 integer gKeep;
 integer gDev = TRUE;
 integer gHover = TRUE;
-string gCookSound = "cook_sound";
-string gReadySound = "ready_sound";
-string gFailSound = "fail_sound";
-list gActions;
-float gScale = 1.0;
-integer gMax = 10;
 string gAction;
-integer gReady;
+key gConfigTicket = NULL_KEY;
+key gPendingRun = NULL_KEY;
+key gPendingSession = NULL_KEY;
+integer gPendingDeadline;
+integer gReady; // HUD=1, Eval=2, Output=4, Storage=8, Interface=16; Config is correlated separately.
 integer gConfigReady;
 integer gConfigPending;
-integer gLine;
-key gQuery;
-string gNotecard;
 integer gFault;
 integer gDeadline;
-integer gSessionMenu;
-integer gSessionListen;
-key gMenuSession = NULL_KEY;
 
-string trim(string value) { return llStringTrim(value, STRING_TRIM); }
 integer validKey(key value) { if (value) return TRUE; return FALSE; }
 integer write(string name, string value)
 {
@@ -75,31 +65,11 @@ integer productPending()
     return llList2Key(output, 0) == gRun && llList2String(output, 3) == "WAIT_CONTAINER"
         && llList2Integer(output, 5) > 0;
 }
-outputState()
-{
-    if ((gCollectorHUD == NULL_KEY)) return;
-    list output = llJson2List(llLinksetDataRead("ws:output"));
-    list dna = llParseStringKeepNulls(llList2String(output, 4), ["|"], []);
-    sendTo(gCollectorHUD, gCollectorSession, gRun, "OUTPUT_STATE",
-        llList2String(output, 3) + "|" + (string)llList2Integer(output, 5) + "|" + llEscapeURL(llGetSubString(llList2String(dna, 2), 0, 63)));
-}
+outputState() { llMessageLinked(LINK_THIS, 970260, "OUTPUT", NULL_KEY); }
 collectorOffer()
 {
     sendTo(gCollectorUser, gCollectorSession, NULL_KEY, "OFFER", gKind + "|" + (string)gSingle
         + "|" + (string)gKeep + "|" + (string)(!gDev) + "|OUTPUT");
-}
-provision(key player)
-{
-    if (gDev) return;
-    if (player == llGetOwner())
-        llRezObject(gHudObject, llGetPos() + <0.0, 0.0, 1.0>, ZERO_VECTOR, ZERO_ROTATION, 0);
-    else
-    {
-        // A rezzed inventory object keeps the station owner's ownership.
-        // Give the dedicated HUD so its stock transactions belong to the actual player.
-        llGiveInventory(player, gHudObject);
-        llRegionSayTo(player, 0, "Wear the workshop HUD you just received. Association will follow automatically.");
-    }
 }
 finishProduct()
 {
@@ -152,90 +122,22 @@ failure(string reason)
     if (save()) reply("RESULT", gLastResult);
     llMessageLinked(LINK_THIS, 970220, "FAIL_SOUND", gRun);
 }
-string configNotecard()
-{
-    integer i;
-    for (i = 0; i < llGetInventoryNumber(INVENTORY_NOTECARD); ++i)
-    {
-        string name = llGetInventoryName(INVENTORY_NOTECARD, i);
-        if (llToLower(name) == "bench_config") return name;
-    }
-    return "";
-}
 loadConfig()
 {
-    gConfigReady = FALSE; gActions = []; gKind = ""; gWorkshopType = ""; gHudObject = "";
-    gSingle = TRUE; gKeep = FALSE; gDev = TRUE; gScale = 1.0; gMax = 10;
-    gHover = TRUE;
-    gCookSound = "cook_sound"; gReadySound = "ready_sound"; gFailSound = "fail_sound";
-    gNotecard = configNotecard();
-    if (gNotecard == "") { llOwnerSay("[Workshop] Missing bench_config."); return; }
-    gLine = 0; gQuery = llGetNotecardLine(gNotecard, 0);
-}
-applyConfig(string data)
-{
-    integer hash = llSubStringIndex(data, "#");
-    if (hash == 0) return;
-    if (hash > 0) data = llGetSubString(data, 0, hash - 1);
-    integer eq = llSubStringIndex(data, "=");
-    if (eq < 1) return;
-    string name = llToLower(trim(llGetSubString(data, 0, eq - 1)));
-    string value = trim(llGetSubString(data, eq + 1, -1));
-    if (name == "genre")
-    {
-        if (gWorkshopType != "" && value != "") gWorkshopType += ", ";
-        gWorkshopType += value;
-        if (gKind == "") gKind = trim(llList2String(llParseString2List(value, [","], []), 0));
-    }
-    else if (name == "hudkind") gKind = value;
-    else if (name == "hudobject") gHudObject = value;
-    else if (name == "singleingredient") gSingle = (integer)value != 0;
-    else if (name == "allowkeep") gKeep = (integer)value != 0;
-    else if (name == "dev") gDev = (integer)value != 0;
-    else if (name == "showhover") gHover = (integer)value != 0;
-    else if (name == "cooksound") gCookSound = value;
-    else if (name == "readysound") gReadySound = value;
-    else if (name == "failsound") gFailSound = value;
-    else if (name == "action") gActions += trim(llList2String(llParseStringKeepNulls(value, [":"], []), 0));
-    else if (name == "grindscale") gScale = (float)value;
-    else if (name == "grindmax") gMax = (integer)value;
+    gConfigReady = FALSE;
+    if (gPendingRun != NULL_KEY)
+        sendTo(gHUD, gPendingSession, gPendingRun, "RESULT", "NO|Configuration%20reloading");
+    gPendingRun = NULL_KEY;
+    gConfigTicket = llGenerateKey();
+    llMessageLinked(LINK_THIS, 970250, "LOAD", gConfigTicket);
 }
 configureOutput()
 {
-    llMessageLinked(LINK_THIS, 970222, llList2Json(JSON_ARRAY,
-        [gHover, gCookSound, gReadySound, gFailSound, gKeep, gWorkshopType, gKind]), NULL_KEY);
-}
-string playerLabel(key player)
-{
-    if (player == NULL_KEY) return "none";
-    string name = llKey2Name(player);
-    if (name == "") return (string)player;
-    return name + " (" + (string)player + ")";
-}
-string sessionInfo()
-{
-    key current = gUser;
-    if ((gPhase == "PRODUCT" || gPhase == "SETTLING") && gCollectorUser != NULL_KEY) current = gCollectorUser;
-    string info = "WS type (Genre) = " + gWorkshopType + "\nHUDKind = " + gKind
-        + "\nWorkshop: " + gPhase + "\nPlayer: " + playerLabel(current);
-    if (gPhase != "FREE" && gPhase != "OFFERED" && gPhase != "BOUND")
-        info += "\nPrepared by: " + playerLabel(gUser);
-    return info;
-}
-sessionMenu()
-{
-    if (gSessionListen) llListenRemove(gSessionListen);
-    gSessionMenu = -3000000 - (integer)llFrand(900000.0);
-    gMenuSession = gSession;
-    gSessionListen = llListen(gSessionMenu, "", gUser, "");
-    string hover = "Text: OFF";
-    if (gHover) hover = "Text: ON";
-    llDialog(gUser, sessionInfo() + "\nResume, exit through the HUD stock cleanup, or toggle nearby component text.",
-        ["Resume", "Exit", hover], gSessionMenu);
+    if (write("ws:hover", (string)gHover)) llMessageLinked(LINK_THIS, 970252, (string)gHover, NULL_KEY);
 }
 resume()
 {
-    if (gFault || !gConfigReady || gReady != 15) return;
+    if (gFault || !gConfigReady || gReady != 31) return;
     configureOutput();
     if (gPhase == "OUTPUT") llMessageLinked(LINK_THIS, 970220, "STATUS", gRun);
     if (gPhase == "RECEIVING" || gPhase == "BUILDING") llMessageLinked(LINK_THIS, 970213, "STATUS", gRun);
@@ -275,32 +177,16 @@ receiveControl(key source, string wire)
         && (llList2String(fields, 5) == "0" || llList2String(fields, 5) == "1"))
     { llMessageLinked(LINK_THIS, 970220, "ACTIVITY|" + llList2String(fields, 5), gRun); return; }
     if (source != gHUD || !validKey(run)) return;
+    if (verb == "INSPECT") { llMessageLinked(LINK_THIS, 970256, wire, source); return; }
     if (verb == "BEGIN")
     {
         if (run == gRun && gPhase == "RECEIVING")
         { llMessageLinked(LINK_THIS, 970213, "BEGIN", run); return; }
         if (run == gRun && gLastResult != "") { reply("RESULT", gLastResult); return; }
-        if (gPhase != "BOUND" || !gConfigReady || gReady != 15 || llGetListLength(fields) != 8) return;
-        string choice = llList2String(fields, 5);
-        string seconds = llList2String(fields, 6);
-        if ((choice != "CONTAINER" && choice != "KEEP") || (choice == "KEEP" && !gKeep)
-            || llJsonValueType(seconds, []) != JSON_NUMBER || (float)seconds < 0.0
-            || llList2String(fields, 7) != "0")
-        { sendTo(gHUD, gSession, run, "RESULT", "NO|Invalid%20choice%20or%20gesture"); return; }
-        llMessageLinked(LINK_THIS, 970220, "ACTIVITY|0", gRun);
-        gRun = run; gChoice = choice; gSeconds = (float)seconds; gLastResult = ""; gAction = "";
-        gCollectorUser = NULL_KEY; gCollectorHUD = NULL_KEY; gCollectorSession = NULL_KEY;
-        integer value = llRound(gSeconds * gScale);
-        if (value < 0) value = 0;
-        if (value > gMax) value = gMax;
-        integer i;
-        for (i = 0; i < llGetListLength(gActions); ++i)
-        {
-            if (i) gAction += "^";
-            gAction += llList2String(gActions, i) + "=" + (string)value;
-        }
-        gPhase = "RECEIVING";
-        if (save()) llMessageLinked(LINK_THIS, 970213, "BEGIN", gRun);
+        if (gPhase != "BOUND" || !gConfigReady || gReady != 31 || (llGetListLength(fields) != 8 && llGetListLength(fields) != 9)) return;
+        if (gPendingRun != NULL_KEY) return;
+        gPendingRun = run; gPendingSession = gSession; gPendingDeadline = llGetUnixTime() + 10;
+        llMessageLinked(LINK_THIS, 970254, wire, run);
         return;
     }
     if (verb == "END" && run == gRun)
@@ -365,27 +251,11 @@ default
             else gConfigPending = TRUE;
         }
     }
-    dataserver(key query, string data)
-    {
-        if (query != gQuery) return;
-        if (data == EOF)
-        {
-            if (gKind == "cutting_board") gKeep = FALSE;
-            gConfigReady = gKind != "" && gMax >= 0 && gScale >= 0.0;
-            if (gConfigReady && save())
-            {
-                llOwnerSay("[Workshop] WS type (Genre) = " + gWorkshopType + " | HUDKind = " + gKind);
-                resume();
-            }
-            return;
-        }
-        applyConfig(data); ++gLine; gQuery = llGetNotecardLine(gNotecard, gLine);
-    }
     touch_start(integer count)
     {
         key user = llDetectedKey(0);
-        llRegionSayTo(user, 0, sessionInfo());
-        if (gFault || !gConfigReady || gReady != 15)
+        llMessageLinked(LINK_THIS, 970260, "INFO", user);
+        if (gFault || !gConfigReady || gReady != 31)
         { llOwnerSay("[Workshop] Waiting for configuration/subsystems. Touch again when ready."); return; }
         if (productPending())
         {
@@ -402,13 +272,13 @@ default
             if (previousHUD != NULL_KEY && previousHUD != gHUD)
                 sendTo(previousHUD, previousSession, gRun, "RELEASED", "");
             if (gCollectorHUD) outputState();
-            else { provision(user); collectorOffer(); }
+            else { llMessageLinked(LINK_THIS, 970260, "PROVISION|" + (string)gCollectorSession, user); collectorOffer(); }
             return;
         }
         if (gPhase == "OFFERED" && user == gUser) { offer(); return; }
         if (gPhase == "BOUND" && user == gUser)
         {
-            sessionMenu();
+            llMessageLinked(LINK_THIS, 970260, "MENU", user);
             return;
         }
         if (gPhase != "FREE") { llOwnerSay("[Workshop] Treatment phase: " + gPhase + ". Session retained with its HUD."); return; }
@@ -416,35 +286,13 @@ default
         { llOwnerSay("[Workshop] Missing configured HUDObject."); return; }
         gUser = user; gSession = llGenerateKey(); gPhase = "OFFERED";
         if (!save()) return;
-        provision(user);
+        llMessageLinked(LINK_THIS, 970260, "PROVISION|" + (string)gSession, user);
         offer();
     }
     object_rez(key object)
     {
         if (gPhase == "OFFERED") offer();
         else if (productPending() && gCollectorHUD == NULL_KEY) collectorOffer();
-    }
-    listen(integer channel, string name, key user, string choice)
-    {
-        if (gFault || channel != gSessionMenu || !gSessionListen || user != gUser
-            || gMenuSession != gSession || gPhase != "BOUND") return;
-        if (choice == "Text: ON" || choice == "Text: OFF")
-        {
-            gHover = !gHover;
-            configureOutput();
-            llWhisper(-918273, "HOVER|" + (string)gHover);
-            sessionMenu();
-            return;
-        }
-        if (choice != "Resume" && choice != "Exit") return;
-        llListenRemove(gSessionListen); gSessionListen = 0;
-        if (choice == "Resume")
-        {
-            offer();
-            sendTo(gHUD, gSession, NULL_KEY, "BOUND", "");
-            llOwnerSay("[Workshop] Session retained. Continue with the associated HUD.");
-        }
-        else sendTo(gHUD, gSession, NULL_KEY, "EXIT_REQUEST", "");
     }
     link_message(integer sender, integer number, string text, key run)
     {
@@ -455,12 +303,59 @@ default
             else if (text == "EVAL") gReady = gReady | 2;
             else if (text == "OUTPUT") gReady = gReady | 4;
             else if (text == "STORAGE") gReady = gReady | 8;
-            if (gReady == 15) resume();
+            else if (text == "INTERFACE") gReady = gReady | 16;
+            if (gReady == 31) resume();
             return;
         }
         if (number == 970290)
         { llOwnerSay("[Workshop core] Free: " + (string)llGetFreeMemory()); return; }
         if (number == 970210) { receiveControl(run, text); return; }
+        if (number == 970251)
+        {
+            if (text == "RESET") { loadConfig(); return; }
+            if (run != gConfigTicket || run == NULL_KEY) return;
+            gConfigTicket = NULL_KEY;
+            list config = llJson2List(text);
+            if (llGetListLength(config) != 7) { gConfigReady = FALSE; return; }
+            gKind = llList2String(config, 0);
+            gHudObject = llList2String(config, 2); gSingle = llList2Integer(config, 3);
+            gKeep = llList2Integer(config, 4); gDev = llList2Integer(config, 5); gHover = llList2Integer(config, 6);
+            gConfigReady = TRUE;
+            if (save()) resume();
+            return;
+        }
+        if (number == 970255 && run == gPendingRun && run != NULL_KEY)
+        {
+            gPendingRun = NULL_KEY;
+            if (gPhase != "BOUND" || gSession != gPendingSession || !gConfigReady) return;
+            if (llSubStringIndex(text, "NO|") == 0) { sendTo(gHUD, gSession, run, "RESULT", text); return; }
+            list inputs = llJson2List(text);
+            if (llGetListLength(inputs) != 4) return;
+            if (!write("ws:inputs", llList2Json(JSON_ARRAY, [run, (float)llList2String(inputs, 1), llList2Integer(inputs, 2)]))) return;
+            llMessageLinked(LINK_THIS, 970220, "ACTIVITY|0", gRun);
+            gRun = run; gChoice = llList2String(inputs, 0); gSeconds = (float)llList2String(inputs, 1);
+            gAction = llList2String(inputs, 3); gLastResult = "";
+            gCollectorUser = NULL_KEY; gCollectorHUD = NULL_KEY; gCollectorSession = NULL_KEY;
+            gPhase = "RECEIVING";
+            if (save()) llMessageLinked(LINK_THIS, 970213, "BEGIN", gRun);
+            return;
+        }
+        if (number == 970261 && run == gSession && gSession != NULL_KEY && gPhase == "BOUND")
+        {
+            if (text == "HOVER")
+            {
+                gHover = !gHover; configureOutput();
+                llWhisper(-918273, "HOVER|" + (string)gHover);
+                llMessageLinked(LINK_THIS, 970260, "MENU", gUser);
+            }
+            else if (text == "Resume")
+            {
+                offer(); sendTo(gHUD, gSession, NULL_KEY, "BOUND", "");
+                llOwnerSay("[Workshop] Session retained. Continue with the associated HUD.");
+            }
+            else if (text == "Exit") sendTo(gHUD, gSession, NULL_KEY, "EXIT_REQUEST", "");
+            return;
+        }
         if (run != gRun || !validKey(run)) return;
         if (number == 970215)
         {
@@ -510,7 +405,13 @@ default
     }
     timer()
     {
-        if (gReady != 15) llMessageLinked(LINK_THIS, 970298, "READY?", NULL_KEY);
+        if (gPendingRun != NULL_KEY && llGetUnixTime() >= gPendingDeadline)
+        {
+            if (gPhase == "BOUND" && gSession == gPendingSession)
+                sendTo(gHUD, gSession, gPendingRun, "RESULT", "NO|Input%20mapping%20timed%20out");
+            gPendingRun = NULL_KEY;
+        }
+        if (gReady != 31) llMessageLinked(LINK_THIS, 970298, "READY?", NULL_KEY);
         if (gPhase == "OFFERED") offer();
         else if (productPending() && gCollectorSession != NULL_KEY && gCollectorHUD == NULL_KEY) collectorOffer();
         if (gPhase == "EVALUATING" && gDeadline && llGetUnixTime() >= gDeadline)

@@ -3,11 +3,11 @@
 // Proprietaire : /77812 RESET
 //
 // Efface TOUTE la LSD du linkset, y compris tok:/tax:/law:/idx: et les stocks.
-// Retire texte flottant et emetteurs de particules sur TOUT le linkset.
+// Retire le texte flottant avant et apres relance, et les particules avant relance.
 // Reinitialise et active TOUS les autres scripts du meme prim.
 // Les scripts des prims enfants ne sont pas accessibles par ces fonctions LSL.
 // World_Loader est relance en dernier ; attendre son message "loaded".
-// Les scripts relances peuvent recreer leur LSD et leurs affichages normaux.
+// Les scripts relances peuvent recreer leur LSD et afficher du texte lors d un usage ulterieur.
 // Aucun reset sur touch. L'outil se desactive apres execution ; le retirer.
 
 integer COMMAND_CHANNEL = 77812;
@@ -56,19 +56,18 @@ fullReset()
     llLinkParticleSystem(LINK_SET, []);
     llStopSound();
 
-    // Aucun effacement apres le redemarrage : conserver l'initialisation.
+    // Conserver les donnees recreees par les scripts au redemarrage.
     for (i = 0; i < llGetListLength(scripts); ++i)
         restartScript(llList2String(scripts, i));
     for (i = 0; i < llGetListLength(loaders); ++i)
         restartScript(llList2String(loaders, i));
 
-    llOwnerSay("[FULL RESET] LSD effacee ; texte flottant et particules retires. "
+    llOwnerSay("[FULL RESET] LSD effacee ; nettoyage initial effectue. "
         + (string)(llGetListLength(scripts) + llGetListLength(loaders))
         + " scripts du prim actives et reinitialises.");
     if (llGetListLength(loaders))
         llOwnerSay("[FULL RESET] Attendre le message World_Loader 'loaded' avant utilisation.");
-    llOwnerSay("[FULL RESET] Outil desactive. Retirer Nexus_Full_Reset.");
-    llSetScriptState(self, FALSE);
+    llSetTimerEvent(1.0);
 }
 
 default
@@ -78,6 +77,15 @@ default
         gListen = llListen(COMMAND_CHANNEL, "", llGetOwner(), "");
         llOwnerSay("[FULL RESET] Pret. Proprietaire : /77812 RESET. "
             + "Efface toute la LSD et reinitialise tous les autres scripts du prim.");
+    }
+
+    timer()
+    {
+        llSetTimerEvent(0.0);
+        // Laisser les scripts relances traiter leur initialisation.
+        llSetLinkPrimitiveParamsFast(LINK_SET, [PRIM_TEXT, "", ZERO_VECTOR, 0.0]);
+        llOwnerSay("[FULL RESET] Texte flottant nettoye apres relance. Retirer l'outil.");
+        llSetScriptState(llGetScriptName(), FALSE);
     }
 
     listen(integer channel, string name, key speaker, string message)

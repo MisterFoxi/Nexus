@@ -1,0 +1,30 @@
+# Two-input example. Rename to bench_config only in a dedicated cooking station.
+# Keep the inherited HUD identity until a dedicated cooking HUD is assembled.
+Genre = cauldron
+HUDKind = cutting_board
+SingleIngredient = 0
+AllowKeep = 0
+DEV = 1
+
+# Independent inputs. Heat is a 0..30 gameplay intensity, NOT Celsius or watts.
+# Duration is active seconds (pauses/offline time excluded), rounded and bounded.
+HeatAction = fab.thermal
+# Optional: DurationAction = name of an EXISTING numeric axis in your world.
+# Active seconds are transmitted/stored independently even without that mapping.
+DurationScale = 1.0
+DurationMax = 3600
+
+# Optional consultation adapter is NOT implemented in this release.
+# Leave at 0 until a ROOT adapter handles 970240/970241 (see README_cooking_inputs).
+InspectHandler = 0
+
+MaxEffect = 50
+FluxAbs = 1
+NMax = 7
+SpoilMin = 0
+SpoilMax = 150
+Batch = 950,1050, 1200,1300, 1400,1500, 1350,1500, 950,1150, 550,800
+ShowHover = 1
+CookSound = cook_sound
+ReadySound = ready_sound
+FailSound = fail_sound

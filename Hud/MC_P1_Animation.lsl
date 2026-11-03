@@ -1,4 +1,4 @@
-string VERSION = "MC_P1_Animation v0.8.0 (2026-10-31)";
+string VERSION = "MC_P1_Animation v0.9.0 (2026-11-02)";
 // ROOT. One preparation: first START commits craft_started, CONT never consumes again.
 // 918360 START/CONT/STOP: explicit preparation actions, unique non-null request id.
 // START on an already used preparation spoils it. Normal P1_CUT becomes CONT.
@@ -19,6 +19,9 @@ integer gStarted;
 integer gFinalizing;
 integer gSpoiled;
 float gElapsed;
+// Optional independent heat intensity, 0..30 gameplay units; -1 = not selected.
+// Frozen for the whole preparation. Existing one-input workshops retain old snapshots.
+integer gHeat = -1;
 integer gClockActive;
 float gClockAt;
 key gStartTicket = NULL_KEY;
@@ -45,7 +48,7 @@ clock()
 integer saveSession()
 {
     integer result = llLinksetDataWrite(SESSION_KEY,
-        llList2Json(JSON_ARRAY, [gStarted, gSpoiled, gElapsed]));
+        llList2Json(JSON_ARRAY, [gStarted, gSpoiled, gElapsed, gHeat]));
     if (result == 0 || result == 5) return TRUE;
     gSpoiled = TRUE;
     gClockActive = FALSE;
@@ -60,7 +63,7 @@ restoreSession()
     if (saved != "")
     {
         list values = llJson2List(saved);
-        if (llJsonValueType(saved, []) == JSON_ARRAY && llGetListLength(values) == 3
+        if (llJsonValueType(saved, []) == JSON_ARRAY && (llGetListLength(values) == 3 || llGetListLength(values) == 4)
             && llJsonValueType(saved, [0]) == JSON_NUMBER
             && llJsonValueType(saved, [1]) == JSON_NUMBER
             && llJsonValueType(saved, [2]) == JSON_NUMBER)
@@ -68,6 +71,13 @@ restoreSession()
             gStarted = llList2Integer(values, 0);
             gSpoiled = llList2Integer(values, 1);
             gElapsed = (float)llList2String(values, 2);
+            if (llGetListLength(values) == 4)
+            {
+                string heat = llList2String(values, 3);
+                gHeat = (integer)heat;
+                if (llJsonValueType(saved, [3]) != JSON_NUMBER || (string)gHeat != heat
+                    || gHeat < -1 || gHeat > 30) { gStarted = TRUE; gSpoiled = TRUE; gHeat = -1; }
+            }
             if ((gStarted != 0 && gStarted != 1) || (gSpoiled != 0 && gSpoiled != 1)
                 || gElapsed < 0.0 || (!gStarted && (gElapsed > 0.0 || gSpoiled))) { gStarted = TRUE; gSpoiled = TRUE; gElapsed = 0.0; }
         }
@@ -220,8 +230,37 @@ continuePreparation()
     updateTimer();
 }
 
+heatInput(string command, key ticket)
+{
+    list parts = llParseStringKeepNulls(command, ["|"], []);
+    string verb = llList2String(parts, 0);
+    if (verb == "GET")
+    { llMessageLinked(LINK_THIS, 918396, "HEAT|" + (string)gHeat, ticket); return; }
+    if (gStarted || gStartTicket != NULL_KEY || gFinalizing || gSpoiled
+        || llLinksetDataRead("mc:simple:craft_started") == "1")
+    { llMessageLinked(LINK_THIS, 918396, "ERROR|Preparation locked", ticket); return; }
+    if (verb != "SET" || llGetListLength(parts) != 2) return;
+    string value = llList2String(parts, 1);
+    integer heat = (integer)value;
+    if ((string)heat != value || heat < 0 || heat > 30)
+    { llMessageLinked(LINK_THIS, 918396, "ERROR|Heat must be an integer from 0 to 30", ticket); return; }
+    gHeat = heat;
+    if (saveSession()) llMessageLinked(LINK_THIS, 918396, "HEAT|" + (string)gHeat, ticket);
+}
+
 button(string name)
 {
+    if (name == "p1_heat_plus" || name == "p1_heat_minus")
+    {
+        integer heat = gHeat;
+        if (heat < 0) heat = 0;
+        if (name == "p1_heat_plus" && heat < 30) ++heat;
+        else if (name == "p1_heat_minus" && heat > 0) heat -= 1;
+        heatInput("SET|" + (string)heat, llGenerateKey());
+        return;
+    }
+    if (name == "p1_test")
+    { llMessageLinked(LINK_THIS, 918397, "TEST", llGenerateKey()); return; }
     if (name == CUT_BUTTON)
     {
         if (gStarted) continuePreparation();
@@ -279,8 +318,18 @@ default
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber()) return;
+        if (number == 918395 && ticket != NULL_KEY) { heatInput(text, ticket); return; }
         if (number == 918372 && ticket != NULL_KEY)
         {
+            if (text == "INSPECT")
+            {
+                if (!gStarted || gSpoiled || gFinalizing || gStartTicket != NULL_KEY)
+                { llMessageLinked(LINK_THIS, 918399, "NO", ticket); return; }
+                // Read the live clock without freezing, submitting, or advancing stock.
+                clock();
+                llMessageLinked(LINK_THIS, 918399, "OK|" + (string)gElapsed + "|" + (string)gHeat, ticket);
+                return;
+            }
             list session = llJson2List(llLinksetDataRead("mc:workshop:session"));
             if (llList2Key(session, 6) != ticket) return;
             if (text == "UNFREEZE") { gFinalizing = FALSE; return; }
@@ -292,13 +341,20 @@ default
             applyDesired();
             if (!saveSession()) return;
             showVisuals(); updateTimer();
-            llMessageLinked(LINK_THIS, 918373, "OK|" + (string)gElapsed + "|" + (string)gSpoiled, ticket);
+            string snapshot = "OK|" + (string)gElapsed + "|" + (string)gSpoiled;
+            if (gHeat >= 0) snapshot += "|" + (string)gHeat;
+            llMessageLinked(LINK_THIS, 918373, snapshot, ticket);
             return;
         }
         if (number == 918371)
         {
             gFinalizing = text != "" && text != "IDLE";
             if (gFinalizing) { clock(); gClockActive = FALSE; suspend(); }
+            return;
+        }
+        if (number == 918396)
+        {
+            llOwnerSay("[Preparation inputs] " + text);
             return;
         }
         if (number == 918343 || number == 918353) { visualStatus(number, text, ticket); return; }
@@ -337,6 +393,7 @@ default
             gFinalizing = FALSE;
             gSpoiled = FALSE;
             gElapsed = 0.0;
+            gHeat = -1;
             gStartTicket = NULL_KEY;
             gWanted = "STOPPED";
             saveSession();

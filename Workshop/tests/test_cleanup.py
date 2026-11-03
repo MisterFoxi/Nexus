@@ -185,21 +185,22 @@ class CleanupTests(unittest.TestCase):
     def test_component_hover_menu_is_retained(self):
         self.bind();self.core.call('touch_start',[1]);self.w.drain(20000)
         self.assertIn('Text: ON',self.w.dialogs[-1][2])
-        self.core.call('listen',[self.core.global_vars['gSessionMenu'],'',h.Key(h.OWNER),'Text: ON'])
+        self.interface.call('listen',[self.interface.global_vars['gSessionMenu'],'',h.Key(h.OWNER),'Text: ON'])
         self.w.drain(20000)
         self.assertTrue(any(r[2]==-918273 and r[3]=='HOVER|0' for r in self.w.radio))
 
     def test_player_information_distinguishes_origin_from_collector(self):
         self.ready();recovery.RecoveryTests.other_player(self)
-        info=self.core.call('sessionInfo',[])
+        info=self.interface.call('sessionInfo',[])
         self.assertIn(str(recovery.PLAYER2),info)
         self.assertIn(h.OWNER,info)
         self.assertEqual(self.core.global_vars['gUser'],h.OWNER)
 
     def test_five_workshop_versions_announce_at_start(self):
         logs=[text for obj,text in self.w.logs if obj==s.BENCH]
-        for name in ['Workshop','Workshop_HUD','Workshop_Eval','Workshop_Output','Workshop_Storage']:
-            revision='0.8.1' if name in ('Workshop','Workshop_Output') else '0.8.0'
-            self.assertTrue(any(name+' v'+revision+' (2026-10-31)' in text for text in logs),name)
+        for name in ['Workshop','Workshop_Config','Workshop_Interface','Workshop_HUD','Workshop_Eval','Workshop_Output','Workshop_Storage']:
+            revision='0.9.1' if name in ('Workshop','Workshop_Config','Workshop_Interface') else ('0.8.1' if name=='Workshop_Output' else '0.8.0')
+            date='2026-11-02' if name in ('Workshop','Workshop_Config','Workshop_Interface') else '2026-10-31'
+            self.assertTrue(any(name+' v'+revision+' ('+date+')' in text for text in logs),name)
 
 if __name__=='__main__':unittest.main(verbosity=2)

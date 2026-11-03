@@ -12,7 +12,7 @@ class IdleSessionTests(unittest.TestCase):
     def menu(self,choice):
         self.core.call('touch_start',[1]);self.w.drain(20000)
         self.assertEqual(self.w.dialogs[-1][2][:2],['Resume','Exit'])
-        self.core.call('listen',[self.core.global_vars['gSessionMenu'],'',s.h.Key(s.h.OWNER),choice])
+        self.interface.call('listen',[self.interface.global_vars['gSessionMenu'],'',s.h.Key(s.h.OWNER),choice])
         self.w.drain(20000)
 
     def test_own_idle_session_can_exit_without_clearing_linkset_data(self):
@@ -40,8 +40,8 @@ class IdleSessionTests(unittest.TestCase):
     def test_old_menu_cannot_release_a_submitted_treatment(self):
         self.bind();self.prepare()
         self.core.call('touch_start',[1]);self.w.drain(20000)
-        channel=self.core.global_vars['gSessionMenu'];self.submit()
-        self.core.call('listen',[channel,'',s.h.Key(s.h.OWNER),'Exit']);self.w.drain(20000)
+        channel=self.interface.global_vars['gSessionMenu'];self.submit()
+        self.interface.call('listen',[channel,'',s.h.Key(s.h.OWNER),'Exit']);self.w.drain(20000)
         self.assertEqual(self.core.global_vars['gPhase'],'PRODUCT')
         self.assertEqual(self.w.stock[s.SOURCE],[9,0])
 
