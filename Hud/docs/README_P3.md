@@ -37,8 +37,10 @@ P3 closes after OUTPUT_CLOSED/RELEASED.
 
 For a new preparation, P1_TAKE opens P3 locally and starts recipient discovery.
 It does not submit the basket or gesture to the Workshop and does not suspend
-the preparation again. P3_ACTION (Transfer) requires at least one selected
-recipient and a completed scan, then submits the existing CONTAINER preparation.
+the preparation again. Once the scan finishes, P3_ACTION (Transfer) submits the
+preparation even with an empty selection. Workshop evaluates the result and
+handles mesh delivery through CUT/GIVE. Container output with no selected
+recipient stays at the Workshop until a recipient is selected and Transfer is pressed.
 The existing Workshop association must be idle when Transfer is pressed.
 
 The selected UUIDs are retained when the product run is assigned. Once the

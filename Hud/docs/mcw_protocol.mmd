@@ -1,0 +1,87 @@
+sequenceDiagram
+    autonumber
+    participant H as HUD (MC_Workshop_Link)
+    participant W as WS (Workshop / HUD-spool / Output)
+
+    Note over H: IDLE (non associé)
+    Note over W: FREE
+
+    rect rgb(235,245,255)
+    Note over H,W: Association
+    W-->>W: touch → OFFERED
+    W->>H: OFFER | kind | single | keep | dev
+    Note over H: BINDING
+    H->>W: ACCEPT | owner | kind
+    Note over W: BOUND
+    W->>H: BOUND
+    Note over H: IDLE (associé)
+    end
+
+    rect rgb(235,255,240)
+    Note over H,W: Préparation
+    Note over H: choose() → GESTURE → SNAPSHOT (local)
+    H->>W: BEGIN | choice | gesture[ | heat]
+    Note over H: WAIT_BEGIN
+    W-->>W: map inputs (Config) → RECEIVING
+    W->>H: ACK | BEGIN
+    Note over H: ROWS
+    end
+
+    rect rgb(255,250,230)
+    Note over H,W: Upload des sources (stop-and-wait)
+    loop pour chaque row (seq = 0..N-1)
+        H->>W: ROW | seq | src | qty | HERE
+        Note over H: WAIT_ROW
+        W-->>W: store row (idempotent)
+        W->>H: ACK | ROW | seq
+        Note over H: ROWS (++seq)
+    end
+    H->>W: END | count
+    Note over H: WAIT_RESULT
+    end
+
+    rect rgb(245,240,255)
+    Note over H,W: Évaluation → produit
+    Note over W: BUILDING → EVALUATING
+    W-->>W: Eval (STORED) → Output START
+    Note over W: OUTPUT → SETTLING
+    W->>H: RESULT | OK
+    Note over H: SETTLING
+    H-->>H: COMPLETE (local) → CRAFT_DONE
+    H->>W: CLOSED
+    Note over W: PRODUCT (ws:closed) → finishProduct
+    Note over H: OUTPUT (si CONTAINER)<br/>ou IDLE (don / KEEP)
+    end
+
+    rect rgb(255,240,245)
+    Note over H,W: Collecte du produit (CONTAINER)
+    loop tant que produit en attente
+        H->>W: OUTPUT_STATUS (timer 10s)
+        W->>H: OUTPUT_STATE | run | phase | reste | dna
+        H->>W: TRANSFER | ticket | container
+        Note over H: WAIT_TRANSFER
+        W-->>W: Output deliver → CONFIG container
+        W->>H: OUTPUT_REPLY | TRANSFERRED | ticket | qty
+        Note over H: OUTPUT
+    end
+    W->>H: OUTPUT_CLOSED
+    Note over H: IDLE (restoreIngredients)
+    Note over W: BOUND
+    end
+
+    rect rgb(245,245,245)
+    Note over H,W: Chemins alternatifs
+    alt refus / erreur workshop
+        W->>H: RESULT | NO | reason
+        Note over H: abort → IDLE (ingrédients conservés)
+    else annulation avant END
+        H->>W: ABORT
+        Note over W: BOUND (RECEIVING/BUILDING annulé)
+    else sortie de session
+        W->>H: EXIT_REQUEST
+        H->>W: EXIT
+        W->>H: RELEASED
+        Note over H: session effacée
+        Note over W: FREE
+    end
+    end

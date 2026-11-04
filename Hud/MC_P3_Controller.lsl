@@ -1,4 +1,4 @@
-string VERSION = "MC_P3_Controller v0.8.0 (2026-10-31)";
+string VERSION = "MC_P3_Controller v0.8.1 (2026-11-03)";
 // ROOT. Finished-product recipients only. Never sends ingredient TAKE/RETURN/COMMIT.
 // Shared MC_Scan, shared 18-field renderer format; independent four-row pages.
 list gNear; // stride 3: UUID, display name, capacity
@@ -148,8 +148,6 @@ button(string name)
     if (name == "p3_refresh") { refresh(); return; }
     if (name == "p3_action")
     {
-        if (!llGetListLength(gSelected))
-        { llOwnerSay("[Containers] Select at least one recipient first."); return; }
         if (gScanning)
         { llOwnerSay("[Containers] Wait for the recipient scan."); return; }
         if (gMode == 1)
@@ -161,6 +159,8 @@ button(string name)
         list session = llJson2List(llLinksetDataRead("mc:workshop:session"));
         if (llList2String(session, 5) != "OUTPUT")
         { llOwnerSay("[Containers] Ingredient closure is still pending in this HUD."); return; }
+        if (!llGetListLength(gSelected))
+        { llOwnerSay("[Containers] Select at least one recipient first."); return; }
         gBatch = TRUE; nextTransfer(); return;
     }
     if (gScanning) return;
@@ -238,7 +238,7 @@ default
         {
             list reply = llParseStringKeepNulls(text, ["|"], []);
             if (llList2String(reply, 0) == "SUBMITTED" && llList2Key(reply, 1) != NULL_KEY)
-            { gProduct = llList2Key(reply, 1); gBatch = TRUE; }
+            { gProduct = llList2Key(reply, 1); gBatch = llGetListLength(gSelected) > 0; }
             else { gMode = 1; gSubmission = NULL_KEY; gBatch = FALSE; }
             save(); return;
         }

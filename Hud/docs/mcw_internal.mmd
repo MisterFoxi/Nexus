@@ -1,0 +1,82 @@
+sequenceDiagram
+    autonumber
+    participant H as HUD · MCW (-918275)
+    participant C as Core · Workshop.lsl
+    participant S as Spool · Workshop_HUD.lsl
+    participant CF as Config
+    participant EV as Eval
+    participant O as Output
+
+    rect rgb(235,245,255)
+    Note over C,O: Boot / readiness (link-msg internes)
+    C->>S: 970298 READY?
+    C->>CF: 970298 READY?
+    C->>EV: 970298 READY?
+    C->>O: 970298 READY?
+    S-->>C: 970299 HUD
+    EV-->>C: 970299 EVAL
+    O-->>C: 970299 OUTPUT / STORAGE / INTERFACE
+    C->>CF: 970250 LOAD(ticket)
+    CF-->>C: 970251 config
+    Note over C: gReady==31 && gConfigReady → resume()
+    end
+
+    rect rgb(235,255,240)
+    Note over H,O: BEGIN (mapping des entrées)
+    H->>S: MCW BEGIN | choice | gesture  (whisper)
+    S->>C: 970210 relay BEGIN
+    C->>CF: 970254 map inputs (wire)
+    CF-->>C: 970255 choice | seconds | action
+    Note over C: → RECEIVING (gRun fixé)
+    C->>S: 970213 BEGIN
+    S-->>S: 970214 CLEAR → RECEIVING
+    S->>C: 970215 BEGIN_READY
+    C->>S: 970211 ACK | BEGIN
+    S-->>H: whisper ACK | BEGIN
+    end
+
+    rect rgb(255,250,230)
+    Note over H,S: ROWS — boucle locale au spool (Core non sollicité)
+    loop chaque row
+        H->>S: MCW ROW | seq | ... (whisper)
+        S-->>S: receiveRow → store (idempotent)
+        S-->>H: whisper ACK | ROW | seq
+    end
+    H->>S: MCW END | count (whisper)
+    S->>C: 970210 relay END
+    C->>S: 970213 END | count
+    S-->>S: 970214 CLEAR_BUILD → buildGroup (groupage doublons)
+    S->>C: 970215 INPUT_READY
+    end
+
+    rect rgb(245,240,255)
+    Note over C,O: Évaluation → production
+    Note over C: → EVALUATING
+    C->>EV: 970202 evaluate | action
+    EV-->>C: 970201 STORED
+    Note over C: → OUTPUT
+    C->>O: 970220 START | choice | user
+    O-->>O: 970223 scan blanks / deliver
+    O->>C: 970221 READY (WAIT_CONTAINER)
+    Note over C: → SETTLING
+    C->>S: 970211 RESULT | OK
+    S-->>H: whisper RESULT | OK
+    end
+
+    rect rgb(255,240,245)
+    Note over H,O: Clôture
+    H->>S: MCW CLOSED (whisper)
+    S->>C: 970210 relay CLOSED
+    Note over C: → PRODUCT (ws:closed) → finishProduct()
+    C->>S: 970213 CLEAN
+    C->>S: 970211 OUTPUT_CLOSED
+    S-->>H: whisper OUTPUT_CLOSED
+    end
+
+    rect rgb(245,245,245)
+    Note over C,O: Branches annexes (link-msg)
+    Note over C,O: KEEP : Core→Output 970220 START ⇒ Output→Storage 970230 KEEP / 970231 KEPT
+    Note over C,O: TRANSFER : Core 970220 TRANSFER ⇒ Output 970221 TRANSFERRED ⇒ Core 970211 OUTPUT_REPLY
+    Note over C,CF: Reload inventaire : changed() ⇒ Core 970250 LOAD ⇒ Config 970251
+    Note over C,O: Erreur : Eval/Output ERROR ⇒ Core failure() ⇒ 970211 RESULT | NO
+    end

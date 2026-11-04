@@ -50,8 +50,10 @@ Edited with the built-in image_gen tool. Prompt: ../assets/sources/chop_progress
 ## Pause input and the authoritative clock
 
 After the basket confirms CRAFT_STARTED, the controller starts active time without
-waiting for the visual PLAYING reply. Pause/STOP and page suspension account for
-the elapsed active interval, then freeze and save time immediately at input.
+waiting for the visual PLAYING reply. Stop freezes and saves the latest time
+published to the progression renderer. This keeps the displayed grade stable
+even if the active clock has just crossed a threshold between updates.
+Page suspension and Stop with an unavailable renderer use the active clock.
 CONT rebases the clock at input and resumes from the saved elapsed time.
 PLAYING/PAUSED/REST replies update visual state only; a delayed reply cannot add
 pause latency or restart the craft clock. Existing visual-unavailability/reset

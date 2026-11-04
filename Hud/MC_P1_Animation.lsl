@@ -1,4 +1,4 @@
-string VERSION = "MC_P1_Animation v0.9.0 (2026-11-02)";
+string VERSION = "MC_P1_Animation v0.9.1 (2026-11-03)";
 // ROOT. One preparation: first START commits craft_started, CONT never consumes again.
 // 918360 START/CONT/STOP: explicit preparation actions, unique non-null request id.
 // START on an already used preparation spoils it. Normal P1_CUT becomes CONT.
@@ -19,6 +19,7 @@ integer gStarted;
 integer gFinalizing;
 integer gSpoiled;
 float gElapsed;
+float gPublishedElapsed;
 // Optional independent heat intensity, 0..30 gameplay units; -1 = not selected.
 // Frozen for the whole preparation. Existing one-input workshops retain old snapshots.
 integer gHeat = -1;
@@ -136,7 +137,11 @@ showVisuals()
     if (gProgressLoaded)
     {
         string value = "IDLE";
-        if (gStarted) value = (string)gElapsed;
+        if (gStarted && !gSpoiled)
+        {
+            value = (string)gElapsed;
+            gPublishedElapsed = (float)value;
+        }
         if (gSpoiled) value = "SPOILED";
         gProgressShowTicket = llGenerateKey();
         llMessageLinked(LINK_THIS, 918351, value, gProgressShowTicket);
@@ -173,11 +178,13 @@ applyDesired()
     llMessageLinked(LINK_THIS, command, "", gCommandTicket);
 }
 
-suspend()
+suspend(integer keepPublishedProgress)
 {
-    // STOP is resumable for the preparation, even when pressed repeatedly.
-    // Freeze the authoritative craft clock at the input, before any visual request.
+    // Explicit Stop uses the last time sent to the progression renderer.
+    // Other suspensions, or a missing renderer, checkpoint the active clock.
+    integer usePublished = keepPublishedProgress && gClockActive && gProgressLoaded && !gSpoiled;
     clock();
+    if (usePublished) gElapsed = gPublishedElapsed;
     gClockActive = FALSE;
     if (gStarted) saveSession();
     gWanted = "STOPPED";
@@ -267,7 +274,8 @@ button(string name)
         else startPreparation();
         return;
     }
-    if (name == STOP_BUTTON || name == "p1_later" || name == "p1_discard") suspend();
+    if (name == STOP_BUTTON) suspend(TRUE);
+    else if (name == "p1_later" || name == "p1_discard") suspend(FALSE);
 }
 
 visualStatus(integer number, string text, key ticket)
@@ -349,7 +357,7 @@ default
         if (number == 918371)
         {
             gFinalizing = text != "" && text != "IDLE";
-            if (gFinalizing) { clock(); gClockActive = FALSE; suspend(); }
+            if (gFinalizing) { clock(); gClockActive = FALSE; suspend(FALSE); }
             return;
         }
         if (number == 918396)
@@ -363,11 +371,11 @@ default
             gLastAction = ticket;
             if (text == "START") startPreparation();
             else if (text == "CONT") continuePreparation();
-            else if (text == "STOP" || text == "PAUSE") suspend();
+            else if (text == "STOP" || text == "PAUSE") suspend(TRUE);
             return;
         }
         if (number == 918310 && text == "CONTINUE" && ticket != NULL_KEY && ticket != gLastContinue)
-        { gLastContinue = ticket; suspend(); return; } // Navigation is not a new preparation.
+        { gLastContinue = ticket; suspend(FALSE); return; } // Navigation is not a new preparation.
         if (number == 918317 && text == "CRAFT_STARTED" && ticket == gStartTicket && ticket != NULL_KEY)
         {
             gStartTicket = NULL_KEY;
