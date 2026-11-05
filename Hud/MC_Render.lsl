@@ -143,6 +143,8 @@ render()
             }
         }
     }
+    // The vertical recipient-selection table has one physical row.
+    if (PANEL == "P3_SEL") lines = llList2List(lines, 0, 0);
     llMessageLinked(LINK_SET, 0, "a=left;w=none;tags=off", (key)("fw_conf:" + gTable));
     llMessageLinked(LINK_SET, 0, llDumpList2String(lines, "\n"), (key)("fw_data:" + gTable));
     if (PANEL == "NEARBY")

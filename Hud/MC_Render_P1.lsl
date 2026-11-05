@@ -1,5 +1,5 @@
 // ROOT beside FURWARE. Craft page only; never targets P0 prims.
-// P1_Table1 must already be configured as four rows x 24 characters.
+// The vertical assembly has no P1 text table. Render only if that table exists.
 string PANEL = "P1";
 integer P1_QTY_FACE = 4;
 integer P1_ICON_FACE = 2;
@@ -22,6 +22,7 @@ list gIcons;
 // View: current page, total pages, then 4 x [name, quantity, icon, occupied].
 list gView;
 integer gCleared;
+integer gHasTable;
 
 // REVIEW: duplicate normalized names select the first match; detect ambiguity before writing faces.
 integer findLink(string name)
@@ -44,6 +45,8 @@ integer checkedLink(string name, integer face)
 configure()
 {
     gTable = "P1_Table1";
+    gHasTable = findLink("FURWARE text mesh:" + gTable + ":0:0") != 0;
+    if (!gHasTable) return;
     gQtyFace = P1_QTY_FACE; gIconFace = P1_ICON_FACE;
     gPageFace = P1_PAGE_FACE; gTotalFace = P1_TOTAL_FACE;
     gPageLink = checkedLink("P1_ACTUAL", gPageFace);
@@ -110,6 +113,7 @@ key resolvedIcon(string value)
 
 render()
 {
+    if (!gHasTable) return;
     // Keep Discard clearing authoritative even when FURWARE announces readiness again.
     if (gCleared)
     {
