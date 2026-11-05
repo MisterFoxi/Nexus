@@ -145,8 +145,8 @@ button(string name)
     if (gOperation) { llOwnerSay("[Containers] Request pending. Retry repeats the saved request."); return; }
     if (gMode == 2 || gBatch)
     { llOwnerSay("[Containers] Treatment or transfer pending. Selection retained."); return; }
-    if (name == "p3_refresh") { refresh(); return; }
-    if (name == "p3_action")
+    if (name == "p2_action1" || name == "p3_refresh") { refresh(); return; }
+    if (name == "p2_action2" || name == "p3_action")
     {
         if (gScanning)
         { llOwnerSay("[Containers] Wait for the recipient scan."); return; }
@@ -167,8 +167,8 @@ button(string name)
     integer i;
     for (i = 0; i < 4; ++i)
     {
-        // Physical Nearby buttons are named Remove but select a destination (+).
-        if (name == "p3_near_remove_" + (string)i)
+        // The upper P3 buttons select a destination.
+        if (name == "p3_sel_" + (string)i)
         {
             integer offset = (gNearPage * 4 + i) * 3;
             if (offset >= llGetListLength(gNear)) return;
@@ -176,7 +176,7 @@ button(string name)
             if (find(gSelected, source) < 0) gSelected += llList2List(gNear, offset, offset + 2);
             if (save()) render(); return;
         }
-        if (name == "p3_selected_remove_" + (string)i)
+        if (name == "p3_sel_rem_" + (string)i)
         {
             integer offset = (gSelectedPage * 4 + i) * 3;
             if (offset >= llGetListLength(gSelected)) return;

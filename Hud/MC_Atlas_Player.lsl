@@ -14,12 +14,11 @@ integer STATUS = 918333;
 integer PAUSE = 918334;
 integer RESUME = 918335;
 integer ELAPSED = 918336;
-string DISPLAY_PRIM = "P1_DISPLAY";
+string DISPLAY_PRIM = "P1_CHOP_ATLAS";
 integer gDisplayLink;
 
 // Shared format: left-to-right, then top-to-bottom, zero-based indices.
-// Current display face is 2; configure this to match the assembled P1_DISPLAY mesh.
-integer FACE = 2;
+integer FACE = 1;
 integer COLUMNS = 3;
 integer ROWS = 1;
 integer REST_FRAME = 0;

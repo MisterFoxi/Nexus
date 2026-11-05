@@ -1,8 +1,8 @@
 // Nearby data and independent pagination controller. Install in ROOT with MC_Render.
 // Replaces MC_Nearby_Display; never install both controllers together.
 // All physical buttons are script-free; root receives their touch events.
-string PREV_NAME = "P0_NEAR_PREV";
-string NEXT_NAME = "P0_NEAR_NEXT";
+string PREV_NAME = "P0_PREV";
+string NEXT_NAME = "P0_NEXT";
 integer VIEW = 918290;
 integer RENDER_READY = 918291;
 integer ADD = 918300;
@@ -10,7 +10,7 @@ integer TX_STATE = 918302;
 integer STOCK = 918305;
 integer REFRESH_REQUEST = 918287;
 // Verify these names against the physical '+' buttons before installation.
-string ADD_PREFIX = "P0_NEAR_ADD_";
+string ADD_PREFIX = "P0_ADD_";
 integer gTxBusy = TRUE;
 integer gRescan;
 integer gPreserveNextScan;
@@ -88,11 +88,11 @@ button(string name)
     if (name == llToLower(PREV_NAME)) { navigate(-1); return; }
     if (name == llToLower(NEXT_NAME)) { navigate(1); return; }
     integer row;
-    for (row = 1; row <= 4; ++row)
+    for (row = 0; row < 4; ++row)
         if (name == llToLower(ADD_PREFIX) + (string)row)
         {
             if (gTxBusy) { llOwnerSay("[Nearby] Wait for the transaction manager."); return; }
-            integer index = (gPage * 4 + row - 1) * 3;
+            integer index = (gPage * 4 + row) * 3;
             if (index >= llGetListLength(gRows)) return;
             key source = llList2Key(gRows, index + 1);
             if (!llGetListLength(llGetObjectDetails(source, [OBJECT_NAME])))

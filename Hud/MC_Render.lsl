@@ -2,22 +2,13 @@
 // One instance per panel: PANEL = "NEARBY" or "SELECTED".
 // Selected uses the same development face layout as Nearby; settings stay explicit.
 string PANEL = "NEARBY";
-integer SELECTED_QTY_FACE = 4;
-integer SELECTED_ICON_FACE = 2;
-integer SELECTED_PAGE_FACE = 4;
-integer SELECTED_TOTAL_FACE = 4;
 integer VIEW = 918290;
 integer RENDER_READY = 918291;
-string ATLAS_NAME = "medieval_digits_atlas_5x2";
+string ATLAS_NAME = "atlas-quantites-fleches-v2";
+integer FACE = 1;
 key DEFAULT_ICON = "f1076325-9b08-d475-fd4c-346e4e93f33d";
 string gTable;
-integer gQtyFace;
-integer gIconFace;
-integer gPageFace;
-integer gTotalFace;
 integer gPageLink;
-integer gTotalLink;
-list gTens;
 list gUnits;
 list gIcons;
 // View: current page, total pages, then 4 x [name, quantity, icon, occupied].
@@ -44,33 +35,35 @@ integer checkedLink(string name, integer face)
 
 configure()
 {
-    string tens = "P0_NEAR_QTY_TENS_";
-    string units = "P0_NEAR_QTY_UNIT_";
-    string icons = "P0_NEAR_ICON_";
-    string page = "P0_PAGE";
-    string total = "P0_PAGE_TOTAL";
+    string quantity = "P0_QTY_";
+    string icon = "P0_Icon_";
     gTable = "P0_Table1";
-    gQtyFace = 4; gIconFace = 2; gPageFace = 4; gTotalFace = 4;
     if (PANEL == "SELECTED")
     {
         gTable = "P0_Table2";
-        tens = "P0_SEL_QTY_TENS_";
-        units = "P0_SEL_QTY_"; // Exact existing prim name, no UNIT suffix.
-        icons = "P0_SEL_ICON_";
-        page = "P0_SELECTED_ACTUAL";
-        total = "P0_SELECTED_TOTAL";
-        gQtyFace = SELECTED_QTY_FACE; gIconFace = SELECTED_ICON_FACE;
-        gPageFace = SELECTED_PAGE_FACE; gTotalFace = SELECTED_TOTAL_FACE;
+        quantity = "P0_SEL_QTY_";
+        icon = "P0_SEL_ICON_";
     }
-    gPageLink = checkedLink(page, gPageFace);
-    gTotalLink = checkedLink(total, gTotalFace);
-    gTens = []; gUnits = []; gIcons = [];
-    integer i;
-    for (i = 1; i <= 4; ++i)
+    else if (PANEL == "P3_NEAR")
     {
-        gTens += [checkedLink(tens + (string)i, gQtyFace)];
-        gUnits += [checkedLink(units + (string)i, gQtyFace)];
-        gIcons += [checkedLink(icons + (string)i, gIconFace)];
+        gTable = "P3_Table1";
+        quantity = "P3_QTY_";
+        icon = "P3_Icon_";
+    }
+    else if (PANEL == "P3_SEL")
+    {
+        gTable = "P3_Table2";
+        quantity = "P3_Sel_QTY_";
+        icon = "P3_Sel_Icon_";
+    }
+    gPageLink = 0;
+    if (PANEL == "NEARBY") gPageLink = checkedLink("P0_PAGE", FACE);
+    gUnits = []; gIcons = [];
+    integer i;
+    for (i = 0; i < 4; ++i)
+    {
+        gUnits += [findLink(quantity + (string)i)];
+        gIcons += [findLink(icon + (string)i)];
     }
 }
 
@@ -85,29 +78,17 @@ hide(integer link, integer face)
     if (validFace(link, face)) llSetLinkAlpha(link, 0.0, face);
 }
 
-digit(integer link, integer face, integer value)
+integer atlasCell(integer link, string atlas, integer frame, integer columns, integer rows)
 {
-    if (!validFace(link, face)) return;
-    // Single digit per face. Out-of-range values are hidden while navigation remains functional.
-    if (value < 0 || value > 9) { hide(link, face); return; }
-    list texture = llGetLinkPrimitiveParams(link, [PRIM_TEXTURE, face]);
-    key atlas = llList2Key(texture, 0);
-    if (llGetInventoryType(ATLAS_NAME) == INVENTORY_TEXTURE)
-    {
-        key inventoryAtlas = llGetInventoryKey(ATLAS_NAME);
-        if (inventoryAtlas != NULL_KEY) atlas = inventoryAtlas;
-    }
-    if (atlas == NULL_KEY || atlas == TEXTURE_TRANSPARENT)
-    {
-        hide(link, face);
-        llOwnerSay("[Render] Apply " + ATLAS_NAME + " to " + llGetLinkName(link));
-        return;
-    }
-    float u = -0.4 + 0.2 * (float)(value % 5);
-    float v = 0.25 - 0.5 * (float)(value / 5);
+    if (!validFace(link, FACE) || llGetInventoryType(atlas) != INVENTORY_TEXTURE) return FALSE;
+    float width = 1.0 / (float)columns;
+    float height = 1.0 / (float)rows;
+    float u = -0.5 + ((float)(frame % columns) + 0.5) * width;
+    float v = 0.5 - ((float)(frame / columns) + 0.5) * height;
     llSetLinkPrimitiveParamsFast(link, [
-        PRIM_TEXTURE, face, atlas, <0.2, 0.5, 0.0>, <u, v, 0.0>, 0.0,
-        PRIM_COLOR, face, <1.0, 1.0, 1.0>, 1.0]);
+        PRIM_TEXTURE, FACE, atlas, <width, height, 0.0>, <u, v, 0.0>, 0.0,
+        PRIM_COLOR, FACE, <1.0, 1.0, 1.0>, 1.0]);
+    return TRUE;
 }
 
 // Flatten control characters and fit the existing 24-character FURWARE row.
@@ -120,13 +101,6 @@ string displayName(string name)
     return name;
 }
 
-key resolvedIcon(string value)
-{
-    key icon = (key)llStringTrim(value, STRING_TRIM);
-    if (icon) return icon;
-    return DEFAULT_ICON;
-}
-
 render()
 {
     if (llGetListLength(gView) != 18) return;
@@ -135,48 +109,64 @@ render()
     for (row = 0; row < 4; ++row)
     {
         integer offset = 2 + row * 4;
-        integer tens = llList2Integer(gTens, row);
         integer units = llList2Integer(gUnits, row);
         integer iconLink = llList2Integer(gIcons, row);
         integer occupied = llList2Integer(gView, offset + 3);
         integer quantity = llList2Integer(gView, offset + 1);
         string name = "";
         if (occupied) name = llList2String(gView, offset);
+        integer quantityShown;
+        if (occupied && quantity >= 1 && quantity <= 10)
+            quantityShown = atlasCell(units, ATLAS_NAME, quantity - 1, 4, 4);
+        if (!quantityShown)
+        {
+            hide(units, FACE);
+            if (occupied && quantity > 0)
+            {
+                string suffix = " " + (string)quantity;
+                name = llGetSubString(name, 0, 23 - llStringLength(suffix)) + suffix;
+            }
+        }
         lines += [displayName(name)];
-        if (!occupied || quantity <= 0 || quantity > 99)
+        if (!occupied) hide(iconLink, FACE);
+        else if (validFace(iconLink, FACE))
         {
-            hide(tens, gQtyFace); hide(units, gQtyFace);
-            if (occupied && quantity > 99)
-                llOwnerSay("[Render " + PANEL + "] Quantity exceeds two digits: " + (string)quantity);
-        }
-        else
-        {
-            if (quantity >= 10) digit(tens, gQtyFace, quantity / 10);
-            else hide(tens, gQtyFace);
-            digit(units, gQtyFace, quantity % 10);
-        }
-        if (!occupied) hide(iconLink, gIconFace);
-        else if (validFace(iconLink, gIconFace))
-        {
-            key icon = resolvedIcon(llList2String(gView, offset + 2));
-            llSetLinkPrimitiveParamsFast(iconLink, [
-                PRIM_TEXTURE, gIconFace, icon, <1.0, 1.0, 0.0>, ZERO_VECTOR, 0.0,
-                PRIM_COLOR, gIconFace, <1.0, 1.0, 1.0>, 1.0]);
+            key icon = (key)llStringTrim(llList2String(gView, offset + 2), STRING_TRIM);
+            integer hasIcon = FALSE;
+            if (icon) hasIcon = TRUE;
+            if (hasIcon || !atlasCell(iconLink, ATLAS_NAME, 12, 4, 4))
+            {
+                if (!hasIcon) icon = DEFAULT_ICON;
+                llSetLinkPrimitiveParamsFast(iconLink, [
+                    PRIM_TEXTURE, FACE, icon, <1.0, 1.0, 0.0>, ZERO_VECTOR, 0.0,
+                    PRIM_COLOR, FACE, <1.0, 1.0, 1.0>, 1.0]);
+            }
         }
     }
     llMessageLinked(LINK_SET, 0, "a=left;w=none;tags=off", (key)("fw_conf:" + gTable));
     llMessageLinked(LINK_SET, 0, llDumpList2String(lines, "\n"), (key)("fw_data:" + gTable));
-    digit(gPageLink, gPageFace, llList2Integer(gView, 0));
-    digit(gTotalLink, gTotalFace, llList2Integer(gView, 1));
-    if (llList2Integer(gView, 1) > 9)
-        llOwnerSay("[Render " + PANEL + "] Page indicators above 9 are hidden; navigation remains available.");
+    if (PANEL == "NEARBY")
+    {
+        integer page = llList2Integer(gView, 0);
+        if (page < 1 || page > 10 || !atlasCell(gPageLink, ATLAS_NAME, page - 1, 4, 4))
+            hide(gPageLink, FACE);
+        atlasCell(findLink("P0_PREV"), ATLAS_NAME, 10, 4, 4);
+        atlasCell(findLink("P0_NEXT"), ATLAS_NAME, 11, 4, 4);
+        atlasCell(findLink("P0_TITLE"), "atlas-hud-titres-v2", 0, 2, 2);
+    }
+    else if (PANEL == "P3_NEAR")
+    {
+        atlasCell(findLink("P2_TITLE"), "atlas-hud-titres-v2", 2, 2, 2);
+        atlasCell(findLink("P2_ACTION1"), "atlas-hud-actions-v2", 0, 2, 2);
+        atlasCell(findLink("P2_ACTION2"), "atlas-hud-actions-v2", 3, 2, 2);
+    }
 }
 
 default
 {
     state_entry()
     {
-        if (PANEL != "NEARBY" && PANEL != "SELECTED")
+        if (PANEL != "NEARBY" && PANEL != "SELECTED" && PANEL != "P3_NEAR" && PANEL != "P3_SEL")
         { llOwnerSay("[Render] Invalid PANEL setting."); return; }
         configure();
         llMessageLinked(LINK_THIS, RENDER_READY, PANEL, NULL_KEY);

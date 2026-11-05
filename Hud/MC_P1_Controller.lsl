@@ -93,7 +93,7 @@ pump()
 
 button(string name)
 {
-    if (name == "p1_take")
+    if (name == "p1_action2")
     {
         llMessageLinked(LINK_THIS, 918389, "OPEN", llGenerateKey());
         return;
@@ -107,7 +107,7 @@ button(string name)
         llMessageLinked(LINK_THIS, 918370, choice, llGenerateKey());
         return;
     }
-    if (name == "p1_discard")
+    if (name == "p1_action3")
     {
         if (!gClosed) llMessageLinked(LINK_THIS, 918315, "DISCARD", llGenerateKey());
         return;

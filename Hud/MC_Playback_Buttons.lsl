@@ -1,6 +1,6 @@
-// ROOT-only visual library for atlas_playback_buttons_2x2_v1.
+// ROOT-only visual library for atlas-p1-boutons-v2.
 // 918340 LOAD: exact texture inventory name, or empty for DEFAULT_ATLAS.
-// 918341 SHOW: JSON [primName, face, label], label START/CONT/PAUSE/STOP.
+// 918341 SHOW: JSON [primName, face, label], label CUT/CONT/PAUSE/TAKE/DISCARD.
 // 918342 STATE: STOPPED (unused), PLAYING, PAUSED, USED or SPOILED.
 // 918343 STATUS: READY/LOADED/SHOWN:label/STATE:state/UNLOADED/ERROR:reason.
 // Also follows confirmed player status 918333 directly for texture updates.
@@ -9,11 +9,11 @@ integer LOAD = 918340;
 integer SHOW = 918341;
 integer STATE = 918342;
 integer STATUS = 918343;
-string DEFAULT_ATLAS = "atlas_buttons";
-string START_PRIM = "P1_CUT";
-string STOP_PRIM = "P1_STOP";
-integer START_FACE = 0;
-integer STOP_FACE = 0;
+string DEFAULT_ATLAS = "atlas-p1-boutons-v2";
+string START_PRIM = "P1_ACTION1";
+string TAKE_PRIM = "P1_ACTION2";
+string DISCARD_PRIM = "P1_ACTION3";
+integer BUTTON_FACE = 1;
 integer DIAGNOSTIC_CHANNEL = 918344; // Owner chat: /918344 buttons (read-only).
 string gAtlas;
 integer gUsed;
@@ -48,10 +48,11 @@ integer findPrim(string name)
 
 integer frameFor(string label)
 {
-    if (label == "START") return 0;
+    if ((label == "CUT" || label == "START")) return 0;
     if (label == "CONT") return 1;
     if (label == "PAUSE") return 2;
-    if (label == "STOP") return 3;
+    if (label == "TAKE") return 3;
+    if (label == "DISCARD") return 4;
     return -1;
 }
 
@@ -64,8 +65,7 @@ integer validFace(integer link, integer face)
 string defaultAtlas()
 {
     if (llGetInventoryType(DEFAULT_ATLAS) == INVENTORY_TEXTURE) return DEFAULT_ATLAS;
-    if (llGetInventoryType("atlas_playback_buttons_2x2_v1") == INVENTORY_TEXTURE) return "atlas_playback_buttons_2x2_v1";
-    if (llGetInventoryType("atlas_playback_buttons_2x2_v1.png") == INVENTORY_TEXTURE) return "atlas_playback_buttons_2x2_v1.png";
+    if (llGetInventoryType("atlas-p1-boutons-v2.png") == INVENTORY_TEXTURE) return "atlas-p1-boutons-v2.png";
     return "";
 }
 
@@ -93,17 +93,19 @@ diagnose()
     string available = defaultAtlas();
     if (available == "") available = "MISSING";
     llOwnerSay("[Button textures] Script running; active atlas=" + gAtlas + "; available atlas=" + available);
-    inspectButton(START_PRIM, START_FACE);
-    inspectButton(STOP_PRIM, STOP_FACE);
+    inspectButton(START_PRIM, BUTTON_FACE);
+    inspectButton(TAKE_PRIM, BUTTON_FACE);
+    inspectButton(DISCARD_PRIM, BUTTON_FACE);
 }
 
 showFrame(integer link, integer face, integer frame)
 {
-    float u = -0.25 + (float)(frame % 2) * 0.5;
-    float v = 0.25 - (float)(frame / 2) * 0.5;
+    // Sample the generated plaque centers, with a narrow transparent margin.
+    float u = -0.2435 + (float)(frame % 2) * 0.487;
+    float v = 0.287 - (float)(frame / 2) * 0.286;
     llSetLinkTextureAnim(link, 0, face, 1, 1, 0.0, 0.0, 0.0);
     llSetLinkPrimitiveParamsFast(link, [
-        PRIM_TEXTURE, face, gAtlas, <0.5, 0.5, 0.0>, <u, v, 0.0>, 0.0,
+        PRIM_TEXTURE, face, gAtlas, <0.45, 0.25, 0.0>, <u, v, 0.0>, 0.0,
         PRIM_COLOR, face, <1.0, 1.0, 1.0>, 1.0,
         PRIM_FULLBRIGHT, face, TRUE
     ]);
@@ -140,27 +142,29 @@ showState(string value, key ticket)
     value = llToUpper(llStringTrim(value, STRING_TRIM));
     if (value == "PLAYING" || value == "PAUSED" || value == "USED" || value == "SPOILED") gUsed = TRUE;
     if (value == "STOPPED" && gUsed) value = "USED";
-    integer left = 0; // START
-    integer right = 3; // STOP
-    if (value == "PLAYING") { left = 1; right = 2; } // CONT / PAUSE, matching CUT-resume and STOP-suspend.
-    else if (value == "PAUSED" || value == "USED" || value == "SPOILED") left = 1;
+    integer frame = 0;
+    if (value == "PLAYING") frame = 2;
+    else if (value == "PAUSED" || value == "USED" || value == "SPOILED") frame = 1;
     else if (value != "STOPPED")
     { reply("ERROR:Unknown button state", ticket); return; }
-    integer startLink = findPrim(START_PRIM);
-    integer stopLink = findPrim(STOP_PRIM);
-    // Validate both before writing either; duplicate surface configuration is invalid.
-    string error = surfaceError(START_PRIM, startLink, START_FACE);
-    if (error == "") error = surfaceError(STOP_PRIM, stopLink, STOP_FACE);
-    if (error == "" && startLink == stopLink && START_FACE == STOP_FACE)
-        error = "ERROR:Both button names target the same surface";
+    integer cutLink = findPrim(START_PRIM);
+    integer takeLink = findPrim(TAKE_PRIM);
+    integer discardLink = findPrim(DISCARD_PRIM);
+    string error = surfaceError(START_PRIM, cutLink, BUTTON_FACE);
+    if (error == "") error = surfaceError(TAKE_PRIM, takeLink, BUTTON_FACE);
+    if (error == "") error = surfaceError(DISCARD_PRIM, discardLink, BUTTON_FACE);
     if (error != "") { reply(error, ticket); return; }
-    showFrame(startLink, START_FACE, left);
-    showFrame(stopLink, STOP_FACE, right);
+    showFrame(cutLink, BUTTON_FACE, frame);
+    showFrame(takeLink, BUTTON_FACE, 3);
+    showFrame(discardLink, BUTTON_FACE, 4);
+    integer titleLink = findPrim("P1_TITLE");
+    string titles = "atlas-hud-titres-v2";
+    if (validFace(titleLink, BUTTON_FACE) && llGetInventoryType(titles) == INVENTORY_TEXTURE)
+        llSetLinkPrimitiveParamsFast(titleLink, [
+            PRIM_TEXTURE, BUTTON_FACE, titles, <0.5, 0.5, 0.0>, <0.25, 0.25, 0.0>, 0.0
+        ]);
     if (value == "SPOILED")
-    {
-        llSetLinkPrimitiveParamsFast(startLink, [PRIM_COLOR, START_FACE, <0.4, 0.4, 0.4>, 1.0]);
-        llSetLinkPrimitiveParamsFast(stopLink, [PRIM_COLOR, STOP_FACE, <0.4, 0.4, 0.4>, 1.0]);
-    }
+        llSetLinkPrimitiveParamsFast(cutLink, [PRIM_COLOR, BUTTON_FACE, <0.4, 0.4, 0.4>, 1.0]);
     reply("STATE:" + value, ticket);
 }
 
@@ -208,7 +212,7 @@ default
             {
                 text = defaultAtlas();
                 if (text == "")
-                { reply("ERROR:Missing button atlas in ROOT inventory (atlas_buttons or atlas_playback_buttons_2x2_v1[.png])", ticket); return; }
+                { reply("ERROR:Missing button atlas in ROOT inventory (atlas_buttons or atlas-p1-boutons-v2[.png])", ticket); return; }
             }
             if (llGetInventoryType(text) != INVENTORY_TEXTURE)
             { reply("ERROR:Texture missing from ROOT inventory: " + text, ticket); return; }

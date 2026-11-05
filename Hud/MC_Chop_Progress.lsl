@@ -1,15 +1,15 @@
-// ROOT. Self-initializing renderer for P1_PROGRESS; timing belongs to MC_P1_Animation.
+// ROOT. Self-initializing renderer for P1_CURSOR; timing belongs to MC_P1_Animation.
 // 918350 LOAD: inventory texture name, empty = known default names below.
 // 918351 SHOW: active seconds, IDLE (empty board), or SPOILED. Replies use 918353, echo id.
 integer LOAD = 918350;
 integer SHOW = 918351;
 integer STATUS = 918353;
-string DEFAULT_ATLAS = "atlas_progress";
-string DISPLAY_PRIM = "P1_PROGRESS";
-integer FACE = 2;
+string DEFAULT_ATLAS = "curseur-progression-p1-v1";
+string DISPLAY_PRIM = "P1_CURSOR";
+integer FACE = 1;
 float FULL_SECONDS = 10.0;
 string gAtlas;
-integer gLast = -1;
+float gLast = -1.0;
 integer gLink;
 string gLastError;
 
@@ -71,36 +71,36 @@ string savedValue()
 
 integer show(string text, key ticket)
 {
-    integer stage;
+    float fraction;
     integer spoiled = text == "SPOILED";
-    if (spoiled) stage = 0;
-    else if (text == "IDLE") stage = 0; // Empty board, without grade or gauge.
-    else
+    integer visible = text != "IDLE";
+    if (visible && !spoiled)
     {
         if (llJsonValueType(text, []) != JSON_NUMBER)
         { fail("SHOW expects nonnegative seconds, IDLE or SPOILED", ticket); return FALSE; }
         float seconds = (float)text;
         if (seconds < 0.0 || FULL_SECONDS <= 0.0)
         { fail("Invalid seconds or FULL_SECONDS", ticket); return FALSE; }
-        if (seconds >= FULL_SECONDS) stage = 5;
-        else stage = 1 + (integer)(seconds * 4.0 / FULL_SECONDS);
+        fraction = seconds / FULL_SECONDS;
+        if (fraction > 1.0) fraction = 1.0;
     }
     integer display = target(ticket);
     if (!display) return FALSE;
-    integer visual = stage;
-    if (spoiled) visual = 6;
+    float visual = fraction;
+    if (spoiled) visual = -2.0;
+    else if (!visible) visual = -3.0;
     if (visual != gLast || display != gLink)
     {
-        float height = 0.484375;
-        float v = 0.2578125;
-        if (stage >= 3) { height = 0.48828125; v = -0.228515625; }
-        float u = -0.333333333 + (float)(stage % 3) / 3.0;
+        list params = llGetLinkPrimitiveParams(display, [PRIM_POS_LOCAL]);
+        vector position = llList2Vector(params, 0);
+        // Travel across the gradient along root-local Y, inset from both ends.
+        position.y = -0.17702 + 0.35404 * fraction;
         string label = "";
         if (spoiled) label = "Spoiled";
-        llSetLinkTextureAnim(display, 0, FACE, 1, 1, 0.0, 0.0, 0.0);
         llSetLinkPrimitiveParamsFast(display, [
-            PRIM_TEXTURE, FACE, gAtlas, <0.333333333, height, 0.0>, <u, v, 0.0>, 0.0,
-            PRIM_COLOR, FACE, <1.0, 1.0, 1.0>, 1.0,
+            PRIM_POS_LOCAL, position,
+            PRIM_TEXTURE, FACE, gAtlas, <1.0, 1.0, 0.0>, ZERO_VECTOR, 0.0,
+            PRIM_COLOR, FACE, <1.0, 1.0, 1.0>, (float)visible,
             PRIM_FULLBRIGHT, FACE, TRUE,
             PRIM_TEXT, label, <1.0, 0.2, 0.1>, 1.0
         ]);
@@ -118,13 +118,11 @@ loadTexture(string name, key ticket)
     {
         name = DEFAULT_ATLAS;
         // Accept the exported filename as well as the short SL inventory name.
-        if (llGetInventoryType(name) != INVENTORY_TEXTURE) name = "atlas_chop_progress_v2";
-        if (llGetInventoryType(name) != INVENTORY_TEXTURE) name = "atlas_chop_progress_v2.png";
+        if (llGetInventoryType(name) != INVENTORY_TEXTURE) name = DEFAULT_ATLAS + ".png";
     }
     if (llGetInventoryType(name) != INVENTORY_TEXTURE)
     {
-        fail("Missing texture in this prim. Put MC_Chop_Progress and atlas_progress "
-            + "(or atlas_chop_progress_v2) together in ROOT. Requested: " + name, ticket);
+        fail("Missing cursor texture in ROOT: " + name, ticket);
         return;
     }
     if (!target(ticket)) return; // LOADED means a validated surface was initialized.

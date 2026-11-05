@@ -3,8 +3,7 @@ string VERSION = "MC_P1_Animation v0.9.1 (2026-11-03)";
 // 918360 START/CONT/STOP: explicit preparation actions, unique non-null request id.
 // START on an already used preparation spoils it. Normal P1_CUT becomes CONT.
 string ATLAS = "atlas_chop";
-string CUT_BUTTON = "p1_cut";
-string STOP_BUTTON = "p1_stop";
+string CUT_BUTTON = "p1_action1";
 string SESSION_KEY = "mc:chop:session";
 float TICK = 0.25;
 integer gLoaded;
@@ -270,12 +269,12 @@ button(string name)
     { llMessageLinked(LINK_THIS, 918397, "TEST", llGenerateKey()); return; }
     if (name == CUT_BUTTON)
     {
-        if (gStarted) continuePreparation();
+        if (gWanted == "PLAYING") suspend(TRUE);
+        else if (gStarted) continuePreparation();
         else startPreparation();
         return;
     }
-    if (name == STOP_BUTTON) suspend(TRUE);
-    else if (name == "p1_later" || name == "p1_discard") suspend(FALSE);
+    if (name == "p1_later" || name == "p1_action3") suspend(FALSE);
 }
 
 visualStatus(integer number, string text, key ticket)

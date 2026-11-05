@@ -3,8 +3,9 @@
 key gLastTicket;
 key gLastDiscard;
 integer gProductPage;
-// P3 occupies local Z=90 degrees. Adjust this installation value to the mesh.
-float P3_Z = PI_BY_TWO;
+// Vertical linkset: P1 is on the side and P3 is opposite P0.
+float P1_Z = -PI_BY_TWO;
+float P3_Z = PI;
 
 // Reapply an absolute local Euler Z=0; repeated Discard notifications are harmless.
 pageZero()
@@ -29,7 +30,7 @@ default
             if (llDetectedKey(i) == llGetOwner())
             {
                 string name = llToLower(llStringTrim(llGetLinkName(llDetectedLinkNumber(i)), STRING_TRIM));
-                if (name == "p1_discard" && !gProductPage) pageZero();
+                if (name == "p1_action3" && !gProductPage) pageZero();
             }
     }
     link_message(integer sender, integer number, string payload, key ticket)
@@ -57,8 +58,9 @@ default
             || payload != "CONTINUE" || ticket == NULL_KEY || ticket == gLastTicket) return;
         // REVIEW: only the most recent Continue ticket is remembered; delayed replay of an older ticket can rotate the HUD again.
         gLastTicket = ticket;
+        vector angles = llRot2Euler(llGetLocalRot());
         llSetLinkPrimitiveParamsFast(LINK_ROOT, [
-            PRIM_ROT_LOCAL, llEuler2Rot(<0.0, 0.0, PI>) * llGetLocalRot()
+            PRIM_ROT_LOCAL, llEuler2Rot(<angles.x, angles.y, P1_Z>)
         ]);
     }
 }
