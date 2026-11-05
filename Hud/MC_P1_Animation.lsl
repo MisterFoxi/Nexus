@@ -31,6 +31,7 @@ float gButtonsLoadAt;
 integer gButtonsAttempts;
 key gButtonsLoadTicket;
 key gButtonsStateTicket;
+string gButtonsVisual;
 integer gProgressLoaded;
 key gProgressLoadTicket;
 key gProgressShowTicket;
@@ -105,6 +106,7 @@ updateTimer()
 loadButtons()
 {
     gButtonsLoaded = FALSE;
+    gButtonsVisual = "";
     ++gButtonsAttempts;
     gButtonsLoadAt = llGetTime();
     gButtonsLoadTicket = llGenerateKey();
@@ -128,10 +130,14 @@ showVisuals()
     {
         string visualState = "STOPPED";
         if (gStarted) visualState = "USED";
-        if (gStarted && gState == "PLAYING") visualState = "PLAYING";
+        if (gStarted && gClockActive && gWanted == "PLAYING") visualState = "PLAYING";
         if (gSpoiled) visualState = "SPOILED";
-        gButtonsStateTicket = llGenerateKey();
-        llMessageLinked(LINK_THIS, 918342, visualState, gButtonsStateTicket);
+        if (visualState != gButtonsVisual)
+        {
+            gButtonsVisual = visualState;
+            gButtonsStateTicket = llGenerateKey();
+            llMessageLinked(LINK_THIS, 918342, visualState, gButtonsStateTicket);
+        }
     }
     if (gProgressLoaded)
     {
@@ -188,9 +194,9 @@ suspend(integer keepPublishedProgress)
     if (gStarted) saveSession();
     gWanted = "STOPPED";
     if (gStarted && !gSpoiled) gWanted = "PAUSED";
+    showVisuals();
     applyDesired();
     updateTimer();
-    showVisuals();
 }
 
 spoil()
@@ -230,7 +236,8 @@ continuePreparation()
     clock(); // Rebase while paused so none of the pause duration enters active time.
     gClockActive = TRUE;
     gWanted = "PLAYING";
-    if (!saveSession()) { applyDesired(); updateTimer(); showVisuals(); return; }
+    if (!saveSession()) { showVisuals(); applyDesired(); updateTimer(); return; }
+    showVisuals();
     if (gLoaded) applyDesired();
     else if (gLoadTicket == NULL_KEY) loadAtlas();
     updateTimer();

@@ -3,7 +3,7 @@
 // 918341 SHOW: JSON [primName, face, label], label CUT/CONT/PAUSE/TAKE/DISCARD.
 // 918342 STATE: STOPPED (unused), PLAYING, PAUSED, USED or SPOILED.
 // 918343 STATUS: READY/LOADED/SHOWN:label/STATE:state/UNLOADED/ERROR:reason.
-// Also follows confirmed player status 918333 directly for texture updates.
+// Button state is supplied by MC_P1_Animation on 918342.
 // Replies echo request id. No touches, playback commands, or timers are owned here.
 integer LOAD = 918340;
 integer SHOW = 918341;
@@ -181,24 +181,6 @@ default
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber()) return;
-        // Observe CONFIRMED animation states directly. Never send playback/touch commands.
-        if (number == 918333 && (text == "PLAYING" || text == "PAUSED" || text == "REST"))
-        {
-            if (gAtlas == "")
-            {
-                string name = defaultAtlas();
-                if (name == "")
-                { reply("ERROR:Missing button atlas in ROOT inventory", ticket); return; }
-                gAtlas = name;
-            }
-            if (text == "REST")
-            {
-                if (gUsed) showState("USED", ticket);
-                else showState("STOPPED", ticket);
-            }
-            else showState(text, ticket);
-            return;
-        }
         if (number == 918317 && (text == "DISCARD_DONE" || text == "CRAFT_DONE") && ticket != NULL_KEY
             && llLinksetDataRead("mc:simple:craft_started") != "1")
         {
