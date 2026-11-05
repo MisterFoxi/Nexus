@@ -2,7 +2,7 @@
 // Place in the HUD ROOT prim, beside MC_Scan and MC_Nearby_Display.
 // Remove the old script from the Refresh button; its touches must reach root.
 // Only touching the named button starts a scan. Display receives relays.
-string REFRESH_NAME = "P0_REFRESH";
+string REFRESH_NAME = "P0_ACTION1";
 integer TEST_CHANNEL = -918274;
 integer SCAN_REFRESH = 918270;
 integer SCAN_BEGIN   = 918271;

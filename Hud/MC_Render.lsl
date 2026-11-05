@@ -58,6 +58,7 @@ configure()
     }
     gPageLink = 0;
     if (PANEL == "NEARBY") gPageLink = checkedLink("P0_PAGE", FACE);
+    else if (PANEL == "SELECTED") gPageLink = checkedLink("P0_SEL_PAGE", FACE);
     gUnits = []; gIcons = [];
     integer i;
     for (i = 0; i < 4; ++i)
@@ -80,7 +81,9 @@ hide(integer link, integer face)
 
 integer atlasCell(integer link, string atlas, integer frame, integer columns, integer rows)
 {
-    if (!validFace(link, FACE) || llGetInventoryType(atlas) != INVENTORY_TEXTURE) return FALSE;
+    if (!validFace(link, FACE)) return FALSE;
+    if (llGetInventoryType(atlas) != INVENTORY_TEXTURE) atlas += ".png";
+    if (llGetInventoryType(atlas) != INVENTORY_TEXTURE) return FALSE;
     float width = 1.0 / (float)columns;
     float height = 1.0 / (float)rows;
     float u = -0.5 + ((float)(frame % columns) + 0.5) * width;
@@ -103,6 +106,13 @@ string displayName(string name)
 
 render()
 {
+    // Static controls are available before the first scan/view and after inventory changes.
+    if (PANEL == "NEARBY")
+    {
+        atlasCell(findLink("P0_TITLE"), "atlas-hud-titres-v2", 0, 2, 2);
+        atlasCell(findLink("P0_ACTION1"), "atlas-hud-actions-v2", 0, 2, 2);
+        atlasCell(findLink("P0_ACTION2"), "atlas-hud-actions-v2", 1, 2, 2);
+    }
     if (llGetListLength(gView) != 18) return;
     list lines;
     integer row;
@@ -147,14 +157,15 @@ render()
     if (PANEL == "P3_SEL") lines = llList2List(lines, 0, 0);
     llMessageLinked(LINK_SET, 0, "a=left;w=none;tags=off", (key)("fw_conf:" + gTable));
     llMessageLinked(LINK_SET, 0, llDumpList2String(lines, "\n"), (key)("fw_data:" + gTable));
-    if (PANEL == "NEARBY")
+    if (PANEL == "NEARBY" || PANEL == "SELECTED")
     {
         integer page = llList2Integer(gView, 0);
         if (page < 1 || page > 10 || !atlasCell(gPageLink, ATLAS_NAME, page - 1, 4, 4))
             hide(gPageLink, FACE);
-        atlasCell(findLink("P0_PREV"), ATLAS_NAME, 10, 4, 4);
-        atlasCell(findLink("P0_NEXT"), ATLAS_NAME, 11, 4, 4);
-        atlasCell(findLink("P0_TITLE"), "atlas-hud-titres-v2", 0, 2, 2);
+        string prefix = "P0_";
+        if (PANEL == "SELECTED") prefix = "P0_SEL_";
+        atlasCell(findLink(prefix + "PREV"), ATLAS_NAME, 10, 4, 4);
+        atlasCell(findLink(prefix + "NEXT"), ATLAS_NAME, 11, 4, 4);
     }
     else if (PANEL == "P3_NEAR")
     {
@@ -171,12 +182,14 @@ default
         if (PANEL != "NEARBY" && PANEL != "SELECTED" && PANEL != "P3_NEAR" && PANEL != "P3_SEL")
         { llOwnerSay("[Render] Invalid PANEL setting."); return; }
         configure();
+        render();
         llMessageLinked(LINK_THIS, RENDER_READY, PANEL, NULL_KEY);
     }
     on_rez(integer parameter) { llResetScript(); }
     changed(integer change)
     {
-        if (change & CHANGED_LINK) { configure(); render(); }
+        if (change & CHANGED_LINK) configure();
+        if (change & (CHANGED_LINK | CHANGED_INVENTORY)) render();
     }
     link_message(integer sender, integer number, string payload, key panel)
     {

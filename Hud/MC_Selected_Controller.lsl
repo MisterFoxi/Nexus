@@ -548,11 +548,11 @@ basketAction(string action, key ticket)
 button(string name)
 {
     // Ignore P1 and other root touches before reporting any Selected state.
-    if (name != "p0_continue" && name != "p0_sel_prev" && name != "p0_sel_next"
-        && llGetSubString(name, 0, 13) != "p0_sel_remove_") return;
+    if (name != "p0_action2" && name != "p0_sel_prev" && name != "p0_sel_next"
+        && llGetSubString(name, 0, 10) != "p0_sel_del_") return;
     if (gFault) return;
     if (gDiscard) { llOwnerSay("[Selected] Discard is in progress. Please wait."); return; }
-    if (name == "p0_continue")
+    if (name == "p0_action2")
     {
         if (gBusy || gActive != NULL_KEY || gScanning)
         { llOwnerSay("[Selected] Please wait for the current update."); return; }
@@ -564,10 +564,10 @@ button(string name)
     if (name == "p0_sel_prev") { gPage = (gPage - 1 + gPages) % gPages; render(); return; }
     if (name == "p0_sel_next") { gPage = (gPage + 1) % gPages; render(); return; }
     integer i;
-    for (i = 1; i <= 4; ++i)
-        if (name == "p0_sel_remove_" + (string)i && i <= llGetListLength(gKeys))
+    for (i = 0; i < 4; ++i)
+        if (name == "p0_sel_del_" + (string)i && i < llGetListLength(gKeys))
         {
-            key source = llList2Key(gKeys, i - 1);
+            key source = llList2Key(gKeys, i);
             list row = readRow(source);
             if (!gFault) start("RETURN", source, llUnescapeURL(llList2String(row, 5)));
             return;
