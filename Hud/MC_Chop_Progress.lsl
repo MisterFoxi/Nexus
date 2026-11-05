@@ -1,6 +1,6 @@
 // ROOT. Self-initializing renderer for P1_CURSOR; timing belongs to MC_P1_Animation.
 // 918350 LOAD: inventory texture name, empty = known default names below.
-// 918351 SHOW: active seconds, IDLE (empty board), or SPOILED. Replies use 918353, echo id.
+// 918351 SHOW: active seconds, IDLE (cursor at zero), or SPOILED. Replies use 918353, echo id.
 integer LOAD = 918350;
 integer SHOW = 918351;
 integer STATUS = 918353;
@@ -51,30 +51,12 @@ integer target(key ticket)
     return display;
 }
 
-string savedValue()
-{
-    string saved = llLinksetDataRead("mc:chop:session");
-    if (saved == "")
-    {
-        if (llLinksetDataRead("mc:simple:craft_started") == "1") return "SPOILED";
-        return "IDLE";
-    }
-    list values = llJson2List(saved);
-    if (llJsonValueType(saved, []) != JSON_ARRAY || llGetListLength(values) != 3
-        || llJsonValueType(saved, [0]) != JSON_NUMBER
-        || llJsonValueType(saved, [1]) != JSON_NUMBER
-        || llJsonValueType(saved, [2]) != JSON_NUMBER) return "SPOILED";
-    if (llList2Integer(values, 1)) return "SPOILED";
-    if (llList2Integer(values, 0)) return llList2String(values, 2);
-    return "IDLE";
-}
-
 integer show(string text, key ticket)
 {
     float fraction;
     integer spoiled = text == "SPOILED";
-    integer visible = text != "IDLE";
-    if (visible && !spoiled)
+    integer idle = text == "IDLE";
+    if (!idle && !spoiled)
     {
         if (llJsonValueType(text, []) != JSON_NUMBER)
         { fail("SHOW expects nonnegative seconds, IDLE or SPOILED", ticket); return FALSE; }
@@ -88,19 +70,19 @@ integer show(string text, key ticket)
     if (!display) return FALSE;
     float visual = fraction;
     if (spoiled) visual = -2.0;
-    else if (!visible) visual = -3.0;
+    else if (idle) visual = -3.0;
     if (visual != gLast || display != gLink)
     {
         list params = llGetLinkPrimitiveParams(display, [PRIM_POS_LOCAL]);
         vector position = llList2Vector(params, 0);
         // Travel across the gradient along root-local Y, inset from both ends.
-        position.y = -0.17702 + 0.35404 * fraction;
+        position.y = -0.17702 + 0.36022 * fraction;
         string label = "";
         if (spoiled) label = "Spoiled";
         llSetLinkPrimitiveParamsFast(display, [
             PRIM_POS_LOCAL, position,
             PRIM_TEXTURE, FACE, gAtlas, <1.0, 1.0, 0.0>, ZERO_VECTOR, 0.0,
-            PRIM_COLOR, FACE, <1.0, 1.0, 1.0>, (float)visible,
+            PRIM_COLOR, FACE, <1.0, 1.0, 1.0>, 1.0,
             PRIM_FULLBRIGHT, FACE, TRUE,
             PRIM_TEXT, label, <1.0, 0.2, 0.1>, 1.0
         ]);
@@ -129,7 +111,7 @@ loadTexture(string name, key ticket)
     string previous = gAtlas;
     gAtlas = name;
     gLast = -1;
-    if (!show(savedValue(), ticket)) return;
+    if (!show("IDLE", ticket)) return;
     reply("LOADED", ticket);
     if (previous != name)
         llOwnerSay("[Chop progress] Initialized " + DISPLAY_PRIM + " face " + (string)FACE + " with " + name + ".");
