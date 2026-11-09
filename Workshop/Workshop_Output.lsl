@@ -1,4 +1,4 @@
-string VERSION = "Workshop_Output v0.8.1 (2026-10-31)";
+string VERSION = "Workshop_Output v0.8.2 (2026-11-09)";
 // Workshop v0.8.0 - output owner: product, containers, CUT/GIVE, sounds/particles.
 // Container discovery is spooled one key per object; no gRec list or ingredient basket.
 integer CHANNEL = -918273;
@@ -380,7 +380,7 @@ default
         if (channel != CHANNEL || gPhase != "SCANNING" || llGetOwnerKey(source) != gUser) return;
         list fields = llParseStringKeepNulls(text, ["|"], []);
         integer capacity = llList2Integer(fields, 2);
-        if (llGetListLength(fields) != 3 || llList2String(fields, 0) != "BLANK"
+        if ((llGetListLength(fields) != 3 && llGetListLength(fields) != 4) || llList2String(fields, 0) != "BLANK"
             || llList2Key(fields, 1) != source || capacity < 0 || (string)capacity != llList2String(fields, 2)) return;
         string entry = "ws:out:blank:" + (string)source;
         if (llLinksetDataRead(entry) == "") ++gBlankCount;

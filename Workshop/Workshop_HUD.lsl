@@ -1,4 +1,4 @@
-string VERSION = "Workshop_HUD v0.8.0 (2026-10-31)";
+string VERSION = "Workshop_HUD v0.8.1 (2026-11-09)";
 // Workshop v0.8.0 - MCW whisper endpoint and progressive input spool.
 // No stock operations. Input rows/groups live in Linkset Data, not in a basket list.
 integer CHANNEL = -918275;
@@ -112,7 +112,7 @@ receiveRow(list fields)
     key source = llList2Key(fields, 6);
     integer valid;
     if (source) valid = TRUE;
-    if (!valid || llGetListLength(here) != 13 || llList2String(here, 0) != "HERE"
+    if (!valid || (llGetListLength(here) != 13 && llGetListLength(here) != 14) || llList2String(here, 0) != "HERE"
         || llList2Key(here, 1) != source || llList2String(here, 9) != "5") return;
     string kind = llList2Json(JSON_ARRAY, [llList2String(here, 2), llList2String(here, 6),
         llList2String(here, 7), llList2String(here, 12)]);
