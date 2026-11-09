@@ -1,4 +1,4 @@
-string VERSION = "MC_Workshop_Link v0.9.0 (2026-11-02)";
+string VERSION = "MC_Workshop_Link v0.9.1 (2026-11-09)";
 // ROOT. HUD-only Workshop endpoint. MCW contract: docs/README_workshop_link.md.
 // Basket/stock belongs to Selected; active time belongs to MC_P1_Animation.
 integer CHANNEL = -918275;
@@ -397,7 +397,13 @@ default
             if (gPhase != "WAIT_RESULT") return;
             if (status != "OK") return;
             gPhase = "SETTLING"; gWire = "";
-            if (save()) { announce(); llMessageLinked(LINK_THIS, 918315, "COMPLETE", gRun); }
+            if (save())
+            {
+                // The Workshop sends GIVE only after its direct-output dispatch finishes.
+                if (llList2String(fields, 6) == "GIVE")
+                    llOwnerSay("[Nexus] Objet remis dans votre inventaire.");
+                announce(); llMessageLinked(LINK_THIS, 918315, "COMPLETE", gRun);
+            }
             return;
         }
         if (verb == "RELEASED" && gPhase == "RELEASING")

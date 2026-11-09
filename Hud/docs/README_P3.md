@@ -1,6 +1,6 @@
 # P3 — finished product collection
 
-Take opens P3 locally; Transfer submits the preparation after recipient selection. Ingredient
+Take submits the preparation from P1; P3 opens only for evaluated container output. Ingredient
 selection, recipe evaluation, KEEP and mesh/organ CUT/GIVE retain their existing owners.
 Install the updated scripts together on an idle station/HUD; do not mix old MCW endpoints.
 
@@ -26,40 +26,54 @@ Physical rows are indexed n=0..3. Names follow the enumerated HUD assembly:
 | Commands | P3_REFRESH, P3_ACTION (Transfer) |
 | Optional explicit retry | P3_RETRY |
 
-Default faces match P0: icons 2, digits/page counters 4. MC_Turn_Z has a P3_Z
+All UI surfaces use face 1. MC_Turn_Z has a P3_Z
 installation constant defaulting to PI_BY_TWO (90 degrees); set it to the actual
 mesh orientation before installing. P1 Take no longer rotates immediately to P0.
-P1 Take opens P3 before submission; recovery opens it from authenticated OUTPUT_STATE.
+P1 Take submits for evaluation; authenticated WAIT_CONTAINER opens P3.
 Ingredient CRAFT_DONE cannot rotate it away.
 P3 closes after OUTPUT_CLOSED/RELEASED.
 
-## Take, recipient selection, then submission
+## Take evaluates before selecting containers
 
-For a new preparation, P1_TAKE opens P3 locally and starts recipient discovery.
-It does not submit the basket or gesture to the Workshop and does not suspend
-the preparation again. Once the scan finishes, P3_ACTION (Transfer) submits the
-preparation even with an empty selection. Workshop evaluates the result and
-handles mesh delivery through CUT/GIVE. Container output with no selected
-recipient stays at the Workshop until a recipient is selected and Transfer is pressed.
-The existing Workshop association must be idle when Transfer is pressed.
+P1_ACTION2 or the compatible P1_TAKE name (Prendre) sends the existing CONTAINER
+choice directly to MC_Workshop_Link. The existing gesture snapshot, progressive
+ingredient upload, rule evaluation and refusal handling run while P1 stays visible.
+No pre-evaluation container scan or SELECTING page is opened.
 
-The selected UUIDs are retained when the product run is assigned. Once the
-Workshop reports WAIT_CONTAINER and the origin ingredient closure reaches
-OUTPUT, the requested batch transfers automatically to those selected UUIDs.
-Output still revalidates each destination and owns capacity and remainder.
-An explicit refusal restores recipient selection without losing it. A reset
-retains selection and pending submission, but never resubmits a preparation or
-automatically resumes a transfer batch; press Transfer after readiness.
+For rule output `give` or `give=<organ>`, Workshop_Output dispatches CUT/GIVE.
+After that completes, Workshop returns optional success detail `RESULT|...|OK|GIVE`.
+The HUD announces `Objet remis dans votre inventaire.`, closes ingredient commitments
+through the existing COMPLETE path and returns to P0. No container selection or
+Transfer click is needed. Replayed results cannot redispatch GIVE; a refused recipe
+keeps the preparation and stays on P1.
 
-Local API: 918389 OPEN opens recipient selection; SUBMIT asks the link controller
-to submit, with a local request UUID. 918393 SUBMITTED|runUUID / REJECTED echoes
-that request. 918391 SELECTING|0| opens the page without asserting product creation.
-P3 selection records now have six fields (product, escaped JSON selection,
-operation, destination, mode, submission ticket); existing four-field records
-remain readable. Renderers and physical button names are unchanged.
+For transformed output, authenticated WAIT_CONTAINER opens P3 and starts discovery.
+Used ingredient commitments close independently of collection, as before.
+If discovery finds no recipients, the nearby table displays:
 
-This ordering does not convert an evaluator result 2 (CUT/GIVE) into container
-product DNA. Existing recipe and direct mesh/organ delivery semantics remain.
+```text
+Aucun conteneur vide.
+Placez-en a proximite
+puis cliquez Actualiser.
+```
+
+These informational rows remain unoccupied: icons/quantities stay hidden and clicking
+them cannot select an object. During discovery the table instead shows a search
+message. Once every available container is selected, it prompts Transfer.
+P3_ACTION1 refreshes; P3_ACTION2 fills only explicitly selected recipient UUIDs.
+P3 Transfer never submits a new preparation. Terminal closure clears the table and
+returns to P0. Product status/selection recovery never replays physical delivery.
+
+Update together in HUD ROOT: MC_P1_Controller.lsl, MC_P3_Controller.lsl,
+MC_Render_P3_NEAR.lsl, MC_Workshop_Link.lsl and MC_Turn_Z.lsl. Update
+Workshop.lsl in Workshop ROOT. Existing component icons and transfer validation stay
+in place. `Hud/tests/run_take_routing_checks.ps1` analyzes the scripts and executes
+the real routing ASTs with simulated SL services. Verify the visible messages,
+inventory receipt and rotations in Second Life after installation.
+
+Legacy four-, six- and seven-field selection records remain readable. Obsolete
+preselection/submission flags are ignored. A pending real container output is
+recovered from its matching persisted/authenticated output state.
 
 ## Scan, selection and transfer
 
@@ -68,12 +82,12 @@ P3 uses the existing MC_Scan API directly: 918270 with channel -918273; response
 The shared scanner has one active request: concurrent Refresh replaces a scan;
 an interrupted P3 scan keeps the last complete view and reports its timeout.
 
-Only BLANK|UUID|capacity with exactly three fields, a nonnegative integer capacity
-and the HUD owner's object are selectable. The object name is used for display.
+BLANK|UUID|capacity with an optional final icon UUID, a nonnegative integer capacity
+and the HUD owner's object are selectable. Object name plus resolved icon UUID defines the displayed group; raw UUIDs remain individual transfer destinations.
 Capacity 0 retains the existing unlimited meaning (digits are hidden). Quantities
 above 99 and page counters above 9 retain the P0 renderer's hiding behavior.
 
-Each column has four rows and its own wrapping page cursor. Plus selects a unique
+The nearby table has four rows; the selected table has one grouped row. Each has its own wrapping page cursor. Plus selects a unique
 container UUID; X removes it. Neither operation touches the ingredient basket.
 Refresh removes recipients no longer present in its completed snapshot.
 Selections and the current pending request survive resets; automatic batch traversal

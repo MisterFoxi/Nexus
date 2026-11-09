@@ -21,7 +21,6 @@ default
     state_entry()
     {
         llMessageLinked(LINK_THIS, 918390, "STATUS", NULL_KEY);
-        llMessageLinked(LINK_THIS, 918389, "STATUS", NULL_KEY);
     }
     touch_start(integer count)
     {
@@ -38,10 +37,11 @@ default
         if (sender == llGetLinkNumber() && number == 918391)
         {
             string outputPhase = llList2String(llParseStringKeepNulls(payload, ["|"], []), 0);
-            gProductPage = outputPhase != "CLOSED" && outputPhase != "RELEASED";
-            if (!gProductPage) pageZero();
-            else
+            if (outputPhase == "CLOSED" || outputPhase == "RELEASED")
+            { gProductPage = FALSE; pageZero(); }
+            else if (outputPhase == "WAIT_CONTAINER")
             {
+                gProductPage = TRUE;
                 vector angles = llRot2Euler(llGetLocalRot());
                 llSetLinkPrimitiveParamsFast(LINK_ROOT, [PRIM_ROT_LOCAL, llEuler2Rot(<angles.x, angles.y, P3_Z>)]);
             }

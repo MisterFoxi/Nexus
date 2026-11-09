@@ -16,8 +16,10 @@ MC_P1_Animation and MC_Turn_Z. Add MC_Workshop_Link. Keep MC_Transactions,
 scan/render scripts, FURWARE, atlas player, button library and textures.
 Remove the obsolete MC_Bench_Test_Bridge from the in-world HUD.
 
-No prim, face, texture or table is added or renamed. P1_TAKE opens recipient
-selection on P3 locally; P3_ACTION submits container output after selection.
+No prim, face, texture or table is added or renamed. P1_ACTION2 submits the preparation before choosing recipients. Authenticated
+WAIT_CONTAINER opens P3; P3_ACTION2 transfers the evaluated product to selected
+containers. Direct output returns optional RESULT success detail OK|GIVE, announces
+inventory delivery and returns to P0 after ingredient closure.
 P1_LATER requests Keep. Keep is rejected for HUD_KIND=cutting_board,
 even if an offered configuration enables it. P1_DISCARD retains its existing
 stock rules and is blocked during a submitted treatment. EXIT and RETRY are

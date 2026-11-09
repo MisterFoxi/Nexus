@@ -194,7 +194,9 @@ collected through HUD P3. See [P3 installation and protocol](../Hud/docs/README_
 The existing RESULT OK now starts ingredient COMMIT closure when the durable
 product is ready, independently of physical collection. CLOSED records ingredient
 closure; the PRODUCT phase retains the output remainder. Transfer uses only
-explicitly selected recipient UUIDs, revalidated by Output. There is no P3 Discard UI or protocol. Mesh/organ CUT/GIVE and KEEP retain their existing flow.
+explicitly selected recipient UUIDs, revalidated by Output. P1 Take now evaluates
+before P3 is opened. Direct inventory output completes on P1 and returns optional
+RESULT detail `OK|GIVE` so the HUD can announce delivery and return to P0. There is no P3 Discard UI or protocol. Mesh/organ CUT/GIVE and KEEP retain their existing flow.
 
 Touching pending output identifies its current collector, including a different
 player with their own dedicated HUD. Origin stock closure and collector identity

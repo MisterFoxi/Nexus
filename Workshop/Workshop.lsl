@@ -1,4 +1,4 @@
-string VERSION = "Workshop v0.9.1 (2026-11-02)";
+string VERSION = "Workshop v0.9.2 (2026-11-09)";
 // Session and treatment coordinator; sole writer of ws:core and ws:collector.
 // ROOT: Config, Interface, HUD, Eval, Output, Storage. See README.md.
 // No ingredient, container, output-DNA or kept-source collection in this script.
@@ -70,6 +70,14 @@ collectorOffer()
 {
     sendTo(gCollectorUser, gCollectorSession, NULL_KEY, "OFFER", gKind + "|" + (string)gSingle
         + "|" + (string)gKeep + "|" + (string)(!gDev) + "|OUTPUT");
+}
+// Optional success detail lets the HUD distinguish direct delivery from containers.
+string successResult()
+{
+    list output = llJson2List(llLinksetDataRead("ws:output"));
+    list result = llParseStringKeepNulls(llList2String(output, 4), ["|"], []);
+    if (llList2Key(output, 0) == gRun && llList2String(result, 0) == "2") return "OK|GIVE";
+    return "OK";
 }
 finishProduct()
 {
@@ -144,7 +152,7 @@ resume()
     else if (gPhase == "EVALUATING") llMessageLinked(LINK_THIS, 970202, gAction, gRun);
     else if (gPhase == "OUTPUT") llMessageLinked(LINK_THIS, 970220,
         "START|" + gChoice + "|" + (string)gUser, gRun);
-    else if (gPhase == "SETTLING") { reply("RESULT", "OK"); outputState(); }
+    else if (gPhase == "SETTLING") { reply("RESULT", gLastResult); outputState(); }
     else if (gPhase == "PRODUCT") { outputState(); finishProduct(); }
 }
 receiveControl(key source, string wire)
@@ -390,7 +398,7 @@ default
             else if (text == "OK")
             {
                 if (gPhase == "OUTPUT")
-                { gPhase = "SETTLING"; gLastResult = "OK"; if (save()) reply("RESULT", "OK"); }
+                { gPhase = "SETTLING"; gLastResult = successResult(); if (save()) reply("RESULT", gLastResult); }
                 else finishProduct();
             }
             else if (llSubStringIndex(text, "TRANSFERRED|") == 0 || llSubStringIndex(text, "TRANSFER_NO|") == 0

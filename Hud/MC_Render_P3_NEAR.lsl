@@ -168,7 +168,8 @@ render()
         integer occupied = llList2Integer(gView, offset + 3);
         integer quantity = llList2Integer(gView, offset + 1);
         string name = "";
-        if (occupied) name = llList2String(gView, offset);
+        // Unoccupied rows may carry guidance, never a selectable container.
+        if (occupied || PANEL == "P3_NEAR") name = llList2String(gView, offset);
         integer quantityShown;
         if (occupied && quantity >= 1 && quantity <= 10)
             quantityShown = atlasCell(units, ATLAS_NAME, quantity - 1, 4, 4);

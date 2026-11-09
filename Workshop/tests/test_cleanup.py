@@ -201,6 +201,8 @@ class CleanupTests(unittest.TestCase):
         for name in ['Workshop','Workshop_Config','Workshop_Interface','Workshop_HUD','Workshop_Eval','Workshop_Output','Workshop_Storage']:
             revision='0.9.1' if name in ('Workshop','Workshop_Config','Workshop_Interface') else ('0.8.1' if name=='Workshop_Output' else '0.8.0')
             date='2026-11-02' if name in ('Workshop','Workshop_Config','Workshop_Interface') else '2026-10-31'
+            if name == 'Workshop':
+                revision, date = '0.9.2', '2026-11-09'
             if name in ('Workshop_HUD', 'Workshop_Output'):
                 revision = '0.8.1' if name == 'Workshop_HUD' else '0.8.2'
                 date = '2026-11-09'

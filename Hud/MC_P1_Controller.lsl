@@ -93,9 +93,10 @@ pump()
 
 button(string name)
 {
-    if (name == "p1_action2")
+    if (name == "p1_action2" || name == "p1_take")
     {
-        llMessageLinked(LINK_THIS, 918389, "OPEN", llGenerateKey());
+        // Evaluate first. Only authenticated WAIT_CONTAINER opens P3.
+        llMessageLinked(LINK_THIS, 918370, "CONTAINER", llGenerateKey());
         return;
     }
     if (name == "p1_later" || name == "p1_exit" || name == "p1_retry")
