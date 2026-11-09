@@ -1,7 +1,9 @@
-string VERSION = "MC_P3_Controller v0.8.3 (2026-11-09)";
+string VERSION = "MC_P3_Controller v0.8.4 (2026-11-09)";
 // ROOT. Finished-product recipients only. Never sends ingredient TAKE/RETURN/COMMIT.
-// Views group container UUIDs by object name: four available types, one selected type.
+// Views group container UUIDs by object name + icon UUID: four available types, one selected type.
 list gNear; // stride 3: UUID, display name, capacity
+list gIcons; // stride 2: container UUID, resolved icon (empty = default).
+list gPendingIcons;
 list gSelected;
 list gPending;
 integer gNearPage;
@@ -23,7 +25,7 @@ key gSubmission = NULL_KEY;
 
 integer pages(list groups, integer pageSize)
 {
-    integer total = (llGetListLength(groups) / 2 + pageSize - 1) / pageSize;
+    integer total = (llGetListLength(groups) / 3 + pageSize - 1) / pageSize;
     if (total < 1) total = 1;
     return total;
 }
@@ -34,35 +36,47 @@ integer find(list rows, key source)
         if (llList2Key(rows, i) == source) return i;
     return -1;
 }
-// Raw rows keep UUID/name/capacity for transfers. Views contain name/count pairs.
+// Keep the existing transfer rows and persisted UUIDs unchanged.
+string iconFor(key source)
+{
+    integer i;
+    for (i = 0; i < llGetListLength(gIcons); i += 2)
+        if (llList2Key(gIcons, i) == source) return llList2String(gIcons, i + 1);
+    return "";
+}
+// View groups: name/count/icon. Equal names with distinct icons stay separate.
 list grouped(list rows, integer excludeSelected)
 {
-    list names;
-    list counts;
+    list groups;
     integer i;
     for (i = 0; i < llGetListLength(rows); i += 3)
     {
-        if (!excludeSelected || find(gSelected, llList2Key(rows, i)) < 0)
+        key source = llList2Key(rows, i);
+        if (!excludeSelected || find(gSelected, source) < 0)
         {
             string name = llList2String(rows, i + 1);
-            integer index = llListFindList(names, [name]);
-            if (index < 0)
-            {
-                names += [name];
-                counts += [1];
-            }
-            else counts = llListReplaceList(counts, [llList2Integer(counts, index) + 1], index, index);
+            string icon = iconFor(source);
+            integer match = -1;
+            integer j;
+            for (j = 0; j < llGetListLength(groups); j += 3)
+                if (llList2String(groups, j) == name && llList2String(groups, j + 2) == icon) match = j;
+            if (match < 0) groups += [name, 1, icon];
+            else groups = llListReplaceList(groups, [llList2Integer(groups, match + 1) + 1], match + 1, match + 1);
         }
     }
-    list groups;
-    for (i = 0; i < llGetListLength(names); ++i)
-        groups += [llList2String(names, i), llList2Integer(counts, i)];
     return groups;
 }
 integer save()
 {
+    list selectedIcons;
+    integer i;
+    for (i = 0; i < llGetListLength(gSelected); i += 3)
+    {
+        key source = llList2Key(gSelected, i);
+        selectedIcons += [source, iconFor(source)];
+    }
     integer result = llLinksetDataWrite("mc:p3:selection", llList2Json(JSON_ARRAY,
-        [gProduct, llList2Json(JSON_ARRAY, gSelected), gOperation, gDestination, gMode, gSubmission]));
+        [gProduct, llList2Json(JSON_ARRAY, gSelected), gOperation, gDestination, gMode, gSubmission, llList2Json(JSON_ARRAY, selectedIcons)]));
     if (result == 0 || result == 5) return TRUE;
     gOpen = FALSE; gBatch = FALSE;
     llOwnerSay("[Containers] Cannot save selection. Actions stopped.");
@@ -77,9 +91,9 @@ view(list groups, integer page, string panel)
     integer i;
     for (i = 0; i < 4; ++i)
     {
-        integer offset = (page * pageSize + i) * 2;
+        integer offset = (page * pageSize + i) * 3;
         if (!gOpen || i >= pageSize || offset >= llGetListLength(groups)) fields += ["", 0, "", 0];
-        else fields += [llList2String(groups, offset), llList2Integer(groups, offset + 1), "", 1];
+        else fields += [llList2String(groups, offset), llList2Integer(groups, offset + 1), llList2String(groups, offset + 2), 1];
     }
     string packed;
     for (i = 0; i < 18; ++i)
@@ -101,7 +115,7 @@ render()
 refresh()
 {
     if (!gOpen || (gOperation != NULL_KEY)) return;
-    gScan = llGenerateKey(); gScanning = TRUE; gReceiving = FALSE; gPending = [];
+    gScan = llGenerateKey(); gScanning = TRUE; gReceiving = FALSE; gPending = []; gPendingIcons = [];
     // Use production discovery, not the P0 DEV Refresh adapter.
     llMessageLinked(LINK_THIS, 918270, "-918273", gScan);
     llSetTimerEvent(10.0);
@@ -151,7 +165,7 @@ product(string text, key run)
     {
         gMode = 0; gSubmission = NULL_KEY;
         gBatch = FALSE; gOperation = NULL_KEY; gSelected = []; gNear = [];
-        gScanning = FALSE; gReceiving = FALSE; gPending = []; gScan = NULL_KEY;
+        gScanning = FALSE; gReceiving = FALSE; gPending = []; gPendingIcons = []; gScan = NULL_KEY;
         llSetTimerEvent(0.0);
     }
     if (!save()) return;
@@ -180,7 +194,7 @@ button(string name)
     {
         if (gScanning)
         { llOwnerSay("[Containers] Wait for the recipient scan."); return; }
-        if (llGetListLength(grouped(gSelected, FALSE)) > 2)
+        if (llGetListLength(grouped(gSelected, FALSE)) > 3)
         { llOwnerSay("[Containers] Previous selection has multiple types. Select one container type again before Transfer."); return; }
         if (gMode == 1)
         {
@@ -202,17 +216,20 @@ button(string name)
         if (name == "p3_sel_" + (string)i)
         {
             list groups = grouped(gNear, TRUE);
-            integer offset = (gNearPage * 4 + i) * 2;
+            integer offset = (gNearPage * 4 + i) * 3;
             if (offset >= llGetListLength(groups)) return;
             string selectedName = llList2String(groups, offset);
+            string selectedIcon = llList2String(groups, offset + 2);
             // The lower table has one type row. A different type replaces the selection.
-            if (llGetListLength(grouped(gSelected, FALSE)) > 2
-                || (llGetListLength(gSelected) && llList2String(gSelected, 1) != selectedName))
+            if (llGetListLength(grouped(gSelected, FALSE)) > 3
+                || (llGetListLength(gSelected) && (llList2String(gSelected, 1) != selectedName
+                    || iconFor(llList2Key(gSelected, 0)) != selectedIcon)))
                 gSelected = [];
             integer candidate;
             for (candidate = 0; candidate < llGetListLength(gNear); candidate += 3)
             {
                 if (llList2String(gNear, candidate + 1) == selectedName
+                    && iconFor(llList2Key(gNear, candidate)) == selectedIcon
                     && find(gSelected, llList2Key(gNear, candidate)) < 0)
                 {
                     gSelected += llList2List(gNear, candidate, candidate + 2);
@@ -226,12 +243,14 @@ button(string name)
         if (name == "p3_sel_rem_0" && i == 0)
         {
             list groups = grouped(gSelected, FALSE);
-            if (gSelectedPage * 2 >= llGetListLength(groups)) return;
-            string selectedName = llList2String(groups, gSelectedPage * 2);
+            if (gSelectedPage * 3 >= llGetListLength(groups)) return;
+            string selectedName = llList2String(groups, gSelectedPage * 3);
+            string selectedIcon = llList2String(groups, gSelectedPage * 3 + 2);
             integer candidate;
             for (candidate = llGetListLength(gSelected) - 3; candidate >= 0; candidate -= 3)
             {
-                if (llList2String(gSelected, candidate + 1) == selectedName)
+                if (llList2String(gSelected, candidate + 1) == selectedName
+                    && iconFor(llList2Key(gSelected, candidate)) == selectedIcon)
                 {
                     gSelected = llDeleteSubList(gSelected, candidate, candidate + 2);
                     if (save()) render();
@@ -248,12 +267,13 @@ default
     {
         llOwnerSay("[Nexus] " + VERSION);
         list saved = llJson2List(llLinksetDataRead("mc:p3:selection"));
-        if (llGetListLength(saved) == 4 || llGetListLength(saved) == 6)
+        if (llGetListLength(saved) == 4 || llGetListLength(saved) == 6 || llGetListLength(saved) == 7)
         {
             gProduct = llList2Key(saved, 0); gSelected = llJson2List(llList2String(saved, 1));
             gOperation = llList2Key(saved, 2); gDestination = llList2Key(saved, 3);
-            if (llGetListLength(saved) == 6)
+            if (llGetListLength(saved) >= 6)
             { gMode = llList2Integer(saved, 4); gSubmission = llList2Key(saved, 5); }
+            if (llGetListLength(saved) == 7) gIcons = llJson2List(llList2String(saved, 6));
         }
         list outputPhase = llParseStringKeepNulls(llLinksetDataRead("mc:p3:output"), ["|"], []);
         list session = llJson2List(llLinksetDataRead("mc:workshop:session"));
@@ -330,7 +350,7 @@ default
             return;
         }
         if (!gScanning || ticket != gScan) return;
-        if (number == 918271) { gReceiving = TRUE; gPending = []; gItems = 0; gBlanks = 0; return; }
+        if (number == 918271) { gReceiving = TRUE; gPending = []; gPendingIcons = []; gItems = 0; gBlanks = 0; return; }
         if (!gReceiving) return;
         if (number == 918272) { ++gItems; return; }
         if (number == 918273)
@@ -339,15 +359,27 @@ default
             list fields = llParseStringKeepNulls(text, ["|"], []);
             key source = llList2Key(fields, 1);
             integer capacity = llList2Integer(fields, 2);
-            if (llGetListLength(fields) != 3 || source == NULL_KEY || capacity < 0
+            if ((llGetListLength(fields) != 3 && llGetListLength(fields) != 4) || source == NULL_KEY || capacity < 0
                 || (string)capacity != llList2String(fields, 2) || llGetOwnerKey(source) != llGetOwner()) return;
             list details = llGetObjectDetails(source, [OBJECT_NAME]);
             if (!llGetListLength(details)) return;
             // Capacity 0 is unlimited in the existing physical protocol; keep it as 0.
             integer existing = find(gPending, source);
             list row = [source, llList2String(details, 0), capacity];
-            if (existing < 0) gPending += row;
-            else gPending = llListReplaceList(gPending, row, existing, existing + 2);
+            string icon;
+            key texture = (key)llStringTrim(llList2String(fields, 3), STRING_TRIM);
+            if (texture) icon = llToLower((string)texture);
+            if (existing < 0)
+            {
+                gPending += row;
+                gPendingIcons += [source, icon];
+            }
+            else
+            {
+                gPending = llListReplaceList(gPending, row, existing, existing + 2);
+                integer iconIndex = existing / 3 * 2;
+                gPendingIcons = llListReplaceList(gPendingIcons, [source, icon], iconIndex, iconIndex + 1);
+            }
             return;
         }
         if (number == 918274)
@@ -355,7 +387,7 @@ default
             list counts = llParseStringKeepNulls(text, ["|"], []);
             if (llList2Integer(counts, 0) == gItems && llList2Integer(counts, 1) == gBlanks)
             {
-                gNear = gPending;
+                gNear = gPending; gIcons = gPendingIcons; gPendingIcons = [];
                 integer i = llGetListLength(gSelected) - 3;
                 for (; i >= 0; i -= 3)
                 {
@@ -365,12 +397,12 @@ default
                 }
                 if (save()) render();
             }
-            gScanning = FALSE; gReceiving = FALSE; gPending = []; llSetTimerEvent(0.0);
+            gScanning = FALSE; gReceiving = FALSE; gPending = []; gPendingIcons = []; llSetTimerEvent(0.0);
         }
     }
     timer()
     {
-        gScanning = FALSE; gReceiving = FALSE; gPending = []; llSetTimerEvent(0.0);
+        gScanning = FALSE; gReceiving = FALSE; gPending = []; gPendingIcons = []; llSetTimerEvent(0.0);
         llOwnerSay("[Containers] Scan interrupted. Press Refresh.");
     }
 }

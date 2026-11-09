@@ -1,10 +1,10 @@
 // ROOT beside FURWARE. Craft page only; never targets P0 prims.
 // The vertical assembly has no P1 text table. Render only if that table exists.
 string PANEL = "P1";
-integer P1_QTY_FACE = 4;
-integer P1_ICON_FACE = 2;
-integer P1_PAGE_FACE = 4;
-integer P1_TOTAL_FACE = 4;
+integer P1_QTY_FACE = 1;
+integer P1_ICON_FACE = 1;
+integer P1_PAGE_FACE = 1;
+integer P1_TOTAL_FACE = 1;
 integer VIEW = 918314;
 integer RENDER_READY = 918291;
 string ATLAS_NAME = "medieval_digits_atlas_5x2";

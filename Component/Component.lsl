@@ -26,6 +26,7 @@
 //                               ; the first transformation.
 //     Organ    = leaf : KandaLeaf ; OPTIONAL, repeatable: a WHOLE plant hands out
 //                               ; this organ's mesh at harvest (feature B).
+//     Icon     = texture name or UUID ; OPTIONAL: HUD visual, retained when filled
 //     Quantity = 5              ; total stock (units)
 //     Use      = 1              ; units per application
 //     Lifetime = 7d             ; d/h/m/s; 0 or absent = unlimited
@@ -36,8 +37,8 @@
 //
 //  PROTOCOL (whisper on CRAFT_CHANNEL, fields separated by "|")
 //   workshop -> all   : PING
-//   elem     -> ws    : HERE|key|name|qty|use|life|taxonomy|stage|propsPacked|proto|eff|mesh|organ
-//   blank    -> ws    : BLANK|key|capacity       (available container, on PING)
+//   elem     -> ws    : HERE|key|name|qty|use|life|taxonomy|stage|propsPacked|proto|eff|mesh|organ[|iconUUID]
+//   blank    -> ws    : BLANK|key|capacity[|iconUUID] (available container, on PING)
 //   ws       -> blank : CONFIG|key|name|qty|use|life|taxonomy|stage|propsPacked|med[|eff[|expiryUnix]]
 //   ws       -> elem  : CUT|key|avatarKey                 (record recipient)
 //   ws       -> elem  : GIVE|key            (give single Mesh)
@@ -63,7 +64,7 @@ integer HS = 7;
 integer gStockFault;
 string  SEP = "|";
 integer PROTO = 5;          // v5 adds the organ field in HERE and organ->mesh harvest delivery.
-string  VERSION = "Component v0.7.3 (2026-10-31)"; // Bump script revision on changes; PROTO is independent.
+string  VERSION = "Component v0.7.4 (2026-11-09)"; // Bump script revision on changes; PROTO is independent.
 
 integer ROLE_NONE  = 0;
 integer ROLE_NC    = 1;     // Defined by a notecard.
@@ -77,6 +78,7 @@ string  gTaxonomy;
 string  gStage;
 string  gProps;             // "name=val^..."
 string  gMed;
+string  gIcon;              // Raw notecard UUID/name; resolved only in this script prim.
 string  gMesh;              // Inventory object (mesh + script + NC) to give at the next step (single-mesh delivery).
 string  gOrgan;            // This component's organ identity (e.g. "leaf"); empty = not an organ.
 list    gOrganMesh;        // Harvest map, stride 2: [organName, meshName, ...] — a whole plant's organs to hand out.
@@ -92,6 +94,7 @@ integer gDying;               // Closed empty/expired source: defer deletion to 
 string  gNc;
 integer gLine;
 key     gQuery;
+string tIcon;
 string  tName; string tTax; string tStage; string tMed; string tMesh;
 integer tQty; integer tUse; integer tLife; string tProps; integer tCapacity;
 string  tOrgan; list tOrganMesh;
@@ -101,6 +104,18 @@ integer gDevListen = -1;
 integer gVersionListen = -1;
 
 string trim(string s){ return llStringTrim(s, STRING_TRIM); }
+
+// Empty/missing/non-texture/non-full-perm names advertise no custom icon.
+// UUIDs pass through directly. Optional suffix preserves old messages on fallback.
+string iconSuffix(){
+    string value = trim(gIcon);
+    key texture = (key)value;
+    if(texture) return SEP+llToLower((string)texture);
+    if(value == "" || llGetInventoryType(value) != INVENTORY_TEXTURE) return "";
+    texture = llGetInventoryKey(value);
+    if(texture) return SEP+llToLower((string)texture);
+    return "";
+}
 
 // Filled containers display their existing stage; raw saved DNA remains unchanged.
 string productName(){
@@ -166,6 +181,7 @@ saveKVP(){
     llLinksetDataWrite("rz_stage", gStage);
     llLinksetDataWrite("rz_props", gProps);
     llLinksetDataWrite("rz_med",   gMed);
+    llLinksetDataWrite("rz_icon", gIcon);
     llLinksetDataWrite("rz_mesh",  gMesh);
     llLinksetDataWrite("rz_organ", gOrgan);
     llLinksetDataWrite("rz_organmesh", llDumpList2String(gOrganMesh, "^"));
@@ -183,6 +199,7 @@ integer restoreKVP(){
     gProps    = llLinksetDataRead("rz_props");
     gMed      = llLinksetDataRead("rz_med");
     gMesh     = llLinksetDataRead("rz_mesh");
+    if(gNc == "") gIcon = llLinksetDataRead("rz_icon"); // NC remains authoritative, including empty Icon.
     gOrgan    = llLinksetDataRead("rz_organ");
     string om = llLinksetDataRead("rz_organmesh");
     if(om == "") gOrganMesh = []; else gOrganMesh = llParseStringKeepNulls(om, ["^"], []);
@@ -246,7 +263,7 @@ setStats(){
 announce(){
     if(!gReady || gQuantity <= 0 || expired()) return;
     llWhisper(CRAFT_CHANNEL, "HERE"+SEP+(string)llGetKey()+SEP+productName()+SEP+(string)gQuantity
-        +SEP+(string)gUse+SEP+(string)gLifeSecs+SEP+gTaxonomy+SEP+gStage+SEP+gProps+SEP+(string)PROTO+SEP+(string)effPerMille()+SEP+gMesh+SEP+gOrgan);
+        +SEP+(string)gUse+SEP+(string)gLifeSecs+SEP+gTaxonomy+SEP+gStage+SEP+gProps+SEP+(string)PROTO+SEP+(string)effPerMille()+SEP+gMesh+SEP+gOrgan+iconSuffix());
 }
 
 // Publish the identity after loading a notecard, restoring state, or receiving CONFIG.
@@ -383,7 +400,7 @@ hudRequest(integer channel, key client, list fields){
 }
 
 boot(){
-    gRole = ROLE_NONE; gReady = FALSE;
+    gRole = ROLE_NONE; gReady = FALSE; gIcon = "";
     gTaxonomy = ""; gStage = ""; gProps = ""; gMed = ""; gExpiry = 0;
 
     gNc = "";
@@ -402,7 +419,7 @@ boot(){
             return;
         }
         tName=""; tTax=""; tStage=""; tMed=""; tMesh=""; tQty=0; tUse=1; tLife=0; tProps=""; tCapacity=0;
-        tOrgan=""; tOrganMesh=[];
+        tOrgan=""; tOrganMesh=[]; tIcon="";
         gLine = 0;
         gQuery = llGetNotecardLine(gNc, 0);
         return;
@@ -418,7 +435,7 @@ boot(){
     // New blank/container without a notecard: unlimited capacity.
     gRole = ROLE_BLANK; gCapacity = 0;
     llSetObjectName("rezzme now");
-    llWhisper(CRAFT_CHANNEL, "BLANK"+SEP+(string)llGetKey()+SEP+"0");
+    llWhisper(CRAFT_CHANNEL, "BLANK"+SEP+(string)llGetKey()+SEP+"0"+iconSuffix());
 }
 
 default{
@@ -442,6 +459,7 @@ default{
     dataserver(key q, string data){
         if(q != gQuery) return;
         if(data == EOF){
+            gIcon = tIcon;
             if(tCapacity > 0 && llLinksetDataRead("rz_ready") == "1"){
                 gRole=ROLE_BLANK; gCapacity=tCapacity;
                 if(restoreKVP()) finalize();
@@ -451,7 +469,7 @@ default{
                 // Container notecard: remain blank and advertise the maximum capacity.
                 gRole = ROLE_BLANK; gCapacity = tCapacity; gReady = FALSE;
                 llSetObjectName("rezzme now");
-                llWhisper(CRAFT_CHANNEL, "BLANK"+SEP+(string)llGetKey()+SEP+(string)gCapacity);
+                llWhisper(CRAFT_CHANNEL, "BLANK"+SEP+(string)llGetKey()+SEP+(string)gCapacity+iconSuffix());
                 return;
             }
             gName=tName; gTaxonomy=tTax; gStage=tStage; gMed=tMed; gMesh=tMesh;
@@ -488,6 +506,7 @@ default{
                 else if(k=="lifetime") tLife=parseDuration(v);
                 else if(k=="med") tMed=v;
                 else if(k=="capacity") tCapacity=(integer)v;
+                else if(k=="icon") tIcon=v;
                 else if(k=="mesh") tMesh=v;
                 else if(k=="organ") addOrgan(v);
                 else if(k=="axis") addAxis(v);
@@ -515,15 +534,15 @@ default{
                 if(gReady && gQuantity > 0 && !expired())
                     llWhisper(chan,"HERE"+SEP+(string)llGetKey()+SEP+productName()+SEP+(string)gQuantity
                         +SEP+(string)gUse+SEP+(string)gLifeSecs+SEP+gTaxonomy+SEP+gStage+SEP+gProps
-                        +SEP+(string)PROTO+SEP+(string)effPerMille()+SEP+gMesh+SEP+gOrgan);
+                        +SEP+(string)PROTO+SEP+(string)effPerMille()+SEP+gMesh+SEP+gOrgan+iconSuffix());
                 else if(!gReady && gRole == ROLE_BLANK)
-                    llWhisper(chan,"BLANK"+SEP+(string)llGetKey()+SEP+(string)gCapacity);
+                    llWhisper(chan,"BLANK"+SEP+(string)llGetKey()+SEP+(string)gCapacity+iconSuffix());
             }
             return;
         }
         if(verb == "PING"){
             if(gReady){ if(gQuantity > 0 && !expired()) announce(); }   // Do not advertise empty stock.
-            else if(gRole == ROLE_BLANK) llWhisper(CRAFT_CHANNEL, "BLANK"+SEP+(string)llGetKey()+SEP+(string)gCapacity);
+            else if(gRole == ROLE_BLANK) llWhisper(CRAFT_CHANNEL, "BLANK"+SEP+(string)llGetKey()+SEP+(string)gCapacity+iconSuffix());
         }
         else if(verb == "CUT"){                 // Record the player receiving the harvested object.
             if(!gReady) return;

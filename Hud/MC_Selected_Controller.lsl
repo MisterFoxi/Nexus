@@ -129,7 +129,7 @@ pump()
             {
                 list here = llParseStringKeepNulls(llUnescapeURL(llList2String(row, 5)), ["|"], []);
                 gKeys += [source];
-                gView += [llList2String(here, 2), quantity, llList2String(here, 12), 1];
+                gView += [llList2String(here, 2), quantity, llList2String(here, 13), 1];
             }
             ++gCount;
         }

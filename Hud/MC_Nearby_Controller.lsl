@@ -69,7 +69,7 @@ render()
         {
             list fields = llParseStringKeepNulls(llList2String(gRows, index + 2), ["|"], []);
             view += [llList2String(gRows, index), llList2Integer(fields, 3),
-                llList2String(fields, 12), 1];
+                llList2String(fields, 13), 1];
         }
     }
     llMessageLinked(LINK_THIS, VIEW, packView(view), (key)"NEARBY");

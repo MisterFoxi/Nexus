@@ -1,4 +1,10 @@
-# Component v0.7.3 — HUD stock and persistent lot expiry
+# Component v0.7.4 — HUD stock, persistent lot expiry and product icons
+
+Optional notecard field `icon=` accepts a texture UUID or a texture name in the
+script prim's inventory (full copy/modify/transfer permissions). Missing, empty or
+unresolvable values use the HUD default. Containers retain their own icon after
+filling. See [HUD product icons](../Hud/docs/README_product_icons.md) for protocol,
+installation and verification details.
 
 The component retains its stock, notecard identity, original lifetime/expiry,
 container CONFIG behavior and CUT/GIVE mesh delivery. Product evaluation stays
