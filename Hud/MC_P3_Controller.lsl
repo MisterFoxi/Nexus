@@ -1,6 +1,6 @@
-string VERSION = "MC_P3_Controller v0.8.1 (2026-11-03)";
+string VERSION = "MC_P3_Controller v0.8.3 (2026-11-09)";
 // ROOT. Finished-product recipients only. Never sends ingredient TAKE/RETURN/COMMIT.
-// Shared MC_Scan, shared 18-field renderer format; independent four-row pages.
+// Views group container UUIDs by object name: four available types, one selected type.
 list gNear; // stride 3: UUID, display name, capacity
 list gSelected;
 list gPending;
@@ -21,9 +21,9 @@ key gDestination = NULL_KEY;
 integer gMode;
 key gSubmission = NULL_KEY;
 
-integer pages(list rows)
+integer pages(list groups, integer pageSize)
 {
-    integer total = (llGetListLength(rows) / 3 + 3) / 4;
+    integer total = (llGetListLength(groups) / 2 + pageSize - 1) / pageSize;
     if (total < 1) total = 1;
     return total;
 }
@@ -34,6 +34,31 @@ integer find(list rows, key source)
         if (llList2Key(rows, i) == source) return i;
     return -1;
 }
+// Raw rows keep UUID/name/capacity for transfers. Views contain name/count pairs.
+list grouped(list rows, integer excludeSelected)
+{
+    list names;
+    list counts;
+    integer i;
+    for (i = 0; i < llGetListLength(rows); i += 3)
+    {
+        if (!excludeSelected || find(gSelected, llList2Key(rows, i)) < 0)
+        {
+            string name = llList2String(rows, i + 1);
+            integer index = llListFindList(names, [name]);
+            if (index < 0)
+            {
+                names += [name];
+                counts += [1];
+            }
+            else counts = llListReplaceList(counts, [llList2Integer(counts, index) + 1], index, index);
+        }
+    }
+    list groups;
+    for (i = 0; i < llGetListLength(names); ++i)
+        groups += [llList2String(names, i), llList2Integer(counts, i)];
+    return groups;
+}
 integer save()
 {
     integer result = llLinksetDataWrite("mc:p3:selection", llList2Json(JSON_ARRAY,
@@ -43,16 +68,18 @@ integer save()
     llOwnerSay("[Containers] Cannot save selection. Actions stopped.");
     return FALSE;
 }
-view(list rows, integer page, string panel)
+view(list groups, integer page, string panel)
 {
-    integer total = pages(rows);
+    integer pageSize = 4;
+    if (panel == "P3_SEL") pageSize = 1;
+    integer total = pages(groups, pageSize);
     list fields = [page + 1, total];
     integer i;
     for (i = 0; i < 4; ++i)
     {
-        integer offset = (page * 4 + i) * 3;
-        if (!gOpen || offset >= llGetListLength(rows)) fields += ["", 0, "", 0];
-        else fields += [llList2String(rows, offset + 1), llList2Integer(rows, offset + 2), "", 1];
+        integer offset = (page * pageSize + i) * 2;
+        if (!gOpen || i >= pageSize || offset >= llGetListLength(groups)) fields += ["", 0, "", 0];
+        else fields += [llList2String(groups, offset), llList2Integer(groups, offset + 1), "", 1];
     }
     string packed;
     for (i = 0; i < 18; ++i)
@@ -64,10 +91,12 @@ view(list rows, integer page, string panel)
 }
 render()
 {
-    if (gNearPage >= pages(gNear)) gNearPage = pages(gNear) - 1;
-    if (gSelectedPage >= pages(gSelected)) gSelectedPage = pages(gSelected) - 1;
-    view(gNear, gNearPage, "P3_NEAR");
-    view(gSelected, gSelectedPage, "P3_SEL");
+    list nearGroups = grouped(gNear, TRUE);
+    list selectedGroups = grouped(gSelected, FALSE);
+    if (gNearPage >= pages(nearGroups, 4)) gNearPage = pages(nearGroups, 4) - 1;
+    if (gSelectedPage >= pages(selectedGroups, 1)) gSelectedPage = pages(selectedGroups, 1) - 1;
+    view(nearGroups, gNearPage, "P3_NEAR");
+    view(selectedGroups, gSelectedPage, "P3_SEL");
 }
 refresh()
 {
@@ -136,20 +165,23 @@ product(string text, key run)
 }
 button(string name)
 {
+    if (llGetSubString(name, 0, 2) != "p3_") return;
     if (name == "p3_retry") { llMessageLinked(LINK_THIS, 918370, "RETRY", llGenerateKey()); return; }
     if (!gOpen) return;
-    if (name == "p3_near_prev") { gNearPage = (gNearPage + pages(gNear) - 1) % pages(gNear); render(); return; }
-    if (name == "p3_near_next") { gNearPage = (gNearPage + 1) % pages(gNear); render(); return; }
-    if (name == "p3_selected_prev") { gSelectedPage = (gSelectedPage + pages(gSelected) - 1) % pages(gSelected); render(); return; }
-    if (name == "p3_selected_next") { gSelectedPage = (gSelectedPage + 1) % pages(gSelected); render(); return; }
+    if (name == "p3_near_prev") { gNearPage = (gNearPage + pages(grouped(gNear, TRUE), 4) - 1) % pages(grouped(gNear, TRUE), 4); render(); return; }
+    if (name == "p3_near_next") { gNearPage = (gNearPage + 1) % pages(grouped(gNear, TRUE), 4); render(); return; }
+    if (name == "p3_selected_prev") { gSelectedPage = (gSelectedPage + pages(grouped(gSelected, FALSE), 1) - 1) % pages(grouped(gSelected, FALSE), 1); render(); return; }
+    if (name == "p3_selected_next") { gSelectedPage = (gSelectedPage + 1) % pages(grouped(gSelected, FALSE), 1); render(); return; }
     if (gOperation) { llOwnerSay("[Containers] Request pending. Retry repeats the saved request."); return; }
     if (gMode == 2 || gBatch)
     { llOwnerSay("[Containers] Treatment or transfer pending. Selection retained."); return; }
-    if (name == "p2_action1" || name == "p3_refresh") { refresh(); return; }
-    if (name == "p2_action2" || name == "p3_action")
+    if (name == "p3_action1" || name == "p3_refresh") { refresh(); return; }
+    if (name == "p3_action2" || name == "p3_action")
     {
         if (gScanning)
         { llOwnerSay("[Containers] Wait for the recipient scan."); return; }
+        if (llGetListLength(grouped(gSelected, FALSE)) > 2)
+        { llOwnerSay("[Containers] Previous selection has multiple types. Select one container type again before Transfer."); return; }
         if (gMode == 1)
         {
             gMode = 2; gSubmission = llGenerateKey();
@@ -167,21 +199,46 @@ button(string name)
     integer i;
     for (i = 0; i < 4; ++i)
     {
-        // The upper P3 buttons select a destination.
         if (name == "p3_sel_" + (string)i)
         {
-            integer offset = (gNearPage * 4 + i) * 3;
-            if (offset >= llGetListLength(gNear)) return;
-            key source = llList2Key(gNear, offset);
-            if (find(gSelected, source) < 0) gSelected += llList2List(gNear, offset, offset + 2);
-            if (save()) render(); return;
+            list groups = grouped(gNear, TRUE);
+            integer offset = (gNearPage * 4 + i) * 2;
+            if (offset >= llGetListLength(groups)) return;
+            string selectedName = llList2String(groups, offset);
+            // The lower table has one type row. A different type replaces the selection.
+            if (llGetListLength(grouped(gSelected, FALSE)) > 2
+                || (llGetListLength(gSelected) && llList2String(gSelected, 1) != selectedName))
+                gSelected = [];
+            integer candidate;
+            for (candidate = 0; candidate < llGetListLength(gNear); candidate += 3)
+            {
+                if (llList2String(gNear, candidate + 1) == selectedName
+                    && find(gSelected, llList2Key(gNear, candidate)) < 0)
+                {
+                    gSelected += llList2List(gNear, candidate, candidate + 2);
+                    gSelectedPage = 0;
+                    if (save()) render();
+                    return;
+                }
+            }
+            return;
         }
-        if (name == "p3_sel_rem_" + (string)i)
+        if (name == "p3_sel_rem_0" && i == 0)
         {
-            integer offset = (gSelectedPage * 4 + i) * 3;
-            if (offset >= llGetListLength(gSelected)) return;
-            gSelected = llDeleteSubList(gSelected, offset, offset + 2);
-            if (save()) render(); return;
+            list groups = grouped(gSelected, FALSE);
+            if (gSelectedPage * 2 >= llGetListLength(groups)) return;
+            string selectedName = llList2String(groups, gSelectedPage * 2);
+            integer candidate;
+            for (candidate = llGetListLength(gSelected) - 3; candidate >= 0; candidate -= 3)
+            {
+                if (llList2String(gSelected, candidate + 1) == selectedName)
+                {
+                    gSelected = llDeleteSubList(gSelected, candidate, candidate + 2);
+                    if (save()) render();
+                    return;
+                }
+            }
+            return;
         }
     }
 }
@@ -287,7 +344,10 @@ default
             list details = llGetObjectDetails(source, [OBJECT_NAME]);
             if (!llGetListLength(details)) return;
             // Capacity 0 is unlimited in the existing physical protocol; keep it as 0.
-            gPending += [source, llList2String(details, 0), capacity];
+            integer existing = find(gPending, source);
+            list row = [source, llList2String(details, 0), capacity];
+            if (existing < 0) gPending += row;
+            else gPending = llListReplaceList(gPending, row, existing, existing + 2);
             return;
         }
         if (number == 918274)
@@ -298,7 +358,11 @@ default
                 gNear = gPending;
                 integer i = llGetListLength(gSelected) - 3;
                 for (; i >= 0; i -= 3)
-                    if (find(gNear, llList2Key(gSelected, i)) < 0) gSelected = llDeleteSubList(gSelected, i, i + 2);
+                {
+                    integer current = find(gNear, llList2Key(gSelected, i));
+                    if (current < 0) gSelected = llDeleteSubList(gSelected, i, i + 2);
+                    else gSelected = llListReplaceList(gSelected, llList2List(gNear, current, current + 2), i, i + 2);
+                }
                 if (save()) render();
             }
             gScanning = FALSE; gReceiving = FALSE; gPending = []; llSetTimerEvent(0.0);

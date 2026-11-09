@@ -1,5 +1,5 @@
 // Shared rendering implementation. Install in ROOT beside FURWARE.
-// One instance per panel: PANEL = "NEARBY" or "SELECTED".
+// One instance per panel: P3_NEAR (four rows) or P3_SEL (one row).
 // Selected uses the same development face layout as Nearby; settings stay explicit.
 string PANEL = "P3_SEL";
 integer VIEW = 918290;
@@ -60,7 +60,9 @@ configure()
     if (PANEL == "NEARBY") gPageLink = checkedLink("P0_PAGE", FACE);
     gUnits = []; gIcons = [];
     integer i;
-    for (i = 0; i < 4; ++i)
+    integer count = 4;
+    if (PANEL == "P3_SEL") count = 1;
+    for (i = 0; i < count; ++i)
     {
         gUnits += [findLink(quantity + (string)i)];
         gIcons += [findLink(icon + (string)i)];
@@ -80,7 +82,9 @@ hide(integer link, integer face)
 
 integer atlasCell(integer link, string atlas, integer frame, integer columns, integer rows)
 {
-    if (!validFace(link, FACE) || llGetInventoryType(atlas) != INVENTORY_TEXTURE) return FALSE;
+    if (!validFace(link, FACE)) return FALSE;
+    if (llGetInventoryType(atlas) != INVENTORY_TEXTURE) atlas += ".png";
+    if (llGetInventoryType(atlas) != INVENTORY_TEXTURE) return FALSE;
     float width = 1.0 / (float)columns;
     float height = 1.0 / (float)rows;
     float u = -0.5 + ((float)(frame % columns) + 0.5) * width;
@@ -103,10 +107,18 @@ string displayName(string name)
 
 render()
 {
+    if (PANEL == "P3_NEAR")
+    {
+        atlasCell(findLink("P3_TITLE"), "atlas-hud-titres-v2", 2, 2, 2);
+        atlasCell(findLink("P3_ACTION1"), "atlas-hud-actions-v2", 0, 2, 2);
+        atlasCell(findLink("P3_ACTION2"), "atlas-hud-actions-v2", 3, 2, 2);
+    }
     if (llGetListLength(gView) != 18) return;
     list lines;
     integer row;
-    for (row = 0; row < 4; ++row)
+    integer count = 4;
+    if (PANEL == "P3_SEL") count = 1;
+    for (row = 0; row < count; ++row)
     {
         integer offset = 2 + row * 4;
         integer units = llList2Integer(gUnits, row);
@@ -143,8 +155,6 @@ render()
             }
         }
     }
-    // The vertical recipient-selection table has one physical row.
-    if (PANEL == "P3_SEL") lines = llList2List(lines, 0, 0);
     llMessageLinked(LINK_SET, 0, "a=left;w=none;tags=off", (key)("fw_conf:" + gTable));
     llMessageLinked(LINK_SET, 0, llDumpList2String(lines, "\n"), (key)("fw_data:" + gTable));
     if (PANEL == "NEARBY")
@@ -156,12 +166,6 @@ render()
         atlasCell(findLink("P0_NEXT"), ATLAS_NAME, 11, 4, 4);
         atlasCell(findLink("P0_TITLE"), "atlas-hud-titres-v2", 0, 2, 2);
     }
-    else if (PANEL == "P3_NEAR")
-    {
-        atlasCell(findLink("P2_TITLE"), "atlas-hud-titres-v2", 2, 2, 2);
-        atlasCell(findLink("P2_ACTION1"), "atlas-hud-actions-v2", 0, 2, 2);
-        atlasCell(findLink("P2_ACTION2"), "atlas-hud-actions-v2", 3, 2, 2);
-    }
 }
 
 default
@@ -171,12 +175,14 @@ default
         if (PANEL != "NEARBY" && PANEL != "SELECTED" && PANEL != "P3_NEAR" && PANEL != "P3_SEL")
         { llOwnerSay("[Render] Invalid PANEL setting."); return; }
         configure();
+        render();
         llMessageLinked(LINK_THIS, RENDER_READY, PANEL, NULL_KEY);
     }
     on_rez(integer parameter) { llResetScript(); }
     changed(integer change)
     {
-        if (change & CHANGED_LINK) { configure(); render(); }
+        if (change & CHANGED_LINK) configure();
+        if (change & (CHANGED_LINK | CHANGED_INVENTORY)) render();
     }
     link_message(integer sender, integer number, string payload, key panel)
     {

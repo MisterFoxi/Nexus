@@ -1,11 +1,12 @@
 // Shared rendering implementation. Install in ROOT beside FURWARE.
-// One instance per panel: PANEL = "NEARBY" or "SELECTED".
+// One instance per panel: P3_NEAR (four rows) or P3_SEL (one row).
 // Selected uses the same development face layout as Nearby; settings stay explicit.
 string PANEL = "P3_NEAR";
 integer VIEW = 918290;
 integer RENDER_READY = 918291;
 string ATLAS_NAME = "atlas-quantites-fleches-v2";
 integer FACE = 1;
+integer DIAGNOSTIC_CHANNEL = 918292;
 key DEFAULT_ICON = "f1076325-9b08-d475-fd4c-346e4e93f33d";
 string gTable;
 integer gPageLink;
@@ -13,6 +14,7 @@ list gUnits;
 list gIcons;
 // View: current page, total pages, then 4 x [name, quantity, icon, occupied].
 list gView;
+string gControlError;
 
 // REVIEW: duplicate normalized names select the first match; detect ambiguity to avoid writing to the wrong prim.
 integer findLink(string name)
@@ -60,11 +62,14 @@ configure()
     if (PANEL == "NEARBY") gPageLink = checkedLink("P0_PAGE", FACE);
     gUnits = []; gIcons = [];
     integer i;
-    for (i = 0; i < 4; ++i)
+    integer count = 4;
+    if (PANEL == "P3_SEL") count = 1;
+    for (i = 0; i < count; ++i)
     {
         gUnits += [findLink(quantity + (string)i)];
         gIcons += [findLink(icon + (string)i)];
     }
+
 }
 
 integer validFace(integer link, integer face)
@@ -80,7 +85,9 @@ hide(integer link, integer face)
 
 integer atlasCell(integer link, string atlas, integer frame, integer columns, integer rows)
 {
-    if (!validFace(link, FACE) || llGetInventoryType(atlas) != INVENTORY_TEXTURE) return FALSE;
+    if (!validFace(link, FACE)) return FALSE;
+    if (llGetInventoryType(atlas) != INVENTORY_TEXTURE) atlas += ".png";
+    if (llGetInventoryType(atlas) != INVENTORY_TEXTURE) return FALSE;
     float width = 1.0 / (float)columns;
     float height = 1.0 / (float)rows;
     float u = -0.5 + ((float)(frame % columns) + 0.5) * width;
@@ -89,6 +96,37 @@ integer atlasCell(integer link, string atlas, integer frame, integer columns, in
         PRIM_TEXTURE, FACE, atlas, <width, height, 0.0>, <u, v, 0.0>, 0.0,
         PRIM_COLOR, FACE, <1.0, 1.0, 1.0>, 1.0]);
     return TRUE;
+}
+
+// Owner command /918292 p3qty inspects the received view and actual quantity faces.
+diagnoseQuantities()
+{
+    string atlas = ATLAS_NAME;
+    if (llGetInventoryType(atlas) != INVENTORY_TEXTURE) atlas += ".png";
+    integer available = llGetInventoryType(atlas) == INVENTORY_TEXTURE;
+    llOwnerSay("[P3 QTY] panel=" + PANEL + " view fields=" + (string)llGetListLength(gView)
+        + " atlas=" + atlas + " available=" + (string)available);
+    if (available) llOwnerSay("[P3 QTY] Expected atlas UUID=" + (string)llGetInventoryKey(atlas));
+    integer row;
+    for (row = 0; row < 4; ++row)
+    {
+        integer link = llList2Integer(gUnits, row);
+        string name = "P3_QTY_" + (string)row;
+        if (!validFace(link, FACE))
+            llOwnerSay("[P3 QTY] Missing prim or invalid face: " + name);
+        else
+        {
+            integer offset = 2 + row * 4;
+            list params = llGetLinkPrimitiveParams(link, [PRIM_TEXTURE, FACE, PRIM_COLOR, FACE]);
+            llOwnerSay("[P3 QTY] " + name + " link=" + (string)link + " face=" + (string)FACE
+                + " occupied=" + llList2String(gView, offset + 3)
+                + " received=" + llList2String(gView, offset + 1)
+                + " texture=" + llList2String(params, 0)
+                + " repeats=" + llList2String(params, 1)
+                + " offset=" + llList2String(params, 2)
+                + " alpha=" + llList2String(params, 5));
+        }
+    }
 }
 
 // Flatten control characters and fit the existing 24-character FURWARE row.
@@ -103,10 +141,26 @@ string displayName(string name)
 
 render()
 {
+    if (PANEL == "P3_NEAR")
+    {
+        integer titleShown = atlasCell(findLink("P3_TITLE"), "atlas-hud-titres-v2", 2, 2, 2);
+        integer refreshShown = atlasCell(findLink("P3_ACTION1"), "atlas-hud-actions-v2", 0, 2, 2);
+        integer transferShown = atlasCell(findLink("P3_ACTION2"), "atlas-hud-actions-v2", 3, 2, 2);
+        string error = "";
+        if (!titleShown) error += " P3_TITLE";
+        if (!refreshShown) error += " P3_ACTION1";
+        if (!transferShown) error += " P3_ACTION2";
+        if (error != "" && error != gControlError)
+            llOwnerSay("[P3 textures] Not applied:" + error
+                + ". Check face 1 and ROOT textures atlas-hud-titres-v2 / atlas-hud-actions-v2 (with or without .png).");
+        gControlError = error;
+    }
     if (llGetListLength(gView) != 18) return;
     list lines;
     integer row;
-    for (row = 0; row < 4; ++row)
+    integer count = 4;
+    if (PANEL == "P3_SEL") count = 1;
+    for (row = 0; row < count; ++row)
     {
         integer offset = 2 + row * 4;
         integer units = llList2Integer(gUnits, row);
@@ -143,8 +197,6 @@ render()
             }
         }
     }
-    // The vertical recipient-selection table has one physical row.
-    if (PANEL == "P3_SEL") lines = llList2List(lines, 0, 0);
     llMessageLinked(LINK_SET, 0, "a=left;w=none;tags=off", (key)("fw_conf:" + gTable));
     llMessageLinked(LINK_SET, 0, llDumpList2String(lines, "\n"), (key)("fw_data:" + gTable));
     if (PANEL == "NEARBY")
@@ -156,12 +208,6 @@ render()
         atlasCell(findLink("P0_NEXT"), ATLAS_NAME, 11, 4, 4);
         atlasCell(findLink("P0_TITLE"), "atlas-hud-titres-v2", 0, 2, 2);
     }
-    else if (PANEL == "P3_NEAR")
-    {
-        atlasCell(findLink("P2_TITLE"), "atlas-hud-titres-v2", 2, 2, 2);
-        atlasCell(findLink("P2_ACTION1"), "atlas-hud-actions-v2", 0, 2, 2);
-        atlasCell(findLink("P2_ACTION2"), "atlas-hud-actions-v2", 3, 2, 2);
-    }
 }
 
 default
@@ -170,13 +216,21 @@ default
     {
         if (PANEL != "NEARBY" && PANEL != "SELECTED" && PANEL != "P3_NEAR" && PANEL != "P3_SEL")
         { llOwnerSay("[Render] Invalid PANEL setting."); return; }
+        if (PANEL == "P3_NEAR") llListen(DIAGNOSTIC_CHANNEL, "", llGetOwner(), "");
         configure();
+        render();
         llMessageLinked(LINK_THIS, RENDER_READY, PANEL, NULL_KEY);
+    }
+    listen(integer channel, string name, key speaker, string text)
+    {
+        if (PANEL == "P3_NEAR" && channel == DIAGNOSTIC_CHANNEL && speaker == llGetOwner()
+            && llToLower(llStringTrim(text, STRING_TRIM)) == "p3qty") diagnoseQuantities();
     }
     on_rez(integer parameter) { llResetScript(); }
     changed(integer change)
     {
-        if (change & CHANGED_LINK) { configure(); render(); }
+        if (change & CHANGED_LINK) configure();
+        if (change & (CHANGED_LINK | CHANGED_INVENTORY)) render();
     }
     link_message(integer sender, integer number, string payload, key panel)
     {
