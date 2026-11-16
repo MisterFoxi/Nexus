@@ -18,9 +18,9 @@ Inputs:
               <l>.<d> taxonomy
             The prefix (fab, act, org...) is only a READING group, not an
             engine-wired category: feel free to add more. The only rule: every
-            axis used (tree.src / laws.src / a component NC) must be declared here.
+            axis used (taxonomy.src / laws.src / a component NC) must be declared here.
 
-  tree.src  taxonomy of CLASSES (not species), BLOCK grammar:
+  taxonomy.src  taxonomy of CLASSES (not species), BLOCK grammar:
               class <node> [: <parent>]
                   aka  <alias> , ...    optional (the alias shares the canonical id)
                   axis <axis> = <delta> class trait (intensity), summed down the tree
@@ -46,7 +46,7 @@ Output (notecard):
 SPECIES never go through the compiler: a component is a runtime notecard
 (free meta.name + meta.taxonomy=<node> + its prop: deltas).
 
-Usage: python compiler.py axes.src tree.src laws.src > monde.nc
+Usage: python compiler.py axes.src taxonomy.src laws.src > monde.nc
 """
 
 import re, sys, os
@@ -81,7 +81,7 @@ ACT_SCALE  = re.compile(r'^scale\s+(eff|qty|[a-z]+\.[a-z_]+)\s+x\s*([0-9.]+)$')
 ACT_ADD    = re.compile(r'^add\s+([a-z]+\.[a-z_]+)$')
 ACT_REM    = re.compile(r'^remove\s+([a-z]+\.[a-z_]+)$')
 ACT_GIVE   = re.compile(r'^give(?:\s+([a-z_]+))?$')                               # give | give <organ>
-# --- tree.src : class / group block ---
+# --- taxonomy.src : class / group block ---
 CLASS_OPEN_RE = re.compile(r'^class\s+([a-z_]+)\s*(?::\s*([a-z_]+))?\s*$')
 ABSTRACT_OPEN_RE = re.compile(r'^abstract\s+([a-z_]+)\s*(?::\s*([a-z_]+))?\s*$')
 SPECIES_OPEN_RE  = re.compile(r'^species\s+([a-z_]+)\s*:\s*([a-z_]+)\s*$')
@@ -139,10 +139,10 @@ class Cat:
     def __init__(s, name, id_): s.name, s.id, s.vals = name, id_, {}
 class TaxDim:
     kind = "tax"
-    def __init__(s, name, id_): s.name, s.id, s.vals = name, id_, {}   # vals filled by tree.src (nodes + groups + aliases)
+    def __init__(s, name, id_): s.name, s.id, s.vals = name, id_, {}   # vals filled by taxonomy.src (nodes + groups + aliases)
 class OrganDim:
     kind = "organ"
-    def __init__(s, name, id_): s.name, s.id, s.vals = name, id_, {}   # vals filled by tree.src (organs + tags)
+    def __init__(s, name, id_): s.name, s.id, s.vals = name, id_, {}   # vals filled by taxonomy.src (organs + tags)
 
 def _dlist(body): return [d.strip() for d in body.split(',') if d.strip()]
 
@@ -273,7 +273,7 @@ def load_vocab(path, reg):
         if d not in domains: err(ln, "%s: unknown domain '%s'" % (where, d))
     return dims, stations, taxdim, organdim, domains, axis_aliases
 
-# ---------- taxonomy (tree.src) ----------
+# ---------- taxonomy (taxonomy.src) ----------
 class Node:
     def __init__(s, name, parent):
         s.name, s.parent, s.deltas = name, parent, {}      # deltas: axis_name -> val
@@ -920,7 +920,7 @@ def scan_set_targets(path):
 
 def main():
     ap = sys.argv[1] if len(sys.argv) > 1 else "axes.src"
-    tp = sys.argv[2] if len(sys.argv) > 2 else "tree.src"
+    tp = sys.argv[2] if len(sys.argv) > 2 else "taxonomy.src"
     lp = sys.argv[3] if len(sys.argv) > 3 else "laws.src"
     lock = os.path.join(os.path.dirname(os.path.abspath(ap)) or ".", "ids.lock")
     reg = IdRegistry(lock)
