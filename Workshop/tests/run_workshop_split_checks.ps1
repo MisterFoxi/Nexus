@@ -22,3 +22,6 @@ if ($LASTEXITCODE) { throw 'Independent cooking inputs and inspection hook check
 
 & (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_factorization.py')
 if ($LASTEXITCODE) { throw 'Workshop module factorization checks failed' }
+
+& (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_observations.py')
+if ($LASTEXITCODE) { throw 'Cumulative observation checks failed' }

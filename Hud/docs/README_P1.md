@@ -1,5 +1,10 @@
 # P1 craft page - the same Selected basket
 
+> Current three-button mapping: P1_ACTION1 is CUT/CONT, P1_ACTION2 is PAUSE while
+> working and TAKE while paused, and P1_ACTION3 remains DISCARD. PAUSE opens P4
+> after saving the active clock; BACK returns to P1 still paused. There is no
+> fourth P1 button. See README_P4.md for the current installation and protocol.
+
 > P3 update: see [README_P3.md](README_P3.md) for current collection, player and closure protocols.
 > Historical future-integration notes below are superseded by that guide.
 

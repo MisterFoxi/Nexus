@@ -65,11 +65,13 @@ dispatches physical output. Temporary aggregates are cleared before returning.
 
 ## Integration status
 
-The compiler index and cumulative evaluator are implemented and tested. This
-does not yet connect the existing `INSPECT`/970240 adapter, create a live basket
-snapshot, or open/render P4. The local API is the calculation layer for that
-integration. Install the generated observation world data with the evaluator
-when connecting the later UI.
+The compiler index and cumulative evaluator are implemented and tested. The HUD
+now opens/renders P4 and sends the existing INSPECT request; see
+`Hud/docs/README_P4.md` for textures, prims and installation. The remaining
+Workshop adapter must capture a consistent live basket snapshot and connect
+INSPECT/970240 to the local calculation API. The UI reports an unavailable
+service until that connection exists. Install the generated observation world
+data with the evaluator when connecting the adapter.
 
 The standard Workshop check runner includes `tests/test_observations.py`.
 Tests execute the actual LSL AST; Second Life Mono compilation, free memory and

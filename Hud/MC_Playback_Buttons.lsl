@@ -143,9 +143,11 @@ showState(string value, key ticket)
     if (value == "PLAYING" || value == "PAUSED" || value == "USED" || value == "SPOILED") gUsed = TRUE;
     if (value == "STOPPED" && gUsed) value = "USED";
     integer frame = 0;
-    if (value == "PLAYING") frame = 2;
-    else if (value == "PAUSED" || value == "USED" || value == "SPOILED") frame = 1;
-    else if (value != "STOPPED")
+    if (gUsed) frame = 1;
+    integer takeFrame = 3;
+    if (value == "PLAYING") takeFrame = 2;
+    else if (value != "STOPPED" && value != "PAUSED" && value != "USED" && value != "SPOILED"
+        && value != "STARTING" && value != "LOCKED")
     { reply("ERROR:Unknown button state", ticket); return; }
     integer cutLink = findPrim(START_PRIM);
     integer takeLink = findPrim(TAKE_PRIM);
@@ -155,7 +157,7 @@ showState(string value, key ticket)
     if (error == "") error = surfaceError(DISCARD_PRIM, discardLink, BUTTON_FACE);
     if (error != "") { reply(error, ticket); return; }
     showFrame(cutLink, BUTTON_FACE, frame);
-    showFrame(takeLink, BUTTON_FACE, 3);
+    showFrame(takeLink, BUTTON_FACE, takeFrame);
     showFrame(discardLink, BUTTON_FACE, 4);
     integer titleLink = findPrim("P1_TITLE");
     string titles = "atlas-hud-titres-v2";
@@ -163,8 +165,10 @@ showState(string value, key ticket)
         llSetLinkPrimitiveParamsFast(titleLink, [
             PRIM_TEXTURE, BUTTON_FACE, titles, <0.5, 0.5, 0.0>, <0.25, 0.25, 0.0>, 0.0
         ]);
-    if (value == "SPOILED")
+    if (value == "PLAYING" || value == "SPOILED" || value == "STARTING" || value == "LOCKED")
         llSetLinkPrimitiveParamsFast(cutLink, [PRIM_COLOR, BUTTON_FACE, <0.4, 0.4, 0.4>, 1.0]);
+    if (value == "STOPPED" || value == "SPOILED" || value == "STARTING" || value == "LOCKED")
+        llSetLinkPrimitiveParamsFast(takeLink, [PRIM_COLOR, BUTTON_FACE, <0.4, 0.4, 0.4>, 1.0]);
     reply("STATE:" + value, ticket);
 }
 

@@ -25,6 +25,7 @@ class EngineTakeTests(unittest.TestCase):
         # engine sends its own linked response via llMessageLinked instead.
         self.w.emit = lambda obj, code, text='', ticket=t.h.NULL: None if code == 918373 else emit(obj, code, text, ticket)
         self.engine = EngineScript(self.w, 'MC_P1_Animation.lsl', t.HUD)
+        self.observation = EngineScript(self.w, 'MC_P4_Controller.lsl', t.HUD)
         self.w.drain(20000)
 
     def prepare(self, stage='plant'):
@@ -39,7 +40,7 @@ class EngineTakeTests(unittest.TestCase):
         self.assertEqual(self.base.base.link.global_vars['gPhase'], 'IDLE')
 
     def test_take_inventory_after_stop(self):
-        self.prepare(); self.engine.call('button', ['p1_action1']); self.w.drain(20000)
+        self.prepare(); self.engine.call('suspend', [False]); self.w.drain(20000)
         self.base.take()
         self.assertEqual(self.w.physical, [f'GIVE|{t.SOURCE}'])
 
@@ -49,12 +50,12 @@ class EngineTakeTests(unittest.TestCase):
         self.assertEqual(self.base.base.link.global_vars['gPhase'], 'OUTPUT')
 
     def test_take_container_after_stop(self):
-        self.prepare('leaf'); self.engine.call('button', ['p1_action1']); self.w.drain(20000)
+        self.prepare('leaf'); self.engine.call('suspend', [False]); self.w.drain(20000)
         self.base.take()
         self.assertTrue(self.base.p3.global_vars['gOpen'])
 
     def test_take_after_engine_reset(self):
-        self.prepare(); self.engine.call('button', ['p1_action1']); self.w.drain(20000)
+        self.prepare(); self.engine.call('suspend', [False]); self.w.drain(20000)
         self.w.scripts.remove(self.engine)
         self.engine = EngineScript(self.w, 'MC_P1_Animation.lsl', t.HUD); self.w.drain(20000)
         self.base.take()
@@ -77,7 +78,14 @@ class EngineTakeTests(unittest.TestCase):
                     self.base.p1 = EngineScript(self.w, 'MC_P1_Controller.lsl', t.HUD)
                     self.w.drain(20000)
                     self.prepare(stage)
-                    self.base.p1.call('touch_start', [1]); self.w.drain(20000)
+                    if name == 'P1_ACTION2':
+                        self.engine.call('touch_start', [1]); self.w.drain(20000)
+                        self.assertFalse(self.w.physical)
+                        self.assertTrue(self.observation.global_vars['gOpen'])
+                        self.observation.call('button', ['p4_action1']); self.w.drain(20000)
+                        self.engine.call('touch_start', [1]); self.w.drain(20000)
+                    else:
+                        self.base.p1.call('touch_start', [1]); self.w.drain(20000)
                     if stage == 'plant':
                         self.assertEqual(self.w.physical, [f'GIVE|{t.SOURCE}'])
                     else:

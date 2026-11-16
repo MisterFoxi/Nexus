@@ -1,5 +1,12 @@
 # Playback button textures
 
+> Current vertical HUD uses atlas-p1-boutons-v2 with CUT, CONT, PAUSE, TAKE and
+> DISCARD. MC_Playback_Buttons paints P1_ACTION1 (CUT/CONT), P1_ACTION2
+> (PAUSE/TAKE) and P1_ACTION3 (DISCARD), on BUTTON_FACE=1 by default. While working,
+> CONT is dimmed and PAUSE is active. While paused, CONT and TAKE are active.
+> Before the first start TAKE is dimmed. SPOILED/STARTING/LOCKED dim both first
+> buttons. These mappings supersede the historical two-button documentation below.
+
 Asset: `atlas_playback_buttons_2x2_v1.png` (RGBA, transparent background).
 Source size: 1774 x 887 pixels. The normalized grid is 2 columns x 2 rows.
 The PNG is a generated source image; select an appropriate supported import

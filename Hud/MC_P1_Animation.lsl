@@ -1,7 +1,8 @@
-string VERSION = "MC_P1_Animation v0.9.1 (2026-11-03)";
+string VERSION = "MC_P1_Animation v0.10.0 (2026-11-16)";
 // ROOT. One preparation: first START commits craft_started, CONT never consumes again.
 // 918360 START/CONT/STOP: explicit preparation actions, unique non-null request id.
-// START on an already used preparation spoils it. Normal P1_CUT becomes CONT.
+// ACTION1 is CUT/CONT. ACTION2 is PAUSE -> P4 while active, TAKE while paused.
+// Explicit START on an already used preparation spoils it; CONT never restarts it.
 string ATLAS = "atlas_chop";
 string CUT_BUTTON = "p1_action1";
 string SESSION_KEY = "mc:chop:session";
@@ -38,6 +39,9 @@ key gProgressShowTicket;
 string gVisualError;
 float gProgressLoadAt;
 integer gProgressAttempts;
+key gObservationTicket = NULL_KEY;
+integer gObservationOpen;
+float gObservationDeadline;
 
 clock()
 {
@@ -98,6 +102,7 @@ updateTimer()
     // Cosmetic activity only. The Workshop never advances the preparation clock.
     llMessageLinked(LINK_THIS, 918394, (string)gClockActive, NULL_KEY);
     if (gClockActive || gStartTicket != NULL_KEY
+        || gObservationDeadline > 0.0
         || (!gButtonsLoaded && gButtonsAttempts > 0 && gButtonsAttempts < 4)
         || (!gProgressLoaded && gProgressAttempts > 0 && gProgressAttempts < 4)) llSetTimerEvent(TICK);
     else llSetTimerEvent(0.0);
@@ -132,6 +137,8 @@ showVisuals()
         if (gStarted) visualState = "USED";
         if (gStarted && gClockActive && gWanted == "PLAYING") visualState = "PLAYING";
         if (gSpoiled) visualState = "SPOILED";
+        if (gStartTicket != NULL_KEY) visualState = "STARTING";
+        if (gFinalizing) visualState = "LOCKED";
         if (visualState != gButtonsVisual)
         {
             gButtonsVisual = visualState;
@@ -226,6 +233,7 @@ startPreparation()
     gWanted = "PLAYING";
     gStartTicket = llGenerateKey();
     gStartAt = llGetTime();
+    showVisuals();
     llMessageLinked(LINK_THIS, 918315, "CRAFT_STARTED", gStartTicket);
     updateTimer(); // No animation or active-time clock before the persisted basket ACK.
 }
@@ -276,9 +284,26 @@ button(string name)
     { llMessageLinked(LINK_THIS, 918397, "TEST", llGenerateKey()); return; }
     if (name == CUT_BUTTON)
     {
-        if (gWanted == "PLAYING") suspend(TRUE);
-        else if (gStarted) continuePreparation();
+        if (gObservationOpen || gClockActive || gStartTicket != NULL_KEY) return;
+        if (gStarted) continuePreparation();
         else startPreparation();
+        return;
+    }
+    if (name == "p1_action2")
+    {
+        if (!gStarted || gSpoiled || gFinalizing || gStartTicket != NULL_KEY || gObservationOpen) return;
+        if (gClockActive)
+        {
+            // Persist the actual pause time before opening the read-only observation.
+            suspend(FALSE);
+            if (gSpoiled) return;
+            gObservationTicket = llGenerateKey();
+            gObservationOpen = TRUE;
+            gObservationDeadline = llGetTime() + 5.0;
+            llMessageLinked(LINK_THIS, 918411, "OPEN", gObservationTicket);
+            updateTimer();
+        }
+        else llMessageLinked(LINK_THIS, 918370, "CONTAINER", llGenerateKey());
         return;
     }
     if (name == "p1_later" || name == "p1_action3") suspend(FALSE);
@@ -332,6 +357,18 @@ default
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber()) return;
+        if (number == 918412 && text == "RESET" && ticket == NULL_KEY)
+        {
+            gObservationOpen = FALSE; gObservationTicket = NULL_KEY; gObservationDeadline = 0.0;
+            updateTimer(); return;
+        }
+        if (number == 918412 && ticket == gObservationTicket && ticket != NULL_KEY)
+        {
+            if (text == "OPENED") gObservationDeadline = 0.0;
+            else if (text == "CLOSED" || text == "UNAVAILABLE")
+            { gObservationOpen = FALSE; gObservationTicket = NULL_KEY; gObservationDeadline = 0.0; }
+            updateTimer(); return;
+        }
         if (number == 918395 && ticket != NULL_KEY) { heatInput(text, ticket); return; }
         if (number == 918372 && ticket != NULL_KEY)
         {
@@ -364,6 +401,7 @@ default
         {
             gFinalizing = text != "" && text != "IDLE";
             if (gFinalizing) { clock(); gClockActive = FALSE; suspend(FALSE); }
+            showVisuals();
             return;
         }
         if (number == 918396)
@@ -385,6 +423,7 @@ default
         if (number == 918317 && text == "CRAFT_STARTED" && ticket == gStartTicket && ticket != NULL_KEY)
         {
             gStartTicket = NULL_KEY;
+            gObservationTicket = NULL_KEY; gObservationOpen = FALSE; gObservationDeadline = 0.0;
             gStarted = TRUE;
             gElapsed = 0.0; // The sole first-start initialization for this preparation.
             gClockAt = llGetTime();
@@ -409,6 +448,7 @@ default
             gElapsed = 0.0;
             gHeat = -1;
             gStartTicket = NULL_KEY;
+            gObservationTicket = NULL_KEY; gObservationOpen = FALSE; gObservationDeadline = 0.0;
             gWanted = "STOPPED";
             saveSession();
             showVisuals();
@@ -456,6 +496,11 @@ default
     timer()
     {
         clock();
+        if (gObservationDeadline > 0.0 && llGetTime() >= gObservationDeadline)
+        {
+            gObservationOpen = FALSE; gObservationTicket = NULL_KEY; gObservationDeadline = 0.0;
+            llOwnerSay("[Chop] Observation page did not respond. Preparation remains paused; CONT or TAKE is available.");
+        }
         if (!gButtonsLoaded && gButtonsAttempts > 0 && gButtonsAttempts < 4
             && llGetTime() - gButtonsLoadAt >= 2.0)
         {

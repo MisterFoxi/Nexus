@@ -14,6 +14,11 @@ for name, tree in json.loads((Path(__file__).resolve().parents[2] / 'Hud/tests/l
 
 class Script(t.Script):
     def eval(self, n, env):
+        if n.kind == "unary expression: '-- (pre)'":
+            name = n.children[0].children[0].name
+            target = env if name in env else self.global_vars
+            target[name] -= 1
+            return target[name]
         if n.kind.startswith('lvalue expression') and len(n.children) == 2 and n.children[1].kind.startswith('identifier'):
             return self.eval(n.children[0], env)['xyzs'.index(n.children[1].name)]
         if n.kind == 'while':
@@ -68,7 +73,8 @@ class TakeRoutingTests(unittest.TestCase):
         self.assertAlmostEqual(self.w.angles[2], -math.pi / 2, delta=0.00001)
 
     def take(self):
-        self.p1.call('button', ['p1_action2']); self.w.drain(20000)
+        # Explicit legacy TAKE API; physical ACTION2 pause/take is tested with the engine.
+        self.p1.call('button', ['p1_take']); self.w.drain(20000)
 
     def finish_scan(self):
         self.w.now += 2

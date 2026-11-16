@@ -93,7 +93,8 @@ pump()
 
 button(string name)
 {
-    if (name == "p1_action2" || name == "p1_take")
+    // P1_ACTION2 is owned by MC_P1_Animation: PAUSE while active, TAKE while paused.
+    if (name == "p1_take")
     {
         // Evaluate first. Only authenticated WAIT_CONTAINER opens P3.
         llMessageLinked(LINK_THIS, 918370, "CONTAINER", llGenerateKey());

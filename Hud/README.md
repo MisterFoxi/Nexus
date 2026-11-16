@@ -8,6 +8,7 @@ The root contains only the **current HUD scripts**, to install in the linkset's 
 | Selection and basket | MC_Nearby_Controller, MC_Selected_Controller, MC_Transactions |
 | Rendering | MC_Render, MC_Render_Selected, MC_Render_P1 |
 | Craft page and rotation | MC_P1_Controller, MC_Turn_Z |
+| P4 observations and action atlas | MC_P4_Controller |
 | Animation | MC_Atlas_Player, MC_P1_Animation |
 | Button textures (connected to animation controller) | MC_Playback_Buttons |
 | Chopping progress on P1_PROGRESS | MC_Chop_Progress |
@@ -17,6 +18,7 @@ The root contains only the **current HUD scripts**, to install in the linkset's 
 
 - [Selection and basket](docs/README_simple.md)
 - [Craft page, returns, and Discard](docs/README_P1.md)
+- [P4 observation page and action atlas](docs/README_P4.md)
 - [Atlas player and Cut/Stop integration](docs/README_Atlas.md)
 - [Playback button atlas and visual library API](docs/README_playback_buttons.md)
 - [Chopping progression, 10-second active clock and used-component latch](docs/README_chop_progress.md)

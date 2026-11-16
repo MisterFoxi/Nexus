@@ -1,4 +1,4 @@
-string VERSION = "MC_Workshop_Link v0.9.1 (2026-11-09)";
+string VERSION = "MC_Workshop_Link v0.9.2 (2026-11-16)";
 // ROOT. HUD-only Workshop endpoint. MCW contract: docs/README_workshop_link.md.
 // Basket/stock belongs to Selected; active time belongs to MC_P1_Animation.
 integer CHANNEL = -918275;
@@ -160,6 +160,8 @@ default
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber() || gFault) return;
+        if (number == 918397 && text == "CANCEL" && ticket == gInspectTicket && ticket != NULL_KEY)
+        { inspectReply("CANCELLED"); return; }
         if (number == 918397 && text == "TEST" && ticket != NULL_KEY)
         {
             if (gSession == NULL_KEY || gPhase != "IDLE" || gInspectTicket != NULL_KEY)
