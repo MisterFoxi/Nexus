@@ -41,6 +41,8 @@ Output (notecard):
   law:...:verdict               0=react 1=danger
   law:...:seq                   source rank (tie-break on equal elaboration: smallest seq wins)
   law:...:do / :cap             optional
+  law:...:description           optional player-facing English text (describe)
+  law:...:observe_when / :observe_seq  observation-only conditions/order; no reaction verdict
   idx:<station>:lawprop:<tok>:<lid>   inverse index (key = presented token)
 
 SPECIES never go through the compiler: a component is a runtime notecard
@@ -49,7 +51,7 @@ SPECIES never go through the compiler: a component is a runtime notecard
 Usage: python compiler.py axes.src taxonomy.src laws.src > monde.nc
 """
 
-import re, sys, os
+import re, sys, os, json
 
 VERDICTS = {"react": 0, "danger": 1, "yield": 2}
 MAX_DEPTH = 4
@@ -580,7 +582,9 @@ def load_tree(path, reg, dims, taxdim, organdim, auto_tax=None):
 
 # ---------- laws (laws.src) ----------
 class Law:
-    def __init__(s, ws, lid): s.ws, s.id, s.when, s.when_raw, s.verdict, s.do, s.cap, s.actions_raw = ws, lid, [], [], None, None, None, []
+    def __init__(s, ws, lid):
+        s.ws, s.id, s.when, s.when_raw, s.verdict, s.do, s.cap, s.actions_raw = ws, lid, [], [], None, None, None, []
+        s.description = None
 
 def resolve_cond(dims, cond, ln):
     cond = cond.strip()
@@ -668,11 +672,18 @@ def load_laws(path, dims, stations):
     laws, ws, cur, do_list, i = [], None, None, [], 0
     def finalize(law, dl, ln):
         if law is None: return
-        if law.verdict is None: err(ln, "law %s: no verdict (react/danger/yield)" % law.id)
+        if law.verdict is None: err(ln, "law %s: no verdict (react/danger/yield/observe)" % law.id)
+        if any(previous.ws == law.ws and previous.id == law.id for previous in laws):
+            err(ln, "duplicate law: @%s %s" % (law.ws, law.id))
+        if law.verdict == "observe":
+            if law.description is None: err(ln, "observation %s: describe is required" % law.id)
+            if law.actions_raw or law.cap is not None:
+                err(ln, "observation %s: transformation actions and cap are forbidden" % law.id)
         law.do = "^".join(dl) if dl else None
         laws.append(law)
     for i, raw in enumerate(open(path, encoding="utf-8"), 1):
-        t = strip(raw).strip()
+        # Description is a quoted JSON string: preserve # inside it and allow a trailing comment.
+        t = raw.strip() if re.match(r'^describe\b', raw.lstrip(), re.I) else strip(raw).strip()
         if not t: continue
         h = HDR_RE.match(t)
         if h:
@@ -691,8 +702,24 @@ def load_laws(path, dims, stations):
         parts = t.split(None, 1)
         kw = parts[0].lower()
         rest = parts[1].strip() if len(parts) > 1 else ""
-        if kw in ("react", "danger", "yield") and rest == "":
+        if kw in ("react", "danger", "yield", "observe") and rest == "":
+            if cur.verdict is not None: err(i, "law %s: multiple verdicts" % cur.id)
             cur.verdict = kw
+        elif kw == "describe":
+            if cur.description is not None: err(i, "law %s: duplicate describe" % cur.id)
+            try:
+                description, end = json.JSONDecoder().raw_decode(rest)
+                trailing = rest[end:].strip()
+                if not isinstance(description, str) or not description.strip():
+                    raise ValueError("a non-empty quoted string is required")
+                if any(ord(c) < 32 or ord(c) == 127 for c in description):
+                    raise ValueError("control characters and line breaks are forbidden")
+                description.encode("utf-8")
+                if trailing and not trailing.startswith("#"):
+                    raise ValueError("unexpected text after the quoted string")
+                cur.description = description
+            except (ValueError, UnicodeError) as exc:
+                err(i, "invalid describe: %s" % exc)
         elif kw == "when":
             cur.when_raw.append(rest)
             r = resolve_cond(dims, rest, i)
@@ -786,15 +813,30 @@ def emit(dims, taxdim, organdim, nodes, tx, laws, axis_aliases, stations, out):
     for r in sorted(set(dom_rows)):
         out.append(r)
     if dom_rows: out.append("")
-    for seq, law in enumerate(laws):
+    # Observations never expose :when/:verdict/:do, so existing evaluators cannot
+    # mistake them for reactions. Keep original transformation sequence numbers.
+    reactions = [law for law in laws if law.verdict != "observe"]
+    observations = [law for law in laws if law.verdict == "observe"]
+    for seq, law in enumerate(reactions):
         k = "law:%s:%s" % (law.ws, law.id)
         out.append("%s:when = %s" % (k, "^".join(c for c, _ in law.when)))
         out.append("%s:verdict = %d" % (k, VERDICTS[law.verdict]))
         out.append("%s:seq = %d" % (k, seq))
         if law.do: out.append("%s:do = %s" % (k, law.do))
         if law.cap is not None: out.append("%s:cap = %d" % (k, law.cap))
+        if law.description is not None: out.append("%s:description = %s" % (k, law.description))
+    for seq, law in enumerate(observations):
+        k = "law:%s:%s" % (law.ws, law.id)
+        out.append("%s:observe_when = %s" % (k, "^".join(c for c, _ in law.when) or "*"))
+        out.append("%s:observe_seq = %d" % (k, seq))
+        out.append("%s:description = %s" % (k, law.description))
+    # Ordered observation index: no regex scan or recipe ranking during consultation.
+    out.append("law:observations:count = %d" % len(observations))
+    for seq, law in enumerate(observations):
+        out.append("law:observations:%d = %s|%s" % (seq, law.ws, law.id))
     out.append("")
     for law in laws:
+        if law.verdict == "observe": continue
         seen = set()
         for _c, tok in law.when:
             if tok in seen: continue
@@ -844,7 +886,7 @@ def _contend(a, b):                                             # same input pos
 # human-readable report: laws per station in resolution order (most when-terms win; seq breaks ties)
 def write_law_order(path, laws):
     byst = {}; order = []
-    for seq, law in enumerate(laws):
+    for seq, law in enumerate(law for law in laws if law.verdict != "observe"):
         if law.ws not in byst: byst[law.ws] = []; order.append(law.ws)
         byst[law.ws].append((seq, law))
     lines = ["# Laws in RESOLUTION order — most 'when' terms win; ties broken by source order (seq).",
@@ -888,6 +930,7 @@ def write_craft_map(path, nodes, tx, dims, laws):
     L += ["", "=== B. CRAFT FLOW (stage/taxonomy transitions, by station) ==="]
     byst = {}; order = []
     for law in laws:
+        if law.verdict == "observe": continue
         if law.ws not in byst: byst[law.ws] = []; order.append(law.ws)
         byst[law.ws].append(law)
     for st in order:

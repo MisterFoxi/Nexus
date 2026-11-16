@@ -36,7 +36,12 @@ integer EVAL_RES = 970201;           // evaluator -> main: result
 integer NOTOK    = -999999;          // Sentinel for an unknown token.
 
 integer GS = 8;                      // Fields per basket group (v0.7: + organ).
-string  VERSION = "Workshop_Eval v0.8.0 (2026-10-31)";
+string  VERSION = "Workshop_Eval v0.9.0 (2026-11-16)";
+// Read-only local consultation: action header + blank line + eight-field groups.
+// Replies on 970205 with OBSERVATIONS|<URL-escaped text>, NO_OBSERVATIONS or ERROR|reason.
+integer OBSERVE_REQ = 970204;
+integer OBSERVE_RES = 970205;
+integer gObserving;
 
 // ---- configuration subset used by this evaluator ----
 list    gGenres;
@@ -178,9 +183,11 @@ integer batchMult(integer n){                       // One random m(n) draw in p
     integer last = llGetListLength(BATCH_MULT) / 2;
     if(n > last) n = last;
     integer i = (n - 1) * 2;
+    if(gObserving) return llRound(((float)llList2Integer(BATCH_MULT,i) + (float)llList2Integer(BATCH_MULT,i+1)) / 2.0);
     return randRange(llList2Integer(BATCH_MULT, i), llList2Integer(BATCH_MULT, i+1));
 }
 integer fluxAxis(integer v){                        // Apply +/- FLUX_ABS while preserving the sign.
+    if(gObserving) return v; // Consultation must not draw away the final craft's randomness.
     if(FLUX_ABS <= 0 || v == 0) return v;
     integer v2 = v + randRange(-FLUX_ABS, FLUX_ABS);
     if(v > 0 && v2 <  1) v2 =  1;
@@ -205,7 +212,8 @@ addGroup(list groups, integer gi){
 
         float mFac = (float)batchMult(c) / 1000.0;
         if(c >= N_MAX){                             // Oversaturation: collapse output potency.
-            integer sp = randRange(SPOIL_MIN, SPOIL_MAX);
+            integer sp = SPOIL_MIN;
+            if(!gObserving) sp = randRange(SPOIL_MIN, SPOIL_MAX);
             if(sp < gBatchSpoilMul) gBatchSpoilMul = sp;
         }
         integer taxId = nameToId(tax);
@@ -505,6 +513,68 @@ list parseBasket(string s){
     return out;
 }
 
+// Observation descriptions accumulate independently of reaction selection.
+// Only a complete, already validated snapshot should be submitted by a caller.
+consult(string input, key request){
+    if(request == NULL_KEY) return;
+    if(!gConfigReady || gStreamRun != NULL_KEY){
+        llMessageLinked(LINK_THIS,OBSERVE_RES,"ERROR|Evaluator busy or configuration unavailable.",request); return;
+    }
+    string action = ""; string body = input;
+    integer split = llSubStringIndex(input,"\n\n");
+    if(split != -1){
+        if(split > 0) action = llGetSubString(input,0,split-1);
+        body = llGetSubString(input,split+2,-1);
+    }
+    list rows = llParseStringKeepNulls(body,["\n"],[]);
+    list groups = [];
+    integer i;
+    integer valid = TRUE;
+    for(i=0;i<llGetListLength(rows);++i){
+        string row = llList2String(rows,i);
+        if(row != ""){
+            list group = llParseStringKeepNulls(row,["|"],[]);
+            if(llGetListLength(group) != GS || llList2Integer(group,1) < 1) valid = FALSE;
+            groups += group;
+        }
+    }
+    if(!valid || !llGetListLength(groups)){
+        llMessageLinked(LINK_THIS,OBSERVE_RES,"ERROR|Invalid observation snapshot.",request); return;
+    }
+    string countText = llLinksetDataRead("law:observations:count");
+    if(countText == ""){
+        llMessageLinked(LINK_THIS,OBSERVE_RES,"ERROR|Observation data not loaded.",request); return;
+    }
+    gObserving = TRUE;
+    buildAggregate(groups);
+    injectAction(action);
+    string text = "";
+    string error = "";
+    integer count = (integer)countText;
+    if(count < 0 || (string)count != countText) error = "Invalid observation index.";
+    for(i=0;i<count && error=="";++i){
+        list entry = llParseStringKeepNulls(llLinksetDataRead("law:observations:"+(string)i),["|"],[]);
+        if(llGetListLength(entry) != 2) error = "Incomplete observation index.";
+        else if(llListFindList(gGenres,[llList2String(entry,0)]) != -1){
+            string base = "law:"+llList2String(entry,0)+":"+llList2String(entry,1);
+            string description = llLinksetDataRead(base+":description");
+            string condition = llLinksetDataRead(base+":observe_when");
+            if(description == "") error = "Missing observation description.";
+            else if(condition == "") error = "Missing observation conditions.";
+            else if(condition == "*" || evalWhen(condition)){
+                if(text != "") text += " ";
+                text += description;
+                if(llStringLength(llStringToBase64(text)) > 5460) error = "Observation text exceeds the consultation limit.";
+            }
+        }
+    }
+    clearAggregate();
+    gObserving = FALSE;
+    if(error != "") llMessageLinked(LINK_THIS,OBSERVE_RES,"ERROR|"+error,request);
+    else if(text == "") llMessageLinked(LINK_THIS,OBSERVE_RES,"NO_OBSERVATIONS",request);
+    else llMessageLinked(LINK_THIS,OBSERVE_RES,"OBSERVATIONS|"+llEscapeURL(text),request);
+}
+
 
 sendResult(string result, key request){
     if(gStreaming){
@@ -586,6 +656,7 @@ default{
         applyCfgLine(data); ++gCfgLine; gCfgQuery=llGetNotecardLine(gCfgNc,gCfgLine);
     }
     link_message(integer sender,integer num,string str,key id){
+        if(num == OBSERVE_REQ && sender == llGetLinkNumber()){ consult(str,id); return; }
         if(num == 970298){ evalReady(); return; }
         if(num == 970290){ llOwnerSay("[Workshop Eval] Free: "+(string)llGetFreeMemory()); return; }
         if(num == EVAL_STEP && sender == llGetLinkNumber() && id == gStreamRun){ streamStep(); return; }

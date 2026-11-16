@@ -5,6 +5,9 @@
 #       set <dim> = <val> | scale <axis>|eff|qty x<f> | add <label> | remove <label> | give | cap <n>
 #   cond : <axis> = <val> | <axis> >= <n> | <axis> <= <n> | <axis> is <band> | <axis> (presence)
 # Law order sets the tie-break on equal elaboration (seq) -- do not reorder without reason.
+#   describe "text"          optional player-facing description (JSON quoted string)
+#   observe                  observation only: describe required, no transformation actions
+# Observation conditions may overlap; they do not compete with crafting laws.
 
 
 @cutting_board
@@ -35,6 +38,7 @@ law chop
     react
     set   meta.stage = chopped
     scale qty x5
+    describe "The leaves are chopped."
 
 law choptatoes
     when meta.taxonomy is potato
@@ -188,6 +192,28 @@ law makefries
     react
     set meta.stage = fried
     scale eff x1.5
+
+
+# Read-only observations for the future P4 consultation. No product is created.
+law observe_simmer
+    when fab.thermal is simmer
+    observe
+    describe "The mixture is gently simmering."
+
+law observe_boiling
+    when fab.thermal is boiling
+    observe
+    describe "The mixture is boiling."
+
+law observe_thick
+    when org.viscosity is thick
+    observe
+    describe "The mixture is thick."
+
+law observe_putrid
+    when org.smell is putrid
+    observe
+    describe "It gives off a putrid smell."
 
 
 @field
