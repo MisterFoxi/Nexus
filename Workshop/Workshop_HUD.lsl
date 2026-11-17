@@ -1,4 +1,4 @@
-string VERSION = "Workshop_HUD v0.8.1 (2026-11-09)";
+string VERSION = "Workshop_HUD v0.8.2 (2026-11-17)";
 // Workshop v0.8.0 - MCW whisper endpoint and progressive input spool.
 // No stock operations. Input rows/groups live in Linkset Data, not in a basket list.
 integer CHANNEL = -918275;
@@ -161,7 +161,13 @@ default
         if (number == 970298) { ready(); return; }
         if (number == 970211)
         {
-            if (llStringLength(llStringToBase64(text)) <= 1364) llWhisper(CHANNEL, text);
+            if (llStringLength(llStringToBase64(text)) <= 1364) {
+                if(llSubStringIndex(text,"MCW|INSPECT_") == 0) {
+                    list fields = llParseStringKeepNulls(text,["|"],[]);
+                    llRegionSayTo(llList2Key(fields,2),CHANNEL,text);
+                }
+                else llWhisper(CHANNEL, text);
+            }
             else llOwnerSay("[Workshop HUD] Reply too large. Nothing truncated.");
             return;
         }

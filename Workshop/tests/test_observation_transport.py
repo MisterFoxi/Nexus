@@ -27,7 +27,7 @@ class Script(t.Script):
         if name == 'llGetLinkName': return w.names.get(args[0],'')
         if name == 'llGetLinkNumberOfSides': return 6
         if name == 'llSetLinkTextureAnim': return
-        if name == 'llWhisper' and '|INSPECT_VERIFY|' in args[1]:
+        if name in ('llWhisper','llRegionSayTo') and '|INSPECT_VERIFY|' in args[-1]:
             callback=getattr(w,'on_verify',None)
             if callback:
                 w.on_verify=None
@@ -162,6 +162,40 @@ class ObservationTransport(unittest.TestCase):
         self.observe(seconds='12.5',heat='12')
         self.assertIn('The mixture is gently simmering.',self.view.global_vars['gBody'])
 
+    def test_compiled_cutting_board_cases_reach_p4_without_predicting_output(self):
+        from pathlib import Path
+        from urllib.parse import quote, unquote
+        for line in (Path(__file__).resolve().parents[2]/'compiler/monde_observations.nc').read_text(encoding='utf-8').splitlines():
+            if ' = ' in line:
+                key,value=line.split(' = ',1)
+                self.w.storage[t.BENCH,key]=value or '1'
+        cases={
+            'plant':'The plant is whole.', 'leaf':'The leaves are whole.',
+            'chopped':'The leaves are chopped.', 'minced':'The leaves are finely minced.',
+            'harvested':'The material has been harvested.', 'sliced':'The material is cut into slices.',
+            'twig':'The preparation contains twigs.', 'powder':'The material is in powder form.',
+            'essence':'The material is an essence.', 'pils':'The material is in pill form.',
+            'poultice':'The material is a poultice.', 'seed':'The preparation contains seeds.',
+            'sprout':'The preparation contains young sprouts.', 'mature':'The plant is fully grown.',
+            'withered':'The plant is withered.', 'fried':'The material is fried.',
+            'brine':'The preparation is brine.', 'saline_iv':'The preparation is an IV saline solution.'}
+        name='mc:simple:row:'+str(t.SOURCE)
+        row=self.w.storage[t.HUD,name].split('|'); here=unquote(row[5]).split('|')
+        stock=copy.deepcopy(self.w.stock)
+        scenarios=[(stage,'',text) for stage,text in cases.items()]
+        scenarios += [('leaf','org.smell=-4','The leaves are whole. It has a fragrant smell.'),
+                      ('leaf','org.smell=6','The leaves are whole. It gives off a putrid smell.')]
+        for stage,props,expected in scenarios:
+            with self.subTest(stage=stage,props=props):
+                here[7]=stage; here[8]=props; row[5]=quote('|'.join(here),safe='')
+                self.w.storage[t.HUD,name]='|'.join(row)
+                self.observe(seconds='30')
+                self.assertEqual(self.view.global_vars['gBody'],expected)
+                self.view.call('close',[True]); self.w.drain(20000)
+        self.assertEqual(self.w.stock,stock)
+        self.assertEqual(self.w.physical,[])
+        self.assertEqual(self.w.random_draws,0)
+
     def test_foreign_snapshot_requests_cannot_read_the_basket(self):
         self.w.pause_codes.add(970240)
         ticket=self.observe()
@@ -186,6 +220,28 @@ class ObservationTransport(unittest.TestCase):
         self.w.now+=16
         self.base.link.call('timer',[]); self.w.drain(20000)
         self.assertIn('Preparation clock did not reply',self.view.global_vars['gBody'])
+        self.assertFalse(self.view.global_vars['gPending'])
+
+    def test_observation_transport_targets_the_associated_objects(self):
+        self.observe()
+        messages=[(source,target,wire) for source,target,channel,wire in self.w.radio
+                  if '|INSPECT' in wire]
+        self.assertTrue(messages)
+        for source,target,wire in messages:
+            self.assertEqual(target,t.BENCH if source==t.HUD else t.HUD,wire)
+        self.assertIn('The preparation contains leaves.',self.view.global_vars['gBody'])
+
+    def test_configuration_reload_returns_an_error_instead_of_silence(self):
+        self.base.config.global_vars['gConfigReady']=False
+        self.observe()
+        self.assertIn('configuration is reloading or invalid',self.view.global_vars['gBody'])
+        self.assertFalse(self.view.global_vars['gPending'])
+
+    def test_stale_association_returns_an_error_instead_of_silence(self):
+        self.base.core.global_vars['gSession']=t.SOURCE2
+        self.base.core.call('save',[])
+        self.observe()
+        self.assertIn('association no longer matches',self.view.global_vars['gBody'])
         self.assertFalse(self.view.global_vars['gPending'])
 
     def test_workshop_timeout_is_not_a_generic_unavailable(self):

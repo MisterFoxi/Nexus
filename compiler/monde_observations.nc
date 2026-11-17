@@ -316,23 +316,103 @@ law:field:harvest:when = 10=44
 law:field:harvest:verdict = 0
 law:field:harvest:seq = 26
 law:field:harvest:do = give
+law:cutting_board:observe_plant:observe_when = 10=23
+law:cutting_board:observe_plant:observe_seq = 0
+law:cutting_board:observe_plant:description = The plant is whole.
+law:cutting_board:observe_leaf:observe_when = 10=11
+law:cutting_board:observe_leaf:observe_seq = 1
+law:cutting_board:observe_leaf:description = The leaves are whole.
+law:cutting_board:observe_chopped:observe_when = 10=28
+law:cutting_board:observe_chopped:observe_seq = 2
+law:cutting_board:observe_chopped:description = The leaves are chopped.
+law:cutting_board:observe_minced:observe_when = 10=29
+law:cutting_board:observe_minced:observe_seq = 3
+law:cutting_board:observe_minced:description = The leaves are finely minced.
+law:cutting_board:observe_harvested:observe_when = 10=45
+law:cutting_board:observe_harvested:observe_seq = 4
+law:cutting_board:observe_harvested:description = The material has been harvested.
+law:cutting_board:observe_sliced:observe_when = 10=46
+law:cutting_board:observe_sliced:observe_seq = 5
+law:cutting_board:observe_sliced:description = The material is cut into slices.
+law:cutting_board:observe_twig:observe_when = 10=24
+law:cutting_board:observe_twig:observe_seq = 6
+law:cutting_board:observe_twig:description = The preparation contains twigs.
+law:cutting_board:observe_powder:observe_when = 10=12
+law:cutting_board:observe_powder:observe_seq = 7
+law:cutting_board:observe_powder:description = The material is in powder form.
+law:cutting_board:observe_essence:observe_when = 10=13
+law:cutting_board:observe_essence:observe_seq = 8
+law:cutting_board:observe_essence:description = The material is an essence.
+law:cutting_board:observe_pills:observe_when = 10=20
+law:cutting_board:observe_pills:observe_seq = 9
+law:cutting_board:observe_pills:description = The material is in pill form.
+law:cutting_board:observe_poultice:observe_when = 10=21
+law:cutting_board:observe_poultice:observe_seq = 10
+law:cutting_board:observe_poultice:description = The material is a poultice.
+law:cutting_board:observe_seed:observe_when = 10=42
+law:cutting_board:observe_seed:observe_seq = 11
+law:cutting_board:observe_seed:description = The preparation contains seeds.
+law:cutting_board:observe_sprout:observe_when = 10=43
+law:cutting_board:observe_sprout:observe_seq = 12
+law:cutting_board:observe_sprout:description = The preparation contains young sprouts.
+law:cutting_board:observe_mature:observe_when = 10=44
+law:cutting_board:observe_mature:observe_seq = 13
+law:cutting_board:observe_mature:description = The plant is fully grown.
+law:cutting_board:observe_withered:observe_when = 10=50
+law:cutting_board:observe_withered:observe_seq = 14
+law:cutting_board:observe_withered:description = The plant is withered.
+law:cutting_board:observe_fried:observe_when = 10=47
+law:cutting_board:observe_fried:observe_seq = 15
+law:cutting_board:observe_fried:description = The material is fried.
+law:cutting_board:observe_brine:observe_when = 10=54
+law:cutting_board:observe_brine:observe_seq = 16
+law:cutting_board:observe_brine:description = The preparation is brine.
+law:cutting_board:observe_saline_iv:observe_when = 10=55
+law:cutting_board:observe_saline_iv:observe_seq = 17
+law:cutting_board:observe_saline_iv:description = The preparation is an IV saline solution.
+law:cutting_board:observe_fragrant:observe_when = 7~-7~-3
+law:cutting_board:observe_fragrant:observe_seq = 18
+law:cutting_board:observe_fragrant:description = It has a fragrant smell.
+law:cutting_board:observe_putrid:observe_when = 7~3~7
+law:cutting_board:observe_putrid:observe_seq = 19
+law:cutting_board:observe_putrid:description = It gives off a putrid smell.
 law:cauldron:observe_simmer:observe_when = 0~10~13
-law:cauldron:observe_simmer:observe_seq = 0
+law:cauldron:observe_simmer:observe_seq = 20
 law:cauldron:observe_simmer:description = The mixture is gently simmering.
 law:cauldron:observe_boiling:observe_when = 0~14~23
-law:cauldron:observe_boiling:observe_seq = 1
+law:cauldron:observe_boiling:observe_seq = 21
 law:cauldron:observe_boiling:description = The mixture is boiling.
 law:cauldron:observe_thick:observe_when = 35~3~7
-law:cauldron:observe_thick:observe_seq = 2
+law:cauldron:observe_thick:observe_seq = 22
 law:cauldron:observe_thick:description = The mixture is thick.
 law:cauldron:observe_putrid:observe_when = 7~3~7
-law:cauldron:observe_putrid:observe_seq = 3
+law:cauldron:observe_putrid:observe_seq = 23
 law:cauldron:observe_putrid:description = It gives off a putrid smell.
-law:observations:count = 4
-law:observations:0 = cauldron|observe_simmer
-law:observations:1 = cauldron|observe_boiling
-law:observations:2 = cauldron|observe_thick
-law:observations:3 = cauldron|observe_putrid
+law:observations:count = 24
+law:observations:0 = cutting_board|observe_plant
+law:observations:1 = cutting_board|observe_leaf
+law:observations:2 = cutting_board|observe_chopped
+law:observations:3 = cutting_board|observe_minced
+law:observations:4 = cutting_board|observe_harvested
+law:observations:5 = cutting_board|observe_sliced
+law:observations:6 = cutting_board|observe_twig
+law:observations:7 = cutting_board|observe_powder
+law:observations:8 = cutting_board|observe_essence
+law:observations:9 = cutting_board|observe_pills
+law:observations:10 = cutting_board|observe_poultice
+law:observations:11 = cutting_board|observe_seed
+law:observations:12 = cutting_board|observe_sprout
+law:observations:13 = cutting_board|observe_mature
+law:observations:14 = cutting_board|observe_withered
+law:observations:15 = cutting_board|observe_fried
+law:observations:16 = cutting_board|observe_brine
+law:observations:17 = cutting_board|observe_saline_iv
+law:observations:18 = cutting_board|observe_fragrant
+law:observations:19 = cutting_board|observe_putrid
+law:observations:20 = cauldron|observe_simmer
+law:observations:21 = cauldron|observe_boiling
+law:observations:22 = cauldron|observe_thick
+law:observations:23 = cauldron|observe_putrid
 
 idx:cutting_board:lawprop:23:harvest =
 idx:cutting_board:lawprop:27:harvest =

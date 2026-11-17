@@ -1,4 +1,4 @@
-string VERSION = "Workshop_Config v0.10.1 (2026-11-17)";
+string VERSION = "Workshop_Config v0.10.2 (2026-11-17)";
 // ROOT. Owns notecard parsing, bounded input mapping and read-only inspection hook.
 // Never writes ws:core, acknowledges ingredient rows, evaluates or delivers products.
 string gKind;
@@ -163,11 +163,21 @@ inspect(string wire, key hud)
     key run = llList2Key(fields, 4);
     if (session == NULL_KEY || run == NULL_KEY || hud != llList2Key(sessionData, 1)
         || llList2Key(fields, 3) != session) return;
-    if (llList2String(sessionData, 4) != "BOUND" || !gConfigReady || llGetListLength(fields) != 7) return;
+    if(llList2String(sessionData,4) != "BOUND") {
+        sendTo(hud,session,run,"INSPECT_REPLY",llEscapeURL("ERROR|Workshop is not available for observation in its current treatment phase.")); return;
+    }
+    if(!gConfigReady) {
+        sendTo(hud,session,run,"INSPECT_REPLY",llEscapeURL("ERROR|Workshop configuration is reloading or invalid. Try REFRESH after configuration is ready.")); return;
+    }
+    if(llGetListLength(fields) != 7) {
+        sendTo(hud,session,run,"INSPECT_REPLY",llEscapeURL("ERROR|Invalid observation input fields.")); return;
+    }
     string seconds = llList2String(fields, 5);
     string heat = llList2String(fields, 6);
     if (llJsonValueType(seconds, []) != JSON_NUMBER || (float)seconds < 0.0
-        || (string)((integer)heat) != heat || (integer)heat < -1 || (integer)heat > 30) return;
+        || (string)((integer)heat) != heat || (integer)heat < -1 || (integer)heat > 30) {
+        sendTo(hud,session,run,"INSPECT_REPLY",llEscapeURL("ERROR|Invalid observation time or heat.")); return;
+    }
     if (!gInspectHandler)
     { sendTo(hud, session, run, "INSPECT_REPLY", "NOT_IMPLEMENTED"); return; }
     if (gHeatAction != "" && (integer)heat < 0)

@@ -72,9 +72,17 @@ python -X utf8 compiler.py axes.src taxonomy.src laws.src > monde.nc
 ```
 
 `monde_observations.nc` is a separate build of the current sources, containing
+20 cutting-board observations (all 18 material stages and two smell bands),
 four cauldron observations and one description for `chop`. The existing
 `monde.nc` is preserved because it was already out of sync with the transformation
 sources. The new file is not installed automatically.
+
+Cutting-board observations describe the input material, not a predicted result:
+TAKE applies the transformation. For example, whole leaves remain described as
+whole until a craft produces chopped leaves. Smell descriptions accumulate with
+the stage description; neutral or absent smell adds no text. The cutting-board
+configuration does not inject a timed cutting axis, so these rules do not invent
+cutting progress, spoilage, freshness or medicinal effects.
 
 Validate from the repository root:
 

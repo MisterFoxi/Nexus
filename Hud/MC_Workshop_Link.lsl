@@ -1,4 +1,4 @@
-string VERSION = "MC_Workshop_Link v0.10.1 (2026-11-17)";
+string VERSION = "MC_Workshop_Link v0.10.2 (2026-11-17)";
 // ROOT. HUD-only Workshop endpoint. MCW contract: docs/README_workshop_link.md.
 // Basket/stock belongs to Selected; active time belongs to MC_P1_Animation.
 integer CHANNEL = -918275;
@@ -41,11 +41,11 @@ string inspectEnvelope(string verb, string body)
 }
 cancelInspect()
 {
-    if(gInspectTicket != NULL_KEY) llWhisper(CHANNEL,inspectEnvelope("INSPECT_CANCEL",""));
+    if(gInspectTicket != NULL_KEY) llRegionSayTo(gBench,CHANNEL,inspectEnvelope("INSPECT_CANCEL",""));
 }
 inspectError(string reason)
 {
-    llWhisper(CHANNEL,inspectEnvelope("INSPECT_ERROR",llEscapeURL(reason)));
+    llRegionSayTo(gBench,CHANNEL,inspectEnvelope("INSPECT_ERROR",llEscapeURL(reason)));
     inspectReply("ERROR|"+reason);
 }
 inspectStep()
@@ -59,11 +59,11 @@ inspectStep()
         gInspectScanning = FALSE;
         if(gInspectVerify){
             if(gInspectCheckHash != gInspectHash){ inspectError("Basket changed during observation. Try REFRESH."); return; }
-            llWhisper(CHANNEL,inspectEnvelope("INSPECT_VERIFIED",gInspectHash));
+            llRegionSayTo(gBench,CHANNEL,inspectEnvelope("INSPECT_VERIFIED",gInspectHash));
         }
         else{
             gInspectDone = TRUE;
-            llWhisper(CHANNEL,inspectEnvelope("INSPECT_END",(string)gInspectSources+"|"+gInspectHash));
+            llRegionSayTo(gBench,CHANNEL,inspectEnvelope("INSPECT_END",(string)gInspectSources+"|"+gInspectHash));
         }
         return;
     }
@@ -84,7 +84,7 @@ inspectStep()
             string wire=inspectEnvelope("INSPECT_ROW",(string)gInspectOffset+"|"+(string)quantity+"|"+llList2String(row,5));
             if(llStringLength(llStringToBase64(wire)) > 1364){ inspectError("Ingredient metadata exceeds one observation message."); return; }
             ++gInspectSources; gInspectScanning=FALSE;
-            llWhisper(CHANNEL,wire); return;
+            llRegionSayTo(gBench,CHANNEL,wire); return;
         }
     }
     llMessageLinked(LINK_THIS,918414,"STEP",gInspectTicket);
@@ -248,7 +248,7 @@ default
             if (gPhase != "IDLE" || llGetListLength(inputs) != 3 || llList2String(inputs, 0) != "OK")
             { inspectReply("UNAVAILABLE"); return; }
             gInspectWaiting = "Workshop did not start the observation. Check Workshop, Workshop_Config and Workshop_Observe.";
-            llWhisper(CHANNEL, "MCW|INSPECT|" + (string)gBench + "|" + (string)gSession
+            llRegionSayTo(gBench, CHANNEL, "MCW|INSPECT|" + (string)gBench + "|" + (string)gSession
                 + "|" + (string)ticket + "|" + llList2String(inputs, 1) + "|" + llList2String(inputs, 2));
             return;
         }
@@ -386,7 +386,7 @@ default
                 gInspectWaiting = "Workshop did not finish reading the observation basket.";
                 integer offset = llList2Integer(fields,5);
                 if((string)offset != llList2String(fields,5) || offset != gInspectOffset || gInspectScanning) return;
-                if(gInspectDone) llWhisper(CHANNEL,inspectEnvelope("INSPECT_END",(string)gInspectSources+"|"+gInspectHash));
+                if(gInspectDone) llRegionSayTo(gBench,CHANNEL,inspectEnvelope("INSPECT_END",(string)gInspectSources+"|"+gInspectHash));
                 else{ gInspectScanning=TRUE; llMessageLinked(LINK_THIS,918414,"STEP",gInspectTicket); }
                 return;
             }

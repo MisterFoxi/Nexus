@@ -1,4 +1,4 @@
-string VERSION = "Workshop v0.9.3 (2026-11-16)";
+string VERSION = "Workshop v0.9.4 (2026-11-17)";
 // Session and treatment coordinator; sole writer of ws:core and ws:collector.
 // ROOT: Config, Interface, HUD, Eval, Output, Storage. See README.md.
 // No ingredient, container, output-DNA or kept-source collection in this script.
@@ -170,7 +170,11 @@ receiveControl(key source, string wire)
         { sendTo(source, session, run, "RELEASED", ""); return; }
     }
     if (collectorControl(source, fields)) return;
-    if (session != gSession || !validKey(session)) return;
+    if (session != gSession || !validKey(session)) {
+        if(verb == "INSPECT" && source == gHUD && validKey(run) && validKey(session))
+            sendTo(source,session,run,"INSPECT_REPLY",llEscapeURL("ERROR|HUD association no longer matches this workshop session."));
+        return;
+    }
     if (verb == "ACCEPT")
     {
         if (llGetListLength(fields) != 7 || run != NULL_KEY || llGetOwnerKey(source) != gUser

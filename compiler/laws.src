@@ -52,7 +52,108 @@ law mince
     react
     set   meta.stage = minced      # refine only (no x qty) ; minced = terminal on the board
 
+# Current material state, before TAKE applies any transformation.
+# Cover the complete declared stage vocabulary, including stages created by laws.
+law observe_plant
+    when meta.stage is plant
+    observe
+    describe "The plant is whole."
 
+law observe_leaf
+    when meta.stage is leaf
+    observe
+    describe "The leaves are whole."
+
+law observe_chopped
+    when meta.stage is chopped
+    observe
+    describe "The leaves are chopped."
+
+law observe_minced
+    when meta.stage is minced
+    observe
+    describe "The leaves are finely minced."
+
+law observe_harvested
+    when meta.stage is harvested
+    observe
+    describe "The material has been harvested."
+
+law observe_sliced
+    when meta.stage is sliced
+    observe
+    describe "The material is cut into slices."
+
+law observe_twig
+    when meta.stage is twig
+    observe
+    describe "The preparation contains twigs."
+
+law observe_powder
+    when meta.stage is powder
+    observe
+    describe "The material is in powder form."
+
+law observe_essence
+    when meta.stage is essence
+    observe
+    describe "The material is an essence."
+
+law observe_pills
+    when meta.stage is pils
+    observe
+    describe "The material is in pill form."
+
+law observe_poultice
+    when meta.stage is poultice
+    observe
+    describe "The material is a poultice."
+
+law observe_seed
+    when meta.stage is seed
+    observe
+    describe "The preparation contains seeds."
+
+law observe_sprout
+    when meta.stage is sprout
+    observe
+    describe "The preparation contains young sprouts."
+
+law observe_mature
+    when meta.stage is mature
+    observe
+    describe "The plant is fully grown."
+
+law observe_withered
+    when meta.stage is withered
+    observe
+    describe "The plant is withered."
+
+law observe_fried
+    when meta.stage is fried
+    observe
+    describe "The material is fried."
+
+law observe_brine
+    when meta.stage is brine
+    observe
+    describe "The preparation is brine."
+
+law observe_saline_iv
+    when meta.stage is saline_iv
+    observe
+    describe "The preparation is an IV saline solution."
+
+# Smell complements the material description; it does not imply freshness or safety.
+law observe_fragrant
+    when org.smell is fragrant
+    observe
+    describe "It has a fragrant smell."
+
+law observe_putrid
+    when org.smell is putrid
+    observe
+    describe "It gives off a putrid smell."
 
 @mortar
 # organ eligibility: only a grindable organ (fresh, pre-transformation) can be

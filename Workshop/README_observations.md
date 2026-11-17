@@ -104,6 +104,14 @@ The MCW messages are INSPECT_NEXT, INSPECT_ROW, INSPECT_END, INSPECT_VERIFY,
 INSPECT_VERIFIED, INSPECT_ERROR and INSPECT_CANCEL, using the existing target,
 session and request UUID envelope. Foreign senders, sessions and requests are
 ignored. Transmission does not use BEGIN/ROW/END craft submission messages.
+MC_Workshop_Link v0.10.2 and Workshop_HUD v0.8.2 send observation messages
+directly to the associated object's UUID with llRegionSayTo, including replies
+and cancellation. They no longer depend on local whisper reach. Both endpoints
+still authenticate the actual speaker, target, session and request.
+Workshop v0.9.4 explicitly refuses a stale session from its known HUD;
+Workshop_Config v0.10.2 explicitly refuses configuration reloads, unavailable
+treatment phases and invalid inputs instead of silently dropping the request.
+Install these four updated scripts together; no P4 layout changes are needed.
 
 Workshop_Observe groups the transient rows using the same name/stage and
 first-source metadata convention as the final craft, then calls the existing
