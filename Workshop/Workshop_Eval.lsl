@@ -24,6 +24,7 @@
 integer EVAL_STREAM = 970202;        // bounded stored input; id = treatment UUID
 integer EVAL_STEP = 970203;
 integer gConfigReady;
+integer gWorldReady;
 integer gStreaming;
 key gStreamRun = NULL_KEY;
 integer gStreamIndex;
@@ -36,7 +37,7 @@ integer EVAL_RES = 970201;           // evaluator -> main: result
 integer NOTOK    = -999999;          // Sentinel for an unknown token.
 
 integer GS = 8;                      // Fields per basket group (v0.7: + organ).
-string  VERSION = "Workshop_Eval v0.9.1 (2026-11-16)";
+string  VERSION = "Workshop_Eval v0.9.5 (2026-11-17)";
 // Read-only local consultation: action header + blank line + eight-field groups.
 // Replies on 970205 with OBSERVATIONS|<URL-escaped text>, NO_OBSERVATIONS or ERROR|reason.
 integer OBSERVE_REQ = 970204;
@@ -96,6 +97,7 @@ string findConfigNc(){
 // REVIEW: configuration reload resets genres only; omitted numeric fields retain previous values and requests can arrive mid-load.
 loadConfig(){
     gConfigReady = FALSE;
+    llMessageLinked(LINK_THIS,970299,"EVAL_LOADING",NULL_KEY);
     gGenres = [];
     gCfgNc = findConfigNc();
     if(gCfgNc == "") return;                        // The main script already reports a missing configuration notecard.
@@ -315,17 +317,20 @@ integer evalWhen(string when){
             list zp = llParseString2List(t, ["~"], []);
             integer zaid = (integer)llList2String(zp,0);
             if(inertHas(zaid)) return FALSE;
+            if(gObserving && llListFindList(gAxId,[zaid]) == -1) return FALSE;
             integer zv = axGet(zaid);
             if(zv < (integer)llList2String(zp,1) || zv > (integer)llList2String(zp,2)) return FALSE;
         } else if(ge != -1){
             integer aid = (integer)llGetSubString(t,0,ge-1);
             integer kk  = (integer)llGetSubString(t,ge+2,-1);
             if(inertHas(aid)) return FALSE;
+            if(gObserving && llListFindList(gAxId,[aid]) == -1) return FALSE;
             if(axGet(aid) < kk) return FALSE;
         } else if(le != -1){
             integer aid = (integer)llGetSubString(t,0,le-1);
             integer kk  = (integer)llGetSubString(t,le+2,-1);
             if(inertHas(aid)) return FALSE;
+            if(gObserving && llListFindList(gAxId,[aid]) == -1) return FALSE;
             if(axGet(aid) > kk) return FALSE;
         } else {
             integer eq = llSubStringIndex(t, "=");
@@ -551,6 +556,10 @@ consult(string input, key request){
     gObserving = TRUE;
     buildAggregate(groups);
     injectAction(action);
+    // Temporary in-world trace: compare the transmitted degree with the loaded rule.
+    if(llListFindList(gGenres,["cutting_board"]) != -1)
+        llOwnerSay("[Observation eval] actions="+action+"; fab.grind="+(string)axGet(nameToId("fab.grind"))
+            +"; leaf rule="+llLinksetDataRead("law:cutting_board:observe_leaf:observe_when"));
     string text = "";
     string error = "";
     integer count = (integer)countText;
@@ -659,6 +668,13 @@ default{
         applyCfgLine(data); ++gCfgLine; gCfgQuery=llGetNotecardLine(gCfgNc,gCfgLine);
     }
     link_message(integer sender,integer num,string str,key id){
+        if(num == 970100) {
+            if(str == "WORLD_LOADING" || llSubStringIndex(str,"WORLD_ERROR|") == 0) gWorldReady = FALSE;
+            else if(llSubStringIndex(str,"WORLD_LOADED|") == 0 && !gWorldReady) {
+                gWorldReady = TRUE; loadConfig();
+            }
+            return;
+        }
         if(num == OBSERVE_REQ && sender == llGetLinkNumber()){ consult(str,id); return; }
         if(num == 970298){ evalReady(); return; }
         if(num == 970290){ llOwnerSay("[Workshop Eval] Free: "+(string)llGetFreeMemory()); return; }

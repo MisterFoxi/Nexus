@@ -71,18 +71,26 @@ Generate from the compiler directory:
 python -X utf8 compiler.py axes.src taxonomy.src laws.src > monde.nc
 ```
 
-`monde_observations.nc` is a separate build of the current sources, containing
-20 cutting-board observations (all 18 material stages and two smell bands),
-four cauldron observations and one description for `chop`. The existing
-`monde.nc` is preserved because it was already out of sync with the transformation
-sources. The new file is not installed automatically.
+`monde.nc` at the repository root and `compiler/monde.nc` now contain the same
+current compiled world as `compiler/monde_observations.nc`. Use `monde.nc` as the
+normal upload artifact. These files include 26 cutting-board observations,
+four cauldron observations and the description for `chop`. They are generated
+from the current sources; no separate older world should be uploaded alongside
+them. Installation in Second Life remains manual.
 
-Cutting-board observations describe the input material, not a predicted result:
-TAKE applies the transformation. For example, whole leaves remain described as
-whole until a craft produces chopped leaves. Smell descriptions accumulate with
-the stage description; neutral or absent smell adds no text. The cutting-board
-configuration does not inject a timed cutting axis, so these rules do not invent
-cutting progress, spoilage, freshness or medicinal effects.
+Workshop_Config v0.10.5 supplies the cutting degree directly on the existing
+`fab.grind` fineness axis. No new bench_config entries are required. Active
+seconds are rounded to an integer and capped at 10. Descriptions follow the
+axis bands: light 0..2, coarse 3..4, fine 5..6, extra 7..8, over 9..10.
+Texture-frame thresholds are not used. Paused time does not count. An explicit Action
+mapping, when present, retains its existing behavior. Already chopped leaves start
+at chopped and can become finely chopped or finely minced; minced leaves remain
+minced. Smell descriptions accumulate with the cutting description. Observation
+does not write product stages; TAKE retains the existing transformation rules.
+Workshop_Eval v0.9.4 requires an actually present numeric axis for observation
+comparisons. A missing degree no longer matches the light band as an implicit
+zero; an explicitly transmitted zero remains valid. Legacy recipe matching is
+unchanged.
 
 Validate from the repository root:
 

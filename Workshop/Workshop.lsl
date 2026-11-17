@@ -1,4 +1,4 @@
-string VERSION = "Workshop v0.9.4 (2026-11-17)";
+string VERSION = "Workshop v0.9.6 (2026-11-17)";
 // Session and treatment coordinator; sole writer of ws:core and ws:collector.
 // ROOT: Config, Interface, HUD, Eval, Output, Storage. See README.md.
 // No ingredient, container, output-DNA or kept-source collection in this script.
@@ -30,6 +30,29 @@ integer gConfigReady;
 integer gConfigPending;
 integer gFault;
 integer gDeadline;
+integer gWorldReady;
+integer gObserveReady;
+string gReadyMessage;
+
+reportReadiness()
+{
+    string missing = "";
+    if(gFault) missing += "storage fault; ";
+    if(!gWorldReady) missing += "world data; ";
+    if(!gConfigReady) missing += "configuration; ";
+    if(!(gReady & 1)) missing += "HUD endpoint; ";
+    if(!(gReady & 2)) missing += "evaluator; ";
+    if(!(gReady & 4)) missing += "output; ";
+    if(!(gReady & 8)) missing += "storage module; ";
+    if(!(gReady & 16)) missing += "interface; ";
+    if(!gObserveReady) missing += "observation service; ";
+    string message = "READY: world, configuration and all modules loaded. Observations available.";
+    if(missing != "") message = "NOT READY - waiting for: "+missing;
+    if(message != gReadyMessage) {
+        gReadyMessage = message;
+        llOwnerSay("[Workshop] "+message);
+    }
+}
 
 integer validKey(key value) { if (value) return TRUE; return FALSE; }
 integer write(string name, string value)
@@ -133,6 +156,7 @@ failure(string reason)
 loadConfig()
 {
     gConfigReady = FALSE;
+    reportReadiness();
     if (gPendingRun != NULL_KEY)
         sendTo(gHUD, gPendingSession, gPendingRun, "RESULT", "NO|Configuration%20reloading");
     gPendingRun = NULL_KEY;
@@ -254,7 +278,7 @@ default
         if (llList2Key(collector, 0) == gRun)
         { gCollectorUser = llList2Key(collector, 1); gCollectorHUD = llList2Key(collector, 2); gCollectorSession = llList2Key(collector, 3); }
         loadConfig(); llSetTimerEvent(5.0);
-        llMessageLinked(LINK_THIS, 970298, "READY?", NULL_KEY);
+        llMessageLinked(LINK_SET, 970298, "READY?", NULL_KEY);
 
     }
     changed(integer flags)
@@ -292,7 +316,9 @@ default
         if (gPhase == "OFFERED" && user == gUser) { offer(); return; }
         if (gPhase == "BOUND" && user == gUser)
         {
-            llMessageLinked(LINK_THIS, 970260, "MENU", user);
+            // Owner maintenance is already included by the INFO handler, even
+            // while configuration or another subsystem is unavailable.
+            if(user != llGetOwner()) llMessageLinked(LINK_THIS, 970260, "MENU", user);
             return;
         }
         if (gPhase != "FREE") { llOwnerSay("[Workshop] Treatment phase: " + gPhase + ". Session retained with its HUD."); return; }
@@ -310,15 +336,29 @@ default
     }
     link_message(integer sender, integer number, string text, key run)
     {
+        if(number == 970100) {
+            if(llSubStringIndex(text,"WORLD_LOADED|") == 0) {
+                integer wasReady = gWorldReady;
+                gWorldReady = TRUE;
+                if(!wasReady) loadConfig();
+            }
+            else if(text == "WORLD_LOADING" || llSubStringIndex(text,"WORLD_ERROR|") == 0) gWorldReady = FALSE;
+            else return;
+            reportReadiness(); return;
+        }
         if (sender != llGetLinkNumber() || gFault) return;
         if (number == 970299)
         {
+            integer previous = gReady;
             if (text == "HUD") gReady = gReady | 1;
             else if (text == "EVAL") gReady = gReady | 2;
             else if (text == "OUTPUT") gReady = gReady | 4;
             else if (text == "STORAGE") gReady = gReady | 8;
             else if (text == "INTERFACE") gReady = gReady | 16;
-            if (gReady == 31) resume();
+            else if (text == "OBSERVE") gObserveReady = TRUE;
+            else if (text == "EVAL_LOADING") gReady = gReady & 29;
+            reportReadiness();
+            if (gReady == 31 && previous != 31) resume();
             return;
         }
         if (number == 970290)
@@ -336,6 +376,7 @@ default
             gKeep = llList2Integer(config, 4); gDev = llList2Integer(config, 5); gHover = llList2Integer(config, 6);
             gConfigReady = TRUE;
             if (save()) resume();
+            reportReadiness();
             return;
         }
         if (number == 970255 && run == gPendingRun && run != NULL_KEY)
@@ -425,7 +466,7 @@ default
                 sendTo(gHUD, gSession, gPendingRun, "RESULT", "NO|Input%20mapping%20timed%20out");
             gPendingRun = NULL_KEY;
         }
-        if (gReady != 31) llMessageLinked(LINK_THIS, 970298, "READY?", NULL_KEY);
+        if (gReady != 31 || !gWorldReady || !gObserveReady) llMessageLinked(LINK_SET, 970298, "READY?", NULL_KEY);
         if (gPhase == "OFFERED") offer();
         else if (productPending() && gCollectorSession != NULL_KEY && gCollectorHUD == NULL_KEY) collectorOffer();
         if (gPhase == "EVALUATING" && gDeadline && llGetUnixTime() >= gDeadline)

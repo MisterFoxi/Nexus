@@ -60,6 +60,9 @@ class ObservationTransport(unittest.TestCase):
         self.view=Script(self.w,'MC_P4_Controller.lsl',t.HUD)
         self.w.drain(20000)
         self.base.bind(); self.base.add()
+        # Owner maintenance may randomize its private dialog channel at bind.
+        # Count only random draws made by subsequent observation/craft requests.
+        self.w.random_draws=0
         self.w.storage[t.BENCH,'law:observations:count']='2'
         for index,name,condition,text in [(0,'leaves','10=11','The preparation contains leaves.'),
                                           (1,'working','22>=4','The leaves are being crushed.')]:
@@ -162,7 +165,7 @@ class ObservationTransport(unittest.TestCase):
         self.observe(seconds='12.5',heat='12')
         self.assertIn('The mixture is gently simmering.',self.view.global_vars['gBody'])
 
-    def test_compiled_cutting_board_cases_reach_p4_without_predicting_output(self):
+    def test_compiled_cutting_board_starting_material_cases_reach_p4(self):
         from pathlib import Path
         from urllib.parse import quote, unquote
         for line in (Path(__file__).resolve().parents[2]/'compiler/monde_observations.nc').read_text(encoding='utf-8').splitlines():
@@ -189,12 +192,40 @@ class ObservationTransport(unittest.TestCase):
             with self.subTest(stage=stage,props=props):
                 here[7]=stage; here[8]=props; row[5]=quote('|'.join(here),safe='')
                 self.w.storage[t.HUD,name]='|'.join(row)
-                self.observe(seconds='30')
+                self.observe(seconds='0')
                 self.assertEqual(self.view.global_vars['gBody'],expected)
                 self.view.call('close',[True]); self.w.drain(20000)
         self.assertEqual(self.w.stock,stock)
         self.assertEqual(self.w.physical,[])
         self.assertEqual(self.w.random_draws,0)
+
+    def test_real_cutting_configuration_and_compiled_laws_follow_active_cut_time(self):
+        from pathlib import Path
+        from urllib.parse import quote, unquote
+        root=Path(__file__).resolve().parents[2]
+        for line in (root/'compiler/monde_observations.nc').read_text(encoding='utf-8').splitlines():
+            if ' = ' in line:
+                key,value=line.split(' = ',1)
+                self.w.storage[t.BENCH,key]=value or '1'
+        self.w.config=(root/'Workshop/bench_config_cutting.txt').read_text(encoding='utf-8').splitlines()
+        self.base.core.call('loadConfig',[]); self.base.evaluator.call('loadConfig',[])
+        self.w.drain(20000)
+        name='mc:simple:row:'+str(t.SOURCE)
+        row=self.w.storage[t.HUD,name].split('|'); here=unquote(row[5]).split('|'); here[8]=''
+        row[5]=quote('|'.join(here),safe=''); self.w.storage[t.HUD,name]='|'.join(row)
+        stock=copy.deepcopy(self.w.stock)
+        self.assertEqual(self.base.config.global_vars['gActions'],[])
+        cases=[('0','whole'),('1','whole'),('2','whole'),('3','roughly chopped'),('4','roughly chopped'),
+               ('5','chopped'),('6','chopped'),('7','finely chopped'),('8','finely chopped'),
+               ('9','finely minced'),('10','finely minced'),('40','finely minced'),
+               ('2.49','whole'),('2.5','roughly chopped'),('8.49','finely chopped'),('8.5','finely minced')]
+        for seconds,description in cases:
+            with self.subTest(seconds=seconds):
+                self.observe(seconds=seconds)
+                self.assertEqual(self.view.global_vars['gBody'],'The leaves are '+description+'.')
+                self.view.call('close',[True]); self.w.drain(20000)
+        self.assertEqual(self.w.stock,stock)
+        self.assertEqual(self.w.physical,[])
 
     def test_foreign_snapshot_requests_cannot_read_the_basket(self):
         self.w.pause_codes.add(970240)
@@ -312,6 +343,32 @@ class ObservationTransport(unittest.TestCase):
         engine.call('touch_start',[1]); self.w.drain(20000)
         self.assertEqual(self.base.core.global_vars['gPhase'],'PRODUCT')
         self.assertEqual(self.w.stock[t.SOURCE],[9,0])
+
+    def test_actual_clock_cutting_grades_with_compiled_world(self):
+        from pathlib import Path
+        root=Path(__file__).resolve().parents[2]
+        for line in (root/'compiler/monde_observations.nc').read_text(encoding='utf-8').splitlines():
+            if ' = ' in line:
+                key,value=line.split(' = ',1)
+                self.w.storage[t.BENCH,key]=value or '1'
+        self.w.config=(root/'Workshop/bench_config_cutting.txt').read_text(encoding='utf-8').splitlines()
+        self.base.core.call('loadConfig',[]); self.base.evaluator.call('loadConfig',[]); self.w.drain(20000)
+        self.w.names.update({7:'P1_ACTION1',8:'P1_ACTION2',9:'P1_ACTION3'})
+        engine=ClockScript(self.w,'MC_P1_Animation.lsl',t.HUD); self.w.drain(20000)
+        self.w.touch_link=7; engine.call('touch_start',[1]); self.w.drain(20000)
+        self.w.now+=8; engine.call('timer',[]); self.w.drain(20000)
+        self.w.touch_link=8; engine.call('touch_start',[1]); self.w.drain(20000)
+        self.assertEqual(engine.global_vars['gElapsed'],8)
+        self.assertEqual(self.view.global_vars['gBody'],'The leaves are finely chopped.')
+        self.view.call('button',['p4_action1']); self.w.drain(20000)
+        self.w.now+=100
+        self.w.touch_link=7; engine.call('touch_start',[1]); self.w.drain(20000)
+        self.w.now+=2.1; engine.call('timer',[]); self.w.drain(20000)
+        self.w.touch_link=8; engine.call('touch_start',[1]); self.w.drain(20000)
+        self.assertAlmostEqual(engine.global_vars['gElapsed'],10.1)
+        self.assertEqual(self.view.global_vars['gBody'],'The leaves are finely minced.')
+        self.assertEqual(self.w.stock[t.SOURCE],[9,1])
+        self.assertEqual(self.w.physical,[])
 
 
 if __name__=='__main__': unittest.main()

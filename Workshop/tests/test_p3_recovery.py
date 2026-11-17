@@ -35,13 +35,15 @@ class RecoveryTests(s.SplitTests):
         return ticket
 
     def test_ready_closes_ingredients_before_any_recipient_exists(self):
-        self.ready()
+        self.bind()
+        initial_dialogs=list(self.w.dialogs)
+        self.prepare();self.submit();self.advance(1)
         self.assertEqual(self.w.stock[s.SOURCE],[9,0])
         self.assertEqual(self.w.physical,[])
         self.assertEqual(self.core.global_vars['gPhase'],'PRODUCT')
         self.assertEqual(self.link.global_vars['gPhase'],'OUTPUT')
         self.assertEqual(self.output.global_vars['gQuantity'],5)
-        self.assertEqual(self.w.dialogs,[])
+        self.assertEqual(self.w.dialogs,initial_dialogs)
 
     def test_different_player_touches_collects_and_becomes_current_session(self):
         self.ready();self.other_player()

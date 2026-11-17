@@ -65,6 +65,40 @@ dispatches physical output. Temporary aggregates are cleared before returning.
 
 ## Integration status
 
+### Owner reset
+
+Touch the workshop as its owner and choose `RESET ALL`, then `ERASE ALL`.
+The option is available during initialization, sessions, treatments and faults.
+The confirmation expires after 60 seconds. Other users cannot invoke it.
+
+Workshop_HUD v0.8.3 stops the other scripts in its ROOT inventory, clears all
+linkset data (including workshop sessions, pending products and world records),
+then resets and starts those scripts and itself. Notecards, scripts and other
+inventory assets remain. The world loader reloads the world from inventory.
+External HUD state and physical source stock are not cleared or reconciled;
+reassociate a clean HUD after the workshop announces READY.
+
+Install Workshop_Interface v0.9.2 for the menu, Workshop_HUD v0.8.3 for reset,
+Workshop v0.9.6 and Workshop_Eval v0.9.5 for configuration revalidation after
+world data becomes available. This reset does not repair the contents of a world
+notecard or choose a different world notecard.
+
+### Workshop startup status
+
+Workshop v0.9.5 announces `[Workshop] READY: world, configuration and all modules
+loaded. Observations available.` in owner chat once the world loader has reached
+EOF without failed writes, bench_config is loaded, and all Workshop modules,
+including Workshop_Observe, have acknowledged startup. While waiting it reports
+`NOT READY` with the missing services. This reports initialization, not a free
+crafting slot or a matching observation for every ingredient.
+
+Install World_Loader v0.6, Workshop v0.9.5, Workshop_Eval v0.9.2 and
+Workshop_Observe v0.1.2 together. World reloads invalidate readiness until
+completion. An evaluator configuration reload also invalidates its acknowledgement.
+The world loader answers status requests after loading, so restarting the
+coordinator does not require reloading the world. Repeated identical ready
+notifications do not print another READY message or restart a treatment.
+
 Live consultation is connected. PAUSE opens P4, which requests the current
 preparation's observations. REFRESH repeats the read-only request. BACK cancels
 it locally and releases the Workshop request; it never submits a craft.
@@ -77,8 +111,8 @@ In the HUD ROOT, replace `MC_Workshop_Link.lsl` and `MC_P4_Controller.lsl`.
 Keep the existing three-button P1 mapping and P4 tables.
 
 Load world data compiled from laws.src containing `observe`/`describe` rules and
-the `law:observations:*` index, such as `compiler/monde_observations.nc`.
-The existing monde.nc files are not overwritten by this update.
+the `law:observations:*` index. The current upload artifact is `monde.nc`;
+the root, compiler and observation-specific copies are synchronized.
 In bench_config, use `InspectHandler = 1`, or omit it (now enabled by default).
 An existing explicit `InspectHandler = 0` still disables consultation.
 Use the same Genre/Action/HeatAction/DurationAction configuration as the craft.

@@ -50,7 +50,6 @@ tok:meta.elapsed_time = 48
 tok:potato = 49
 tok:sul = 49
 tok:withered = 50
-tok:purified = 51
 tok:meta.wall_time = 53
 tok:brine = 54
 tok:saline_iv = 55
@@ -70,6 +69,12 @@ tok:edible = 68
 tok:grindable = 69
 tok:smokable = 70
 tok:tannable = 71
+tok:org.purity = 72
+tok:tree = 73
+tok:herb = 74
+tok:willow = 75
+tok:branch = 76
+tok:trunk = 77
 
 tok:#0 = fab.thermal
 tok:#1 = fab.acidity
@@ -120,7 +125,6 @@ tok:#47 = fried
 tok:#48 = meta.elapsed_time
 tok:#49 = potato
 tok:#50 = withered
-tok:#51 = purified
 tok:#53 = meta.wall_time
 tok:#54 = brine
 tok:#55 = saline_iv
@@ -140,19 +144,26 @@ tok:#68 = edible
 tok:#69 = grindable
 tok:#70 = smokable
 tok:#71 = tannable
+tok:#72 = org.purity
+tok:#73 = tree
+tok:#74 = herb
+tok:#75 = willow
+tok:#76 = branch
+tok:#77 = trunk
 
-tax:15:toks = 15^26^27
+tax:15:toks = 15^23^26^27
 tax:15:trait = 7:-1
 tax:15:abstract = 1
-tax:16:toks = 16^15^26^27
+tax:16:toks = 16^15^23^26^27
 tax:16:trait = 5:-2^7:-1
 tax:17:toks = 17^26^27
 tax:17:trait = 30:1
 tax:18:toks = 18
 tax:18:trait = 35:0
-tax:25:toks = 25^27
+tax:23:toks = 23
+tax:23:abstract = 1
 tax:37:toks = 37^18
-tax:37:trait = 7:0^35:-4
+tax:37:trait = 7:0^35:-4^72:1
 tax:38:toks = 38^18
 tax:38:trait = 35:5
 tax:39:toks = 39
@@ -165,7 +176,7 @@ tax:41:trait = 30:5
 tax:41:inert = 0
 tax:49:toks = 49^17^26^27
 tax:49:trait = 30:1
-tax:57:toks = 57^16^15^26^27
+tax:57:toks = 57^16^15^23^26^27
 tax:57:trait = 5:-2^7:-1
 tax:57:organs = 11^17^63
 tax:57:organ:11:trait = 4:3
@@ -181,6 +192,14 @@ tax:59:organ:61:tags = 69
 tax:59:organ:65:tags = 71
 tax:59:organ:66:trait = 34:5
 tax:59:organ:66:tags = 68
+tax:73:toks = 73^23
+tax:73:abstract = 1
+tax:74:toks = 74^23
+tax:74:abstract = 1
+tax:75:toks = 75^73^23
+tax:75:organs = 25
+tax:75:organ:25:trait = 33:2
+tax:75:organ:25:tags = 69
 
 dom:st:cauldron = medical
 dom:st:crafter = medical
@@ -204,6 +223,7 @@ law:cutting_board:chop:when = 14=15^10=11
 law:cutting_board:chop:verdict = 0
 law:cutting_board:chop:seq = 3
 law:cutting_board:chop:do = 10=28^qty*5
+law:cutting_board:chop:description = The leaves are chopped.
 law:cutting_board:choptatoes:when = 14=49^10=45
 law:cutting_board:choptatoes:verdict = 0
 law:cutting_board:choptatoes:seq = 4
@@ -244,54 +264,179 @@ law:mortar:poultice:when = 14=15^10=12^14=18
 law:mortar:poultice:verdict = 0
 law:mortar:poultice:seq = 13
 law:mortar:poultice:do = 10=21^4*1.5
+law:alambic:distill_water:when = 14=37^72~3~6
+law:alambic:distill_water:verdict = 0
+law:alambic:distill_water:seq = 14
+law:alambic:distill_water:do = 72*3
 law:cauldron:overcooked:when = 0~14~23
 law:cauldron:overcooked:verdict = 0
-law:cauldron:overcooked:seq = 14
+law:cauldron:overcooked:seq = 15
 law:cauldron:overcooked:do = eff*0.5
 law:cauldron:cooked_ok:when = 0~10~13
 law:cauldron:cooked_ok:verdict = 0
-law:cauldron:cooked_ok:seq = 15
+law:cauldron:cooked_ok:seq = 16
 law:cauldron:corrosif:when = 1~-7~-3^2~8~10
 law:cauldron:corrosif:verdict = 1
-law:cauldron:corrosif:seq = 16
+law:cauldron:corrosif:seq = 17
 law:cauldron:corrosif:do = +8
 law:cauldron:corrosif:cap = 10
 law:cauldron:vomitif:when = 33~3~7
 law:cauldron:vomitif:verdict = 0
-law:cauldron:vomitif:seq = 17
+law:cauldron:vomitif:seq = 18
 law:cauldron:vomitif:do = +9
-law:cauldron:purifiedwater:when = 0~14~23^14=37
-law:cauldron:purifiedwater:verdict = 0
-law:cauldron:purifiedwater:seq = 18
-law:cauldron:purifiedwater:do = 10=51
-law:cauldron:perf:when = 10=51^32<=2
+law:cauldron:boil_water:when = 0~14~23^14=37^72~0~2
+law:cauldron:boil_water:verdict = 0
+law:cauldron:boil_water:seq = 19
+law:cauldron:boil_water:do = 72*3
+law:cauldron:perf:when = 14=37^72>=7^32<=2
 law:cauldron:perf:verdict = 0
-law:cauldron:perf:seq = 19
+law:cauldron:perf:seq = 20
 law:cauldron:perf:do = 10=55
-law:cauldron:brine:when = 10=51^32>=3
+law:cauldron:brine:when = 14=37^72>=3^32>=3
 law:cauldron:brine:verdict = 0
-law:cauldron:brine:seq = 20
+law:cauldron:brine:seq = 21
 law:cauldron:brine:do = 10=54
 law:cauldron:fry:when = 0~24~30^35~3~7
 law:cauldron:fry:verdict = 0
-law:cauldron:fry:seq = 21
+law:cauldron:fry:seq = 22
 law:cauldron:fry:do = +36
 law:cauldron:makefries:when = 14=49^0~24~30^35~3~7^10=46
 law:cauldron:makefries:verdict = 0
-law:cauldron:makefries:seq = 22
+law:cauldron:makefries:seq = 23
 law:cauldron:makefries:do = 10=47^eff*1.5
 law:field:sprout:when = 10=42^48>=60
 law:field:sprout:verdict = 0
-law:field:sprout:seq = 23
+law:field:sprout:seq = 24
 law:field:sprout:do = 10=43
 law:field:mature:when = 10=43^48>=240
 law:field:mature:verdict = 0
-law:field:mature:seq = 24
+law:field:mature:seq = 25
 law:field:mature:do = 10=44
 law:field:harvest:when = 10=44
 law:field:harvest:verdict = 0
-law:field:harvest:seq = 25
+law:field:harvest:seq = 26
 law:field:harvest:do = give
+law:cutting_board:observe_plant:observe_when = 10=23
+law:cutting_board:observe_plant:observe_seq = 0
+law:cutting_board:observe_plant:description = The plant is whole.
+law:cutting_board:observe_leaf:observe_when = 10=11^22~0~2
+law:cutting_board:observe_leaf:observe_seq = 1
+law:cutting_board:observe_leaf:description = The leaves are whole.
+law:cutting_board:observe_leaf_coarse:observe_when = 10=11^22~3~4
+law:cutting_board:observe_leaf_coarse:observe_seq = 2
+law:cutting_board:observe_leaf_coarse:description = The leaves are roughly chopped.
+law:cutting_board:observe_leaf_fine:observe_when = 10=11^22~5~6
+law:cutting_board:observe_leaf_fine:observe_seq = 3
+law:cutting_board:observe_leaf_fine:description = The leaves are chopped.
+law:cutting_board:observe_leaf_extra:observe_when = 10=11^22~7~8
+law:cutting_board:observe_leaf_extra:observe_seq = 4
+law:cutting_board:observe_leaf_extra:description = The leaves are finely chopped.
+law:cutting_board:observe_leaf_minced:observe_when = 10=11^22~9~10
+law:cutting_board:observe_leaf_minced:observe_seq = 5
+law:cutting_board:observe_leaf_minced:description = The leaves are finely minced.
+law:cutting_board:observe_chopped:observe_when = 10=28^22<=6
+law:cutting_board:observe_chopped:observe_seq = 6
+law:cutting_board:observe_chopped:description = The leaves are chopped.
+law:cutting_board:observe_chopped_extra:observe_when = 10=28^22~7~8
+law:cutting_board:observe_chopped_extra:observe_seq = 7
+law:cutting_board:observe_chopped_extra:description = The leaves are finely chopped.
+law:cutting_board:observe_chopped_minced:observe_when = 10=28^22~9~10
+law:cutting_board:observe_chopped_minced:observe_seq = 8
+law:cutting_board:observe_chopped_minced:description = The leaves are finely minced.
+law:cutting_board:observe_minced:observe_when = 10=29
+law:cutting_board:observe_minced:observe_seq = 9
+law:cutting_board:observe_minced:description = The leaves are finely minced.
+law:cutting_board:observe_harvested:observe_when = 10=45
+law:cutting_board:observe_harvested:observe_seq = 10
+law:cutting_board:observe_harvested:description = The material has been harvested.
+law:cutting_board:observe_sliced:observe_when = 10=46
+law:cutting_board:observe_sliced:observe_seq = 11
+law:cutting_board:observe_sliced:description = The material is cut into slices.
+law:cutting_board:observe_twig:observe_when = 10=24
+law:cutting_board:observe_twig:observe_seq = 12
+law:cutting_board:observe_twig:description = The preparation contains twigs.
+law:cutting_board:observe_powder:observe_when = 10=12
+law:cutting_board:observe_powder:observe_seq = 13
+law:cutting_board:observe_powder:description = The material is in powder form.
+law:cutting_board:observe_essence:observe_when = 10=13
+law:cutting_board:observe_essence:observe_seq = 14
+law:cutting_board:observe_essence:description = The material is an essence.
+law:cutting_board:observe_pills:observe_when = 10=20
+law:cutting_board:observe_pills:observe_seq = 15
+law:cutting_board:observe_pills:description = The material is in pill form.
+law:cutting_board:observe_poultice:observe_when = 10=21
+law:cutting_board:observe_poultice:observe_seq = 16
+law:cutting_board:observe_poultice:description = The material is a poultice.
+law:cutting_board:observe_seed:observe_when = 10=42
+law:cutting_board:observe_seed:observe_seq = 17
+law:cutting_board:observe_seed:description = The preparation contains seeds.
+law:cutting_board:observe_sprout:observe_when = 10=43
+law:cutting_board:observe_sprout:observe_seq = 18
+law:cutting_board:observe_sprout:description = The preparation contains young sprouts.
+law:cutting_board:observe_mature:observe_when = 10=44
+law:cutting_board:observe_mature:observe_seq = 19
+law:cutting_board:observe_mature:description = The plant is fully grown.
+law:cutting_board:observe_withered:observe_when = 10=50
+law:cutting_board:observe_withered:observe_seq = 20
+law:cutting_board:observe_withered:description = The plant is withered.
+law:cutting_board:observe_fried:observe_when = 10=47
+law:cutting_board:observe_fried:observe_seq = 21
+law:cutting_board:observe_fried:description = The material is fried.
+law:cutting_board:observe_brine:observe_when = 10=54
+law:cutting_board:observe_brine:observe_seq = 22
+law:cutting_board:observe_brine:description = The preparation is brine.
+law:cutting_board:observe_saline_iv:observe_when = 10=55
+law:cutting_board:observe_saline_iv:observe_seq = 23
+law:cutting_board:observe_saline_iv:description = The preparation is an IV saline solution.
+law:cutting_board:observe_fragrant:observe_when = 7~-7~-3
+law:cutting_board:observe_fragrant:observe_seq = 24
+law:cutting_board:observe_fragrant:description = It has a fragrant smell.
+law:cutting_board:observe_putrid:observe_when = 7~3~7
+law:cutting_board:observe_putrid:observe_seq = 25
+law:cutting_board:observe_putrid:description = It gives off a putrid smell.
+law:cauldron:observe_simmer:observe_when = 0~10~13
+law:cauldron:observe_simmer:observe_seq = 26
+law:cauldron:observe_simmer:description = The mixture is gently simmering.
+law:cauldron:observe_boiling:observe_when = 0~14~23
+law:cauldron:observe_boiling:observe_seq = 27
+law:cauldron:observe_boiling:description = The mixture is boiling.
+law:cauldron:observe_thick:observe_when = 35~3~7
+law:cauldron:observe_thick:observe_seq = 28
+law:cauldron:observe_thick:description = The mixture is thick.
+law:cauldron:observe_putrid:observe_when = 7~3~7
+law:cauldron:observe_putrid:observe_seq = 29
+law:cauldron:observe_putrid:description = It gives off a putrid smell.
+law:observations:count = 30
+law:observations:0 = cutting_board|observe_plant
+law:observations:1 = cutting_board|observe_leaf
+law:observations:2 = cutting_board|observe_leaf_coarse
+law:observations:3 = cutting_board|observe_leaf_fine
+law:observations:4 = cutting_board|observe_leaf_extra
+law:observations:5 = cutting_board|observe_leaf_minced
+law:observations:6 = cutting_board|observe_chopped
+law:observations:7 = cutting_board|observe_chopped_extra
+law:observations:8 = cutting_board|observe_chopped_minced
+law:observations:9 = cutting_board|observe_minced
+law:observations:10 = cutting_board|observe_harvested
+law:observations:11 = cutting_board|observe_sliced
+law:observations:12 = cutting_board|observe_twig
+law:observations:13 = cutting_board|observe_powder
+law:observations:14 = cutting_board|observe_essence
+law:observations:15 = cutting_board|observe_pills
+law:observations:16 = cutting_board|observe_poultice
+law:observations:17 = cutting_board|observe_seed
+law:observations:18 = cutting_board|observe_sprout
+law:observations:19 = cutting_board|observe_mature
+law:observations:20 = cutting_board|observe_withered
+law:observations:21 = cutting_board|observe_fried
+law:observations:22 = cutting_board|observe_brine
+law:observations:23 = cutting_board|observe_saline_iv
+law:observations:24 = cutting_board|observe_fragrant
+law:observations:25 = cutting_board|observe_putrid
+law:observations:26 = cauldron|observe_simmer
+law:observations:27 = cauldron|observe_boiling
+law:observations:28 = cauldron|observe_thick
+law:observations:29 = cauldron|observe_putrid
 
 idx:cutting_board:lawprop:23:harvest =
 idx:cutting_board:lawprop:27:harvest =
@@ -324,16 +469,21 @@ idx:mortar:lawprop:22:over_ultra =
 idx:mortar:lawprop:15:poultice =
 idx:mortar:lawprop:12:poultice =
 idx:mortar:lawprop:18:poultice =
+idx:alambic:lawprop:37:distill_water =
+idx:alambic:lawprop:72:distill_water =
 idx:cauldron:lawprop:0:overcooked =
 idx:cauldron:lawprop:0:cooked_ok =
 idx:cauldron:lawprop:1:corrosif =
 idx:cauldron:lawprop:2:corrosif =
 idx:cauldron:lawprop:33:vomitif =
-idx:cauldron:lawprop:0:purifiedwater =
-idx:cauldron:lawprop:37:purifiedwater =
-idx:cauldron:lawprop:51:perf =
+idx:cauldron:lawprop:0:boil_water =
+idx:cauldron:lawprop:37:boil_water =
+idx:cauldron:lawprop:72:boil_water =
+idx:cauldron:lawprop:37:perf =
+idx:cauldron:lawprop:72:perf =
 idx:cauldron:lawprop:32:perf =
-idx:cauldron:lawprop:51:brine =
+idx:cauldron:lawprop:37:brine =
+idx:cauldron:lawprop:72:brine =
 idx:cauldron:lawprop:32:brine =
 idx:cauldron:lawprop:0:fry =
 idx:cauldron:lawprop:35:fry =

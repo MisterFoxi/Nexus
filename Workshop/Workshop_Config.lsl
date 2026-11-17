@@ -1,4 +1,4 @@
-string VERSION = "Workshop_Config v0.10.2 (2026-11-17)";
+string VERSION = "Workshop_Config v0.10.5 (2026-11-17)";
 // ROOT. Owns notecard parsing, bounded input mapping and read-only inspection hook.
 // Never writes ws:core, acknowledges ingredient rows, evaluates or delivers products.
 string gKind;
@@ -110,6 +110,17 @@ string actionHeader(float elapsed, integer heat)
         if (i) action += "^";
         action += llList2String(gActions, i) + "=" + (string)value;
     }
+    // Supply the cutting axis directly; its named bands are defined in axes.src.
+    // Preserve an explicitly configured action mapping.
+    list genres = llParseString2List(gWorkshopType,[","," "],[]);
+    if(llListFindList(genres,["cutting_board"]) != -1
+        && llListFindList(gActions,["fab.grind"]) == -1
+        && gHeatAction != "fab.grind" && gDurationAction != "fab.grind") {
+        integer cut = 10;
+        if(elapsed < 10.0) cut = llRound(elapsed);
+        if(action != "") action += "^";
+        action += "fab.grind="+(string)cut;
+    }
     if (gHeatAction != "")
     {
         if (action != "") action += "^";
@@ -188,8 +199,10 @@ inspect(string wire, key hud)
     gInspectDeadline = llGetUnixTime() + 3;
     llSetTimerEvent(1.0);
     gInspectSession = session; gInspectHUD = hud;
+    string actions = actionHeader((float)seconds,(integer)heat);
+    llOwnerSay("[Observation input] seconds="+seconds+"; actions="+actions);
     llMessageLinked(LINK_THIS, 970240, "INPUTS|" + seconds + "|" + heat
-        + "|" + llEscapeURL(actionHeader((float)seconds,(integer)heat)), run);
+        + "|" + llEscapeURL(actions), run);
     return;
 }
 finishInspect(string result)

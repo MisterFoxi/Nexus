@@ -82,6 +82,21 @@ class ObservationTests(unittest.TestCase):
         self.observation(0, 'always', '*', 'Visible material.')
         self.assertEqual(self.consult(), 'OBSERVATIONS|Visible material.')
 
+    def test_missing_numeric_axis_does_not_match_zero_but_explicit_zero_does(self):
+        for condition in ('22~0~2','22<=0','22>=0'):
+            with self.subTest(condition=condition):
+                self.observation(0,'light',condition,'The leaves are whole.')
+                self.assertEqual(self.consult(action=''),'NO_OBSERVATIONS')
+                self.assertEqual(self.consult(action='fab.grind=0'),'OBSERVATIONS|The leaves are whole.')
+
+    def test_missing_numeric_axis_keeps_legacy_recipe_semantics(self):
+        self.w.storage[t.BENCH,'law:cutting_board:fixture:when']='14=15^10=11^22<=0'
+        self.w.emit(t.BENCH,970200,'\n\n'+self.rows,t.RUN)
+        self.w.drain(20000)
+        result=[reply[3] for reply in self.w.replies if reply[2]==970201][-1]
+        self.assertTrue(result.startswith('1|'),result)
+        self.assertIn('|chopped|',result)
+
     def test_missing_or_incomplete_data_returns_an_error(self):
         del self.w.storage[t.BENCH, 'law:observations:count']
         self.assertTrue(self.consult().startswith('ERROR|Observation data not loaded.'))

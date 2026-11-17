@@ -5,6 +5,7 @@ const factory = require('C:/Users/lcc/.vscode/extensions/jyaoma.lsl-lsp-3.9.5/se
   const trees = {};
   const files = Object.fromEntries(['Workshop.lsl','Workshop_Config.lsl','Workshop_Interface.lsl','Workshop_HUD.lsl','Workshop_Eval.lsl','Workshop_Output.lsl','Workshop_Storage.lsl','Workshop_Observe.lsl'].map(name=>[name,path.join(__dirname,'..',name)]));
   files['Workshop_Eval.before.lsl']=path.join(__dirname,'fixtures','Workshop_Eval.before.lsl');
+  files['World_Loader.lsl']=path.resolve(__dirname,'../../WorldLoader/World_Loader.lsl');
   const componentRoot=path.resolve(__dirname,'../../Component');
   files['Component.lsl']=fs.existsSync(path.join(__dirname,'..','Component.lsl'))
     ? path.join(__dirname,'..','Component.lsl')

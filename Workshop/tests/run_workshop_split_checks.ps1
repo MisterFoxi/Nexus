@@ -28,3 +28,7 @@ if ($LASTEXITCODE) { throw 'Cumulative observation checks failed' }
 
 & (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_observation_transport.py')
 if ($LASTEXITCODE) { throw 'Live observation transport checks failed' }
+& (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_readiness.py')
+if ($LASTEXITCODE) { throw 'Workshop readiness checks failed' }
+& (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_reset_all.py')
+if ($LASTEXITCODE) { throw 'Workshop owner reset checks failed' }

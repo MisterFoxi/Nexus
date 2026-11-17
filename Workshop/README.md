@@ -176,7 +176,11 @@ inventory copying still require in-world validation.
 
 Action names/configuration are not inferred from the obsolete cutting-board
 laws. As before, configured action values use round(activeSeconds * GrindScale)
-bounded to 0..GrindMax. No Action means an empty action header. Laws and
+bounded to 0..GrindMax. Workshop_Config v0.10.5 also supplies the cutting board's
+degree directly through fab.grind when that axis has no explicit mapping:
+rounded active seconds, capped at 10, using the bands in axes.src. No additional
+bench_config entry is required. Other stations without Action retain an empty
+action header. Laws and
 compiler/axes.src are unchanged by this segmentation.
 
 MCW authorizes the touched player and associated HUD/session. Ingredient stock access remains same-owner. See the P3 guide for visitor HUD provisioning.

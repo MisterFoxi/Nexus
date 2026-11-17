@@ -52,8 +52,8 @@ law mince
     react
     set   meta.stage = minced      # refine only (no x qty) ; minced = terminal on the board
 
-# Current material state, before TAKE applies any transformation.
-# Cover the complete declared stage vocabulary, including stages created by laws.
+# The current material stage supplies the starting point. Active cutting time
+# supplies fab.grind (fineness) directly, without changing stock.
 law observe_plant
     when meta.stage is plant
     observe
@@ -61,13 +61,51 @@ law observe_plant
 
 law observe_leaf
     when meta.stage is leaf
+    when fab.grind is light
     observe
     describe "The leaves are whole."
 
-law observe_chopped
-    when meta.stage is chopped
+law observe_leaf_coarse
+    when meta.stage is leaf
+    when fab.grind is coarse
+    observe
+    describe "The leaves are roughly chopped."
+
+law observe_leaf_fine
+    when meta.stage is leaf
+    when fab.grind is fine
     observe
     describe "The leaves are chopped."
+
+law observe_leaf_extra
+    when meta.stage is leaf
+    when fab.grind is extra
+    observe
+    describe "The leaves are finely chopped."
+
+law observe_leaf_minced
+    when meta.stage is leaf
+    when fab.grind is over
+    observe
+    describe "The leaves are finely minced."
+
+law observe_chopped
+    when meta.stage is chopped
+    when fab.grind <= 6
+    observe
+    describe "The leaves are chopped."
+
+law observe_chopped_extra
+    when meta.stage is chopped
+    when fab.grind is extra
+    observe
+    describe "The leaves are finely chopped."
+
+law observe_chopped_minced
+    when meta.stage is chopped
+    when fab.grind is over
+    observe
+    describe "The leaves are finely minced."
 
 law observe_minced
     when meta.stage is minced

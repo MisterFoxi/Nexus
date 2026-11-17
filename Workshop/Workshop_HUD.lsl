@@ -1,4 +1,4 @@
-string VERSION = "Workshop_HUD v0.8.2 (2026-11-17)";
+string VERSION = "Workshop_HUD v0.8.3 (2026-11-17)";
 // Workshop v0.8.0 - MCW whisper endpoint and progressive input spool.
 // No stock operations. Input rows/groups live in Linkset Data, not in a basket list.
 integer CHANNEL = -918275;
@@ -9,6 +9,39 @@ integer gGroups;
 integer gIndex;
 string gType;
 integer gFault;
+integer gResetChannel;
+integer gResetListen;
+
+confirmReset()
+{
+    if(gResetListen) llListenRemove(gResetListen);
+    gResetChannel = -4000000 - (integer)llFrand(900000.0);
+    gResetListen = llListen(gResetChannel,"",llGetOwner(),"");
+    llSetTimerEvent(60.0);
+    llDialog(llGetOwner(),"RESET ALL WORKSHOP DATA?\nThis clears sessions, pending products and world data, then restarts scripts and reloads the world notecard.\nExternal HUDs and source stocks are not reset.",
+        ["ERASE ALL","Cancel"],gResetChannel);
+}
+resetAll()
+{
+    list scripts;
+    string self = llGetScriptName();
+    integer i;
+    for(i=0;i<llGetInventoryNumber(INVENTORY_SCRIPT);++i) {
+        string script = llGetInventoryName(INVENTORY_SCRIPT,i);
+        if(script != self) {
+            scripts += [script];
+            llSetScriptState(script,FALSE);
+        }
+    }
+    llLinksetDataReset();
+    llOwnerSay("[Workshop] RESET ALL: workshop data cleared. Restarting scripts and reloading world data. Reassociate the HUD after READY.");
+    for(i=0;i<llGetListLength(scripts);++i) {
+        string script = llList2String(scripts,i);
+        llResetOtherScript(script);
+        llSetScriptState(script,TRUE);
+    }
+    llResetScript();
+}
 
 integer write(string name, string value)
 {
@@ -143,6 +176,11 @@ default
     }
     listen(integer channel, string name, key source, string wire)
     {
+        if(channel == gResetChannel && gResetListen && source == llGetOwner()) {
+            llListenRemove(gResetListen); gResetListen = 0; llSetTimerEvent(0.0);
+            if(wire == "ERASE ALL") resetAll();
+            return;
+        }
         if (channel != CHANNEL || gFault) return; // Coordinator authenticates the touched player/HUD/session.
         list fields = llParseStringKeepNulls(wire, ["|"], []);
         if (llGetListLength(fields) < 5 || llList2String(fields, 0) != "MCW"
@@ -157,6 +195,9 @@ default
     }
     link_message(integer sender, integer number, string text, key run)
     {
+        if(sender == llGetLinkNumber() && number == 970216 && text == "CONFIRM_RESET" && run == llGetOwner()) {
+            confirmReset(); return;
+        }
         if (sender != llGetLinkNumber() || gFault) return;
         if (number == 970298) { ready(); return; }
         if (number == 970211)
@@ -209,5 +250,9 @@ default
             }
         }
         else if (number == 970290) llOwnerSay("[Workshop HUD] Free: " + (string)llGetFreeMemory());
+    }
+    timer() {
+        if(gResetListen) llListenRemove(gResetListen);
+        gResetListen = 0; llSetTimerEvent(0.0);
     }
 }

@@ -1,4 +1,4 @@
-string VERSION = "Workshop_Interface v0.9.1 (2026-11-02)";
+string VERSION = "Workshop_Interface v0.9.2 (2026-11-17)";
 // ROOT. Menus, player information and dedicated-HUD provisioning only.
 // Reads durable identities; never writes leases, products or source stock.
 integer gSessionMenu;
@@ -43,8 +43,18 @@ sessionMenu()
     gSessionListen = llListen(gSessionMenu, "", user, "");
     string hover = "Text: OFF";
     if (showHover) hover = "Text: ON";
+    list buttons = ["Resume", "Exit", hover];
+    if(user == llGetOwner()) buttons += ["RESET ALL"];
     llDialog(user, sessionInfo() + "\nResume, exit through the HUD stock cleanup, or toggle nearby component text.",
-        ["Resume", "Exit", hover], gSessionMenu);
+        buttons, gSessionMenu);
+}
+maintenanceMenu()
+{
+    if(gSessionListen) llListenRemove(gSessionListen);
+    gSessionMenu = -3000000 - (integer)llFrand(900000.0);
+    gMenuSession = NULL_KEY;
+    gSessionListen = llListen(gSessionMenu,"",llGetOwner(),"");
+    llDialog(llGetOwner(),sessionInfo()+"\nOwner maintenance.",["RESET ALL","Cancel"],gSessionMenu);
 }
 provision(key player, key session)
 {
@@ -96,7 +106,14 @@ default
         if (number == 970298) { llMessageLinked(LINK_THIS, 970299, "INTERFACE", NULL_KEY); return; }
         if (number == 970290) { llOwnerSay("[Workshop interface] Free: " + (string)llGetFreeMemory()); return; }
         if (number != 970260) return;
-        if (text == "INFO") llRegionSayTo(player, 0, sessionInfo());
+        if (text == "INFO") {
+            llRegionSayTo(player, 0, sessionInfo());
+            list sessionData = llJson2List(llLinksetDataRead("ws:core"));
+            if(player == llGetOwner()) {
+                if(llList2String(sessionData,4) == "BOUND" && llList2Key(sessionData,0) == player) sessionMenu();
+                else maintenanceMenu();
+            }
+        }
         else if (text == "MENU")
         {
             list sessionData = llJson2List(llLinksetDataRead("ws:core"));
@@ -107,6 +124,12 @@ default
     }
     listen(integer channel, string name, key user, string choice)
     {
+        if(channel != gSessionMenu || !gSessionListen) return;
+        if(user == llGetOwner() && (choice == "RESET ALL" || choice == "Cancel")) {
+            llListenRemove(gSessionListen); gSessionListen = 0;
+            if(choice == "RESET ALL") llMessageLinked(LINK_THIS,970216,"CONFIRM_RESET",user);
+            return;
+        }
         list sessionData = llJson2List(llLinksetDataRead("ws:core"));
         if (channel != gSessionMenu || !gSessionListen || user != llList2Key(sessionData, 0)
             || gMenuSession != llList2Key(sessionData, 2) || llList2String(sessionData, 4) != "BOUND") return;

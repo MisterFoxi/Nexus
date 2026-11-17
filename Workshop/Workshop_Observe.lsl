@@ -1,6 +1,6 @@
 // ROOT. Transient read-only basket snapshot -> cumulative observation calculation.
 // No source transactions, product records or persistent observation spool.
-string VERSION = "Workshop_Observe v0.1.1 (2026-11-17)";
+string VERSION = "Workshop_Observe v0.1.2 (2026-11-17)";
 key gTicket = NULL_KEY;
 key gHUD;
 key gSession;
@@ -90,9 +90,10 @@ row(list fields, string wire)
 }
 default
 {
-    state_entry(){ llOwnerSay("[Nexus] "+VERSION); }
+    state_entry(){ llOwnerSay("[Nexus] "+VERSION); llMessageLinked(LINK_THIS,970299,"OBSERVE",NULL_KEY); }
     link_message(integer sender,integer number,string text,key id){
         if(sender != llGetLinkNumber()) return;
+        if(number == 970298){ llMessageLinked(LINK_THIS,970299,"OBSERVE",NULL_KEY); return; }
         if(number == 970290){ llOwnerSay("[Workshop Observe] Free: "+(string)llGetFreeMemory()); return; }
         if(number == 970240 && id != NULL_KEY){ begin(text,id); return; }
         if(number == 970205 && id == gTicket && gTicket != NULL_KEY && gPhase == "EVALUATING"){
