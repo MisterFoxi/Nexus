@@ -1,5 +1,10 @@
 # Workshop v0.9.1: factored coordinator, configuration and interface
 
+> Live P4 observations: add Workshop_Observe in ROOT and follow
+> [the observation installation guide](README_observations.md). This adds an
+> eighth script for read-only consultation. The seven-script crafting setup
+> below remains the baseline. Config now maps the same inputs for both paths.
+
 Run these seven scripts together in the same ROOT prim of an idle workshop:
 
 | Script | Owns |
@@ -81,7 +86,8 @@ ws:inputs plus ws:core are persisted. A second or late mapping result cannot
 replace a pending run. Mapping requests are transient, have a timeout, and are
 never replayed after coordinator reset. A configuration restart rebuilds settings
 without replaying stock transactions or recreating pending output. Inspection
-timeouts now belong to Config; the future adapter API 970240/970241 is unchanged.
+timeouts belong to Config. The live adapter API 970240/970241 and snapshot
+transport are documented in README_observations.md.
 
 The standard check runner includes test_factorization.py for module ordering,
 missing modules, stale replies, resets, storage failure and unchanged stock.

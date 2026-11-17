@@ -1,4 +1,4 @@
-string VERSION = "Workshop v0.9.2 (2026-11-09)";
+string VERSION = "Workshop v0.9.3 (2026-11-16)";
 // Session and treatment coordinator; sole writer of ws:core and ws:collector.
 // ROOT: Config, Interface, HUD, Eval, Output, Storage. See README.md.
 // No ingredient, container, output-DNA or kept-source collection in this script.
@@ -186,6 +186,8 @@ receiveControl(key source, string wire)
     { llMessageLinked(LINK_THIS, 970220, "ACTIVITY|" + llList2String(fields, 5), gRun); return; }
     if (source != gHUD || !validKey(run)) return;
     if (verb == "INSPECT") { llMessageLinked(LINK_THIS, 970256, wire, source); return; }
+    if (llSubStringIndex(verb,"INSPECT_") == 0 && gPhase == "BOUND")
+    { llMessageLinked(LINK_THIS,970247,wire,source); return; }
     if (verb == "BEGIN")
     {
         if (run == gRun && gPhase == "RECEIVING")

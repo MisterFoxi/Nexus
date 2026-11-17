@@ -36,8 +36,8 @@ Create these FURWARE tables in the blank background fields:
 
 Use a readable cream font. Configure FURWARE geometry and colors in-world; the
 controller sends text but does not build table meshes. The name field currently
-reads `Current preparation`; the current consultation response carries description
-text, not a product name. The name and status tables are optional, but recommended.
+reads `Current preparation` until the Workshop returns the ingredient name with
+the observation. The name and status tables are optional, but recommended.
 
 P4 occupies the remaining side of the vertical HUD: local Z = +90 degrees.
 P1 remains at -90, P3 at 180 and P0 at 0. Rotation preserves local X/Y. Adjust
@@ -106,14 +106,14 @@ retains all text and supports optional `P4_NEXT` / `P4_PREV` prims for descripti
 exceeding 24 wrapped lines. These optional navigation prims have no supplied atlas
 artwork. Install them if your descriptions can exceed one text page.
 
-## Workshop integration boundary
+## Workshop connection
 
-This update completes the HUD navigation, texture assignment, rendering and
-request handling. It does not connect the Workshop's 970240 consultation adapter
-to the evaluator's 970204 observation calculation or capture a live ingredient
-snapshot. A Workshop without that adapter returns NOT_IMPLEMENTED (InspectHandler=0)
-or times out if configured to expect a missing adapter. P4 shows this honestly;
-it does not invent descriptions or submit a craft to obtain a result.
+Workshop_Observe now connects the live basket snapshot to Workshop_Eval.
+See `Workshop/README_observations.md` for the required scripts, compiled world
+data and InspectHandler setting. Descriptions are returned together with the
+first source's name. No observation modifies stock or creates a product.
+A disabled handler returns NOT_IMPLEMENTED; missing modules time out explicitly.
+Large baskets or description replies are refused with a readable error.
 
 ## Checks
 

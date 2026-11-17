@@ -36,7 +36,7 @@ integer EVAL_RES = 970201;           // evaluator -> main: result
 integer NOTOK    = -999999;          // Sentinel for an unknown token.
 
 integer GS = 8;                      // Fields per basket group (v0.7: + organ).
-string  VERSION = "Workshop_Eval v0.9.0 (2026-11-16)";
+string  VERSION = "Workshop_Eval v0.9.1 (2026-11-16)";
 // Read-only local consultation: action header + blank line + eight-field groups.
 // Replies on 970205 with OBSERVATIONS|<URL-escaped text>, NO_OBSERVATIONS or ERROR|reason.
 integer OBSERVE_REQ = 970204;
@@ -517,6 +517,9 @@ list parseBasket(string s){
 // Only a complete, already validated snapshot should be submitted by a caller.
 consult(string input, key request){
     if(request == NULL_KEY) return;
+    if(llStringLength(llStringToBase64(input)) > 5460){
+        llMessageLinked(LINK_THIS,OBSERVE_RES,"ERROR|Observation snapshot is too large.",request); return;
+    }
     if(!gConfigReady || gStreamRun != NULL_KEY){
         llMessageLinked(LINK_THIS,OBSERVE_RES,"ERROR|Evaluator busy or configuration unavailable.",request); return;
     }

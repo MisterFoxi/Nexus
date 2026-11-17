@@ -1,6 +1,6 @@
 # Cumulative observations
 
-Workshop_Eval v0.9.0 adds an isolated, read-only local consultation entry point.
+Workshop_Eval v0.9.1 provides an isolated, read-only local consultation entry point.
 Transformation rule selection remains unchanged: most conditions wins, then
 source order. Observation selection instead concatenates every matching
 `observe` description in source order, with one space between descriptions.
@@ -65,14 +65,62 @@ dispatches physical output. Temporary aggregates are cleared before returning.
 
 ## Integration status
 
-The compiler index and cumulative evaluator are implemented and tested. The HUD
-now opens/renders P4 and sends the existing INSPECT request; see
-`Hud/docs/README_P4.md` for textures, prims and installation. The remaining
-Workshop adapter must capture a consistent live basket snapshot and connect
-INSPECT/970240 to the local calculation API. The UI reports an unavailable
-service until that connection exists. Install the generated observation world
-data with the evaluator when connecting the adapter.
+Live consultation is connected. PAUSE opens P4, which requests the current
+preparation's observations. REFRESH repeats the read-only request. BACK cancels
+it locally and releases the Workshop request; it never submits a craft.
 
-The standard Workshop check runner includes `tests/test_observations.py`.
+### Installation
+
+In the Workshop ROOT, add `Workshop_Observe.lsl` and replace `Workshop.lsl`,
+`Workshop_Config.lsl` and `Workshop_Eval.lsl`. Keep the other Workshop scripts.
+In the HUD ROOT, replace `MC_Workshop_Link.lsl` and `MC_P4_Controller.lsl`.
+Keep the existing three-button P1 mapping and P4 tables.
+
+Load world data compiled from laws.src containing `observe`/`describe` rules and
+the `law:observations:*` index, such as `compiler/monde_observations.nc`.
+The existing monde.nc files are not overwritten by this update.
+In bench_config, use `InspectHandler = 1`, or omit it (now enabled by default).
+An existing explicit `InspectHandler = 0` still disables consultation.
+Use the same Genre/Action/HeatAction/DurationAction configuration as the craft.
+Only descriptions defined for that Genre can appear; no match is reported
+explicitly instead of generating invented text.
+
+### Snapshot transport
+
+Config reuses the final craft's pure input mapping and sends
+`970240 / INPUTS|seconds|heat|escapedActionHeader` with the request UUID.
+Workshop_Observe v0.1.1 acknowledges receipt on `970242 / STARTED`.
+Workshop_Config v0.10.1 refuses after three seconds if this acknowledgement is
+missing. After acknowledgement its fallback deadline is later than Observe's
+ten-second deadline, so it cannot mask the specific basket, verification or
+evaluator timeout. Install these two versions together.
+Workshop_Observe asks the authenticated HUD for one held source at a time.
+The HUD reads existing basket records without changing them. A second progressive
+pass recomputes a fingerprint of all basket rows before evaluation: changed rows,
+new/removed rows and unresolved source requests cause an explicit refusal.
+The coordinator forwards only authenticated inspection replies while BOUND.
+
+The MCW messages are INSPECT_NEXT, INSPECT_ROW, INSPECT_END, INSPECT_VERIFY,
+INSPECT_VERIFIED, INSPECT_ERROR and INSPECT_CANCEL, using the existing target,
+session and request UUID envelope. Foreign senders, sessions and requests are
+ignored. Transmission does not use BEGIN/ROW/END craft submission messages.
+
+Workshop_Observe groups the transient rows using the same name/stage and
+first-source metadata convention as the final craft, then calls the existing
+970204 evaluator. Its data is held only in the new script's temporary memory;
+no input spool, final evaluator cache, output record or basket record is written.
+Config returns descriptions and the first source's name to P4. Finalized product
+properties are not predicted or created.
+
+Snapshots are limited to 4095 UTF-8 bytes to bound temporary memory use. Replies
+must fit the existing radio message limit; oversized descriptions return an
+explicit error asking the author to shorten the observation text. No metadata or
+description is silently truncated. Requests time out without replay, and resets
+discard transient consultation data. Missing modules/rules are reported through
+the existing refusal/timeout flow. These limits do not change crafting limits.
+
+The standard Workshop check runner includes `tests/test_observations.py` and
+`tests/test_observation_transport.py`, covering the actual HUD-to-Workshop-to-P4
+path, compiled laws, cancellation, mutation, timeouts and subsequent crafting.
 Tests execute the actual LSL AST; Second Life Mono compilation, free memory and
 UI checks remain separate in-world validation.

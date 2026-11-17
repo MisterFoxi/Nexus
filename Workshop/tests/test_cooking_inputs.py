@@ -98,13 +98,14 @@ class CookingWorkshopTests(unittest.TestCase):
         self.radio('INSPECT', '12.5', '18', source=t.SOURCE)
         self.assertEqual(self.inspections(), [])
         ticket = self.radio('INSPECT', '12.5', '18')
-        self.assertTrue(any(a[2:4] == (970240, 'INPUTS|12.5|18') for a in self.w.replies))
+        self.assertTrue(any(a[2] == 970240 and a[3].startswith('INPUTS|12.5|18|') for a in self.w.replies))
         self.w.emit(t.BENCH, 970241, 'STATE|warm', t.RUN); self.w.drain(20000)
         self.assertEqual(self.inspections(), [])
         self.w.emit(t.BENCH, 970241, 'STATE|warm', ticket); self.w.drain(20000)
         self.assertTrue(self.inspections()[-1].endswith('|STATE%7Cwarm'))
         self.radio('INSPECT', '16', '18'); self.advance(15)
-        self.assertTrue(self.inspections()[-1].endswith('|UNAVAILABLE'))
+        from urllib.parse import unquote
+        self.assertIn('Workshop_Observe did not acknowledge',unquote(self.inspections()[-1]))
         self.assertEqual(self.core.global_vars['gPhase'], 'BOUND')
         self.assertEqual(self.w.stock[t.SOURCE], [9, 1])
 

@@ -1,4 +1,4 @@
-string VERSION = "MC_P4_Controller v0.2.0 (2026-11-16)";
+string VERSION = "MC_P4_Controller v0.2.1 (2026-11-16)";
 // ROOT beside FURWARE. Read-only observation view; no stock or craft submission.
 string ATLAS = "Atlas_obs";
 string BACK_PRIM = "P4_ACTION1";
@@ -172,11 +172,13 @@ button(string name)
 result(string text)
 {
     gPending = FALSE; gRequest = NULL_KEY; llSetTimerEvent(0.0);
+    list parts = llParseStringKeepNulls(text,["|"],[]);
+    if(llGetListLength(parts) > 2) gName = llUnescapeURL(llList2String(parts,2));
     if(llSubStringIndex(text,"OBSERVATIONS|") == 0){
-        gBody = llUnescapeURL(llGetSubString(text,13,-1));
+        gBody = llUnescapeURL(llList2String(parts,1));
         gStatus = "Observation captured; REFRESH to update";
     }
-    else if(text == "NO_OBSERVATIONS"){
+    else if(llList2String(parts,0) == "NO_OBSERVATIONS"){
         gBody = "There are no observations for the current preparation.";
         gStatus = "No matching observation";
     }

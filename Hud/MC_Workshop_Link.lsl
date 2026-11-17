@@ -1,4 +1,4 @@
-string VERSION = "MC_Workshop_Link v0.9.2 (2026-11-16)";
+string VERSION = "MC_Workshop_Link v0.10.1 (2026-11-17)";
 // ROOT. HUD-only Workshop endpoint. MCW contract: docs/README_workshop_link.md.
 // Basket/stock belongs to Selected; active time belongs to MC_P1_Animation.
 integer CHANNEL = -918275;
@@ -23,13 +23,81 @@ integer gActivity;
 // Read-only requests are deliberately transient: never replay after reset.
 key gInspectTicket = NULL_KEY;
 integer gInspectDeadline;
+string gInspectWaiting;
+integer gInspectOffset;
+integer gInspectSources;
+integer gInspectDone;
+integer gInspectScanning;
+integer gInspectVerify;
+string gInspectHash;
+string gInspectCheckHash;
+integer gInspectCheckOffset;
+
+string inspectEnvelope(string verb, string body)
+{
+    string wire = "MCW|"+verb+"|"+(string)gBench+"|"+(string)gSession+"|"+(string)gInspectTicket;
+    if(body != "") wire += "|"+body;
+    return wire;
+}
+cancelInspect()
+{
+    if(gInspectTicket != NULL_KEY) llWhisper(CHANNEL,inspectEnvelope("INSPECT_CANCEL",""));
+}
+inspectError(string reason)
+{
+    llWhisper(CHANNEL,inspectEnvelope("INSPECT_ERROR",llEscapeURL(reason)));
+    inspectReply("ERROR|"+reason);
+}
+inspectStep()
+{
+    if(!gInspectScanning || gInspectTicket == NULL_KEY) return;
+    if(gPhase != "IDLE"){ cancelInspect(); inspectReply("UNAVAILABLE"); return; }
+    integer offset = gInspectOffset;
+    if(gInspectVerify) offset = gInspectCheckOffset;
+    list keys = llLinksetDataFindKeys("^mc:simple:row:",offset,1);
+    if(!llGetListLength(keys)){
+        gInspectScanning = FALSE;
+        if(gInspectVerify){
+            if(gInspectCheckHash != gInspectHash){ inspectError("Basket changed during observation. Try REFRESH."); return; }
+            llWhisper(CHANNEL,inspectEnvelope("INSPECT_VERIFIED",gInspectHash));
+        }
+        else{
+            gInspectDone = TRUE;
+            llWhisper(CHANNEL,inspectEnvelope("INSPECT_END",(string)gInspectSources+"|"+gInspectHash));
+        }
+        return;
+    }
+    string name = llList2String(keys,0);
+    string raw = llLinksetDataRead(name);
+    list row = llParseStringKeepNulls(raw,["|"],[]);
+    integer quantity = llList2Integer(row,0);
+    if(llGetListLength(row) != 6 || quantity < 0 || (string)quantity != llList2String(row,0)
+        || llList2String(row,2) != ""){
+        inspectError("Ingredient update pending or invalid basket row."); return;
+    }
+    if(gInspectVerify){
+        gInspectCheckHash=llMD5String(gInspectCheckHash+name+"="+raw,0); ++gInspectCheckOffset;
+    }
+    else{
+        gInspectHash=llMD5String(gInspectHash+name+"="+raw,0); ++gInspectOffset;
+        if(quantity > 0){
+            string wire=inspectEnvelope("INSPECT_ROW",(string)gInspectOffset+"|"+(string)quantity+"|"+llList2String(row,5));
+            if(llStringLength(llStringToBase64(wire)) > 1364){ inspectError("Ingredient metadata exceeds one observation message."); return; }
+            ++gInspectSources; gInspectScanning=FALSE;
+            llWhisper(CHANNEL,wire); return;
+        }
+    }
+    llMessageLinked(LINK_THIS,918414,"STEP",gInspectTicket);
+}
 
 inspectReply(string text)
 {
     key ticket = gInspectTicket;
     gInspectTicket = NULL_KEY; gInspectDeadline = 0;
+    gInspectScanning = FALSE;
     llMessageLinked(LINK_THIS, 918398, text, ticket);
-    llOwnerSay("[Product test] " + text);
+    if(llSubStringIndex(text,"ERROR|") == 0)
+        llOwnerSay("[Observation] " + llGetSubString(text,6,-1));
 }
 
 integer validKey(key value)
@@ -110,7 +178,7 @@ choose(string choice)
         else llOwnerSay("[Workshop HUD] Treatment pending. No new treatment sent.");
         return;
     }
-    if (gInspectTicket != NULL_KEY) inspectReply("UNAVAILABLE");
+    if (gInspectTicket != NULL_KEY) { cancelInspect(); inspectReply("UNAVAILABLE"); }
     if (choice == "EXIT")
     {
         gRun = llGenerateKey(); gPhase = "EXITING"; gWire = "";
@@ -160,13 +228,17 @@ default
     link_message(integer sender, integer number, string text, key ticket)
     {
         if (sender != llGetLinkNumber() || gFault) return;
+        if(number == 918414 && text == "STEP" && ticket == gInspectTicket && ticket != NULL_KEY){ inspectStep(); return; }
         if (number == 918397 && text == "CANCEL" && ticket == gInspectTicket && ticket != NULL_KEY)
-        { inspectReply("CANCELLED"); return; }
+        { cancelInspect(); inspectReply("CANCELLED"); return; }
         if (number == 918397 && text == "TEST" && ticket != NULL_KEY)
         {
             if (gSession == NULL_KEY || gPhase != "IDLE" || gInspectTicket != NULL_KEY)
             { llMessageLinked(LINK_THIS, 918398, "UNAVAILABLE", ticket); return; }
             gInspectTicket = ticket; gInspectDeadline = llGetUnixTime() + 15;
+            gInspectWaiting = "Preparation clock did not reply (MC_P1_Animation).";
+            gInspectOffset=0; gInspectSources=0; gInspectDone=FALSE; gInspectScanning=FALSE;
+            gInspectVerify=FALSE; gInspectHash=""; gInspectCheckHash=""; gInspectCheckOffset=0;
             llMessageLinked(LINK_THIS, 918372, "INSPECT", ticket);
             return;
         }
@@ -175,6 +247,7 @@ default
             list inputs = llParseStringKeepNulls(text, ["|"], []);
             if (gPhase != "IDLE" || llGetListLength(inputs) != 3 || llList2String(inputs, 0) != "OK")
             { inspectReply("UNAVAILABLE"); return; }
+            gInspectWaiting = "Workshop did not start the observation. Check Workshop, Workshop_Config and Workshop_Observe.";
             llWhisper(CHANNEL, "MCW|INSPECT|" + (string)gBench + "|" + (string)gSession
                 + "|" + (string)ticket + "|" + llList2String(inputs, 1) + "|" + llList2String(inputs, 2));
             return;
@@ -308,10 +381,29 @@ default
         }
         if (source != gBench || llList2Key(fields, 2) != llGetKey()
             || llList2Key(fields, 3) != gSession || gSession == NULL_KEY) return;
+        if(llList2Key(fields,4) == gInspectTicket && gInspectTicket != NULL_KEY && gPhase == "IDLE"){
+            if(verb == "INSPECT_NEXT" && llGetListLength(fields) == 6 && !gInspectVerify){
+                gInspectWaiting = "Workshop did not finish reading the observation basket.";
+                integer offset = llList2Integer(fields,5);
+                if((string)offset != llList2String(fields,5) || offset != gInspectOffset || gInspectScanning) return;
+                if(gInspectDone) llWhisper(CHANNEL,inspectEnvelope("INSPECT_END",(string)gInspectSources+"|"+gInspectHash));
+                else{ gInspectScanning=TRUE; llMessageLinked(LINK_THIS,918414,"STEP",gInspectTicket); }
+                return;
+            }
+            if(verb == "INSPECT_VERIFY" && llGetListLength(fields) == 5 && gInspectDone && !gInspectVerify){
+                gInspectWaiting = "Workshop did not return the observation result after basket transfer.";
+                gInspectVerify=TRUE; gInspectCheckOffset=0; gInspectCheckHash=""; gInspectScanning=TRUE;
+                llMessageLinked(LINK_THIS,918414,"STEP",gInspectTicket); return;
+            }
+        }
         if (verb == "INSPECT_REPLY" && llGetListLength(fields) == 6
             && llList2Key(fields, 4) == gInspectTicket && gInspectTicket != NULL_KEY)
         {
-            if (gPhase == "IDLE") inspectReply(llUnescapeURL(llList2String(fields, 5)));
+            if (gPhase == "IDLE") {
+                string reply = llUnescapeURL(llList2String(fields, 5));
+                if(reply == "UNAVAILABLE") reply = "ERROR|Workshop observation service did not return a result (Workshop_Observe / Workshop_Eval).";
+                inspectReply(reply);
+            }
             else inspectReply("UNAVAILABLE");
             return;
         }
@@ -431,7 +523,8 @@ default
     {
         // These local requests are idempotent. Source operations are NEVER resent here.
         if (gFault) return;
-        if (gInspectTicket != NULL_KEY && llGetUnixTime() >= gInspectDeadline) inspectReply("UNAVAILABLE");
+        if (gInspectTicket != NULL_KEY && llGetUnixTime() >= gInspectDeadline)
+        { cancelInspect(); inspectReply("ERROR|" + gInspectWaiting); }
         if (gActivity && gPhase == "IDLE" && gSession != NULL_KEY)
             llWhisper(CHANNEL, header("ACTIVITY") + "|1");
         // Status can recover a lost final confirmation. Never replay TRANSFER or CONFIG.

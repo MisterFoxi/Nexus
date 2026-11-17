@@ -59,9 +59,8 @@ The compiler also emits `law:observations:count` and an ordered
 `*` as its condition, preserving its meaning through the notecard loader.
 
 Workshop_Eval implements the local consultation API documented in
-`Workshop/README_observations.md`. The P4 HUD display now sends INSPECT requests,
-but the live basket snapshot and Workshop adapter are not connected to the
-calculation API yet. A transformation description
+`Workshop/README_observations.md`. Workshop_Observe now connects the P4 INSPECT
+request and a verified live basket snapshot to the calculation API. A transformation description
 describes its result, not automatically its state before transformation. Hidden
 properties are not revealed unless the author explicitly writes an observation
 for them.

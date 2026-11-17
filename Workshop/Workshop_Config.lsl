@@ -1,4 +1,4 @@
-string VERSION = "Workshop_Config v0.9.1 (2026-11-02)";
+string VERSION = "Workshop_Config v0.10.1 (2026-11-17)";
 // ROOT. Owns notecard parsing, bounded input mapping and read-only inspection hook.
 // Never writes ws:core, acknowledges ingredient rows, evaluates or delivers products.
 string gKind;
@@ -26,6 +26,7 @@ string gNotecard;
 key gRequest = NULL_KEY;
 key gInspectTicket = NULL_KEY;
 integer gInspectDeadline;
+integer gInspectAccepted;
 key gInspectSession = NULL_KEY;
 key gInspectHUD = NULL_KEY;
 
@@ -56,7 +57,7 @@ loadConfig(key request)
     gRequest = request;
     gConfigReady = FALSE; gActions = []; gKind = ""; gWorkshopType = ""; gHudObject = "";
     gSingle = TRUE; gKeep = FALSE; gDev = TRUE; gScale = 1.0; gMax = 10;
-    gHeatAction = ""; gDurationAction = ""; gDurationScale = 1.0; gDurationMax = 3600; gInspectHandler = FALSE;
+    gHeatAction = ""; gDurationAction = ""; gDurationScale = 1.0; gDurationMax = 3600; gInspectHandler = TRUE;
     gHover = TRUE;
     gCookSound = "cook_sound"; gReadySound = "ready_sound"; gFailSound = "fail_sound";
     gNotecard = configNotecard();
@@ -97,31 +98,8 @@ applyConfig(string data)
     else if (name == "inspecthandler") gInspectHandler = (integer)value != 0;
 }
 
-prepare(string wire, key run)
+string actionHeader(float elapsed, integer heat)
 {
-    list fields = llParseStringKeepNulls(wire, ["|"], []);
-    list sessionData = llJson2List(llLinksetDataRead("ws:core"));
-    if (!gConfigReady || llList2String(sessionData, 4) != "BOUND"
-        || llList2Key(fields, 3) != llList2Key(sessionData, 2) || run == NULL_KEY
-        || llList2Key(fields, 4) != run || (llGetListLength(fields) != 8 && llGetListLength(fields) != 9))
-    { inputError(run, "NO|Configuration%20or%20session%20unavailable"); return; }
-    string choice = llList2String(fields, 5);
-    string seconds = llList2String(fields, 6);
-    integer heat = -1;
-    if (llGetListLength(fields) == 9)
-    {
-        string value = llList2String(fields, 8);
-        heat = (integer)value;
-        if ((string)heat != value || heat < 0 || heat > 30)
-        { inputError(run, "NO|Invalid%20heat%20input"); return; }
-    }
-    if (gHeatAction != "" && heat < 0)
-    { inputError(run, "NO|Heat%20input%20required"); return; }
-    if ((choice != "CONTAINER" && choice != "KEEP") || (choice == "KEEP" && !gKeep)
-        || llJsonValueType(seconds, []) != JSON_NUMBER || (float)seconds < 0.0
-        || llList2String(fields, 7) != "0")
-    { inputError(run, "NO|Invalid%20choice%20or%20gesture"); return; }
-    float elapsed = (float)seconds;
     string action = "";
     integer value = llRound(elapsed * gScale);
     if (value < 0) value = 0;
@@ -147,7 +125,35 @@ prepare(string wire, key run)
         if (action != "") action += "^";
         action += gDurationAction + "=" + (string)intensity;
     }
-    llMessageLinked(LINK_THIS, 970255, llList2Json(JSON_ARRAY, [choice, elapsed, heat, action]), run);
+    return action;
+}
+
+prepare(string wire, key run)
+{
+    list fields = llParseStringKeepNulls(wire, ["|"], []);
+    list sessionData = llJson2List(llLinksetDataRead("ws:core"));
+    if (!gConfigReady || llList2String(sessionData, 4) != "BOUND"
+        || llList2Key(fields, 3) != llList2Key(sessionData, 2) || run == NULL_KEY
+        || llList2Key(fields, 4) != run || (llGetListLength(fields) != 8 && llGetListLength(fields) != 9))
+    { inputError(run, "NO|Configuration%20or%20session%20unavailable"); return; }
+    string choice = llList2String(fields, 5);
+    string seconds = llList2String(fields, 6);
+    integer heat = -1;
+    if (llGetListLength(fields) == 9)
+    {
+        string value = llList2String(fields, 8);
+        heat = (integer)value;
+        if ((string)heat != value || heat < 0 || heat > 30)
+        { inputError(run, "NO|Invalid%20heat%20input"); return; }
+    }
+    if (gHeatAction != "" && heat < 0)
+    { inputError(run, "NO|Heat%20input%20required"); return; }
+    if ((choice != "CONTAINER" && choice != "KEEP") || (choice == "KEEP" && !gKeep)
+        || llJsonValueType(seconds, []) != JSON_NUMBER || (float)seconds < 0.0
+        || llList2String(fields, 7) != "0")
+    { inputError(run, "NO|Invalid%20choice%20or%20gesture"); return; }
+    llMessageLinked(LINK_THIS, 970255, llList2Json(JSON_ARRAY,
+        [choice, (float)seconds, heat, actionHeader((float)seconds, heat)]), run);
 }
 inspect(string wire, key hud)
 {
@@ -164,13 +170,16 @@ inspect(string wire, key hud)
         || (string)((integer)heat) != heat || (integer)heat < -1 || (integer)heat > 30) return;
     if (!gInspectHandler)
     { sendTo(hud, session, run, "INSPECT_REPLY", "NOT_IMPLEMENTED"); return; }
+    if (gHeatAction != "" && (integer)heat < 0)
+    { sendTo(hud, session, run, "INSPECT_REPLY", llEscapeURL("ERROR|Select heat before starting the preparation.")); return; }
     if (gInspectTicket != NULL_KEY)
     { sendTo(hud, session, run, "INSPECT_REPLY", "BUSY"); return; }
-    gInspectTicket = run; gInspectDeadline = llGetUnixTime() + 10;
-    llSetTimerEvent(5.0);
+    gInspectTicket = run; gInspectAccepted = FALSE;
+    gInspectDeadline = llGetUnixTime() + 3;
+    llSetTimerEvent(1.0);
     gInspectSession = session; gInspectHUD = hud;
-    // Future product consultation adapter. No evaluator, output or stock action here.
-    llMessageLinked(LINK_THIS, 970240, "INPUTS|" + seconds + "|" + heat, run);
+    llMessageLinked(LINK_THIS, 970240, "INPUTS|" + seconds + "|" + heat
+        + "|" + llEscapeURL(actionHeader((float)seconds,(integer)heat)), run);
     return;
 }
 finishInspect(string result)
@@ -178,7 +187,12 @@ finishInspect(string result)
     list sessionData = llJson2List(llLinksetDataRead("ws:core"));
     if (llList2String(sessionData, 4) == "BOUND" && gInspectSession == llList2Key(sessionData, 2)
         && gInspectHUD == llList2Key(sessionData, 1))
-        sendTo(gInspectHUD, gInspectSession, gInspectTicket, "INSPECT_REPLY", llEscapeURL(result));
+    {
+        string body = llEscapeURL(result);
+        string wire = "MCW|INSPECT_REPLY|"+(string)gInspectHUD+"|"+(string)gInspectSession+"|"+(string)gInspectTicket+"|"+body;
+        if(llStringLength(llStringToBase64(wire)) > 1364) body = llEscapeURL("ERROR|Observation text is too long for one reply. Shorten the descriptions in laws.src.");
+        sendTo(gInspectHUD, gInspectSession, gInspectTicket, "INSPECT_REPLY", body);
+    }
     gInspectTicket = NULL_KEY; gInspectDeadline = 0;
     llSetTimerEvent(0.0);
 }
@@ -227,6 +241,14 @@ default
     link_message(integer sender, integer number, string text, key request)
     {
         if (sender != llGetLinkNumber()) return;
+        if(number == 970247 && gInspectTicket != NULL_KEY && request == gInspectHUD){
+            list fields = llParseStringKeepNulls(text,["|"],[]);
+            if(llList2String(fields,1) == "INSPECT_CANCEL" && llList2Key(fields,3) == gInspectSession
+                && llList2Key(fields,4) == gInspectTicket){
+                gInspectTicket = NULL_KEY; gInspectDeadline = 0; llSetTimerEvent(0.0);
+            }
+            return;
+        }
         if (number == 970290) { llOwnerSay("[Workshop config] Free: " + (string)llGetFreeMemory()); return; }
         if (number == 970250)
         {
@@ -242,7 +264,20 @@ default
         }
         if (number == 970254 && request != NULL_KEY) { prepare(text, request); return; }
         if (number == 970256) { inspect(text, request); return; }
+        if (number == 970242 && request == gInspectTicket && request != NULL_KEY && text == "STARTED") {
+            if(!gInspectAccepted) {
+                gInspectAccepted = TRUE;
+                // Observe owns its 10-second deadline. Let its precise error arrive first.
+                gInspectDeadline = llGetUnixTime() + 12;
+            }
+            return;
+        }
         if (number == 970241 && request == gInspectTicket && request != NULL_KEY) finishInspect(text);
     }
-    timer() { if (gInspectTicket != NULL_KEY && llGetUnixTime() >= gInspectDeadline) finishInspect("UNAVAILABLE"); }
+    timer() {
+        if (gInspectTicket != NULL_KEY && llGetUnixTime() >= gInspectDeadline) {
+            if(!gInspectAccepted) finishInspect("ERROR|Workshop_Observe did not acknowledge the request. It must be compiled and running in the workshop ROOT (v0.1.1 or newer).");
+            else finishInspect("ERROR|Workshop_Observe started but stopped responding before returning a result.");
+        }
+    }
 }

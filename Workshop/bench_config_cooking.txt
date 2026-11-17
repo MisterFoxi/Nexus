@@ -14,9 +14,8 @@ HeatAction = fab.thermal
 DurationScale = 1.0
 DurationMax = 3600
 
-# Optional consultation adapter is NOT implemented in this release.
-# Leave at 0 until a ROOT adapter handles 970240/970241 (see README_cooking_inputs).
-InspectHandler = 0
+# Read-only consultation, handled by Workshop_Observe in ROOT.
+InspectHandler = 1
 
 MaxEffect = 50
 FluxAbs = 1

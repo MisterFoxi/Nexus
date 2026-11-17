@@ -79,9 +79,10 @@ the ninth field and refuses missing/malformed heat before accepting ingredients.
 ws:inputs stores [treatment, rawActiveSeconds, heat] before the BEGIN ACK;
 the existing durable ws:core action header retains the evaluator values on reset.
 
-## Consultation extension point (step 3; step 1 remains to implement)
+## Live consultation
 
-An optional P1_TEST prim sends 918397 / TEST with a fresh UUID. A UI script can
+P1 PAUSE opens P4 after checkpointing the clock. P4 sends 918397 / TEST with a
+fresh UUID; REFRESH requests a new observation. An optional P1_TEST prim or UI script can
 send the same message directly. The result is 918398 with that same UUID.
 MC_P1_Animation reads live inputs without pausing its clock or finalizing the basket.
 
@@ -92,25 +93,25 @@ WS -> HUD: MCW|INSPECT_REPLY|hud|session|requestUUID|escapedResult
 
 Only the associated HUD/session is accepted, while the station is BOUND and the
 HUD is IDLE with a started, usable preparation. This request UUID is independent
-from treatment UUIDs. No BEGIN/END, ingredient COMMIT/RETURN, evaluation, output
+from treatment UUIDs. No craft BEGIN/END, ingredient COMMIT/RETURN, final recipe evaluation, output
 creation, or physical sampling occurs. Test requests are transient and never
 replayed on reset or timeout. Late/foreign responses are ignored.
 
-With InspectHandler=0, the reply is NOT_IMPLEMENTED. This is intentional: it is
-not a fabricated preview. To connect a future consultation adapter in WS ROOT,
-set InspectHandler=1 and implement:
+Workshop_Observe implements the ROOT adapter. Set InspectHandler=1 or omit it
+(enabled by default). InspectHandler=0 explicitly disables it and returns
+NOT_IMPLEMENTED. The local adapter protocol is:
 
 | Direction | Link message | Payload | id |
 |---|---|---|---|
-| WS -> adapter | 970240 | INPUTS\|activeSeconds\|heatIntensity | requestUUID |
+| WS -> adapter | 970240 | INPUTS\|activeSeconds\|heatIntensity\|escapedActionHeader | requestUUID |
 | Adapter -> WS | 970241 | result text (WS escapes it on radio) | same requestUUID |
 
 One request can be pending at a time. Missing adapter response returns UNAVAILABLE
 after about 10 seconds (checked on Config's 5-second timer); the HUD has its
-own 15-second timeout. A real adapter must obtain a non-destructive basket snapshot
-and run an isolated consultation calculation. It must not reuse the final evaluator
-cache, draw away the final treatment's random outcome, mutate product/stock, or
-pause the live clock. These are the requirements for the later product-state view.
+own 15-second timeout. The adapter obtains a basket snapshot and verifies it with
+a second read before isolated observation matching. It never writes the final
+evaluator cache, draws a random value, changes product/stock or changes the clock.
+See Workshop/README_observations.md for installation and transport limits.
 
 ## Validation
 
@@ -118,5 +119,5 @@ The standard HUD/Workshop check runners include test_cooking_inputs.py. They
 exercise real parsed LSL scripts with mocked SL services: independent axes and
 law conditions, invalid/missing heat, resets, legacy behavior, owner controls,
 authenticated consultation, timeouts and unchanged stock during tests.
-Visual geometry, in-world Mono memory, and the future product-state display still
+Visual geometry, in-world Mono memory, and the P4 display still
 require Second Life validation.

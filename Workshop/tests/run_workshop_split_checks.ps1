@@ -25,3 +25,6 @@ if ($LASTEXITCODE) { throw 'Workshop module factorization checks failed' }
 
 & (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_observations.py')
 if ($LASTEXITCODE) { throw 'Cumulative observation checks failed' }
+
+& (Join-Path $splitRuntime 'python\python.exe') (Join-Path $PSScriptRoot 'test_observation_transport.py')
+if ($LASTEXITCODE) { throw 'Live observation transport checks failed' }
