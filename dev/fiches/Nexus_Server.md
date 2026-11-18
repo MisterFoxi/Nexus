@@ -12,7 +12,7 @@ The single in-sim authority, over two planes on one prim:
 
 ## Current version
 
-`v0.3.0 (SCRIPT_NAME "Nexus_Server")` — stock plane (reserve/commit/release, no TTL, declarative RESERVE) **+ world plane** (ingest/version/stream, `HELLO`/`WORLD_*`).
+`v0.3.2 (SCRIPT_NAME "Nexus_Server")` — stock plane (reserve/commit/release, no TTL, declarative RESERVE) **+ world plane** (ingest/version/stream, `HELLO`/`WORLD_*`) **+ owner-touch bench dump**.
 
 ## Changelog
 
@@ -21,6 +21,8 @@ The single in-sim authority, over two planes on one prim:
 | v0.1.0 | 2026-11-17 | created — REGISTER/QTY, RESERVE/COMMIT/RELEASE (ticket, held-subtracted-at-reserve), DISCARD, DISCOVER, 30 s TTL sweep; `NULL_KEY` type fix |
 | v0.2.0 | 2026-11-17 | temporal/pause review: **removed TTL + auto-release sweep** (reservation held by the bench until COMMIT/RELEASE); **RESERVE is now declarative** (set the ticket's held set = desired basket → idempotent, handles pick/unpick by delta); RELEASE = whole ticket; ticket record `state|pairs` (dropped the deadline field) |
 | v0.3.0 | 2026-11-18 | **world plane added** (WS_Boot's counterpart): ingest `monde.nc`→LSD at boot and on `CHANGED_INVENTORY`; version = `ver =` header if present else folded-md5 `sig-…`; `HELLO` → `WORLD_OK` (cache hit) or `WORLD_BEGIN`/`WORLD_CHUNK`(opaque, `\n`-packed)/`WORLD_END`; `WORLD_WAIT` pre-ingest; `WORLD_BUMP` broadcast on version change; `sv:bench:*` info registry. Stock plane byte-unchanged |
+| v0.3.1 | 2026-11-18 | fix: `reserveSet` local `state` renamed `tstate` (`state` is an LSL reserved word → strict parser rejected it; latent since v0.1.0). Include directive de-extensioned (`"nexus_header"`). No interface change |
+| v0.3.2 | 2026-11-18 | admin: owner **touch** → `dumpBenches()` lists the `sv:bench:*` registry (each WS key + world version last served) with a world/stock header line. Read-only |
 
 ## Dependencies
 
@@ -48,6 +50,7 @@ The single in-sim authority, over two planes on one prim:
 | out | `WORLD_BEGIN` / `WORLD_CHUNK` / `WORLD_END` | ver, n / ver, seq, payload / ver, nChunks | directed stream; payload opaque, lines `\n`-joined |
 | out | `WORLD_WAIT` | — | world not yet ingested; WS retries on `WORLD_BUMP`/shortly |
 | out | `WORLD_BUMP` | ver | broadcast: world re-ingested with a new version → benches re-HELLO |
+| in | owner `touch` | — | `dumpBenches()` → owner-say the `sv:bench:*` registry + world/stock header |
 | in | link `970290` | — | memory report |
 
 ## State & persistence

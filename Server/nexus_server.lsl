@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "Nexus_Server"
-#define SCRIPT_VERSION "v0.3.1"
+#define SCRIPT_VERSION "v0.3.2"
 #include "nexus_header"
 
 // Nexus server (Model 1: physical objects + server referee).
@@ -267,6 +267,21 @@ hello(key wsKey, string cachedVer, key who){
     streamWorld(who, ver);
 }
 
+// ---------- admin: dump the registered benches (owner touch) ----------
+// Lists the sv:bench:* registry: each WS key that has said HELLO, with the world version last served to it.
+dumpBenches(){
+    list ks = llLinksetDataFindKeys("^sv:bench:", 0, 256);
+    integer n = llGetListLength(ks);
+    llOwnerSay("[Nexus] server dump | world ver " + llLinksetDataRead("w:ver")
+        + " (" + llLinksetDataRead("w:n") + " lines) | benches registered: " + (string)n);
+    integer i;
+    for(i = 0; i < n; ++i){
+        string k = llList2String(ks, i);
+        llOwnerSay("  WS " + llGetSubString(k, 9, -1) + " -> world " + llLinksetDataRead(k));   // strip "sv:bench:" (9 chars)
+    }
+    if(n == 0) llOwnerSay("  (no bench has said HELLO yet)");
+}
+
 default
 {
     state_entry()
@@ -277,6 +292,7 @@ default
         startWorldIngest();                                         // ingest world into LSD (cold plane)
     }
     on_rez(integer p){ llResetScript(); }
+    touch_start(integer tn){ if(llDetectedKey(0) == llGetOwner()) dumpBenches(); }   // owner: dump registered benches
     changed(integer c)
     {
         if(c & CHANGED_OWNER){ llResetScript(); return; }
