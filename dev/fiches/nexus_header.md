@@ -10,13 +10,14 @@ Shared `#include` providing the standard boot banner and the on-demand memory re
 
 ## Current version
 
-`v0.1.0 (2026-11-17)` — preproc: host script defines `SCRIPT_NAME` / `SCRIPT_VERSION` / `SCRIPT_DATE` before including.
+`v0.2.0 (2026-11-18)` — host script defines `SCRIPT_NAME` / `SCRIPT_VERSION` before including (date automatic via `__DATE__`); banner and report now show **heap + lsd**.
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v0.1.0 | 2026-11-17 | created — banner + memory report + `#ifndef` guard |
+| v0.2.0 | 2026-11-18 | banner/report add LSD: `heap <b> \| lsd <b> free` (`llLinksetDataAvailable()`); `free` renamed `heap`; include example de-extensioned (`"nexus_header"`) |
 
 ## Dependencies
 
@@ -30,7 +31,7 @@ Shared `#include` providing the standard boot banner and the on-demand memory re
 | Dir | Code / verb | Payload | Trigger / effect |
 |---|---|---|---|
 | — | `nexusBoot()` | — | called first in `state_entry()`; prints boot banner |
-| in | link `970290` | any | host routes it to `nexusMemReport()` → prints free + observed min |
+| in | link `970290` | any | host routes it to `nexusMemReport()` → prints heap + observed min + lsd free |
 | out | `llOwnerSay` | — | banner line (boot) and report line (on demand) |
 
 ## State & persistence

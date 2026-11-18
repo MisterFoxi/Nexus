@@ -29,24 +29,23 @@ The **date** always accompanies the version: `v0.3.1 (2026-11-18)`.
 Every script prints, as the very first thing in `state_entry()`, one line in a single format:
 
 ```
-[Nexus] <ScriptName> v<MAJOR.MINOR.PATCH> (<date>) | free <bytes> b
+[Nexus] <ScriptName> v<MAJOR.MINOR.PATCH> (<date>) | heap <bytes> b | lsd <bytes> b free
 ```
 
-`free` = `llGetFreeMemory()` read at boot — the script's memory starting point.
+`heap` = `llGetFreeMemory()` (this script's free Mono memory, its starting point); `lsd` = `llLinksetDataAvailable()` (free bytes in the shared linkset datastore). Both read at boot.
 
 ### Single source via preprocessor (`#include`)
 
 The official SL VSCode plugin supports a C-style preprocessor (`#include`, `#define` incl. function-like macros, `#ifdef/#ifndef/#if/#elif/#else`, include guards, circular-include protection). Confirmed.
 
-Includes resolve via `slVscodeEdit.preprocessor.includePaths` (default `"."`, `"./include/"`, `"**/include/"`). Canonical home: **`include/nexus_header.lsl`** → `#include "nexus_header.lsl"` resolves from any script with no relative path. Compilation happens **in the viewer** (the plugin shows compile errors in real time on save); there is no bundled optimizer.
+Includes resolve via `slVscodeEdit.preprocessor.includePaths` (default `"."`, `"./include/"`, `"**/include/"`). Canonical home: **`include/nexus_header.lsl`** → `#include "nexus_header"` resolves from any script with no relative path. **Never put the extension on the include directive** — base name only (`"nexus_header"`, not `"nexus_header.lsl"`). Compilation happens **in the viewer** (the plugin shows compile errors in real time on save); there is no bundled optimizer.
 
 The banner format and the memory report live in **one shared file**, included everywhere. Each script only declares its identity:
 
 ```lsl
 #define SCRIPT_NAME    "Workshop_Eval"
 #define SCRIPT_VERSION "v0.1.0"
-#define SCRIPT_DATE    "2026-11-18"
-#include "nexus_header.lsl"
+#include "nexus_header"
 ```
 
 `nexus_header.lsl` (to be written, specified here) provides:
@@ -62,7 +61,7 @@ The banner format and the memory report live in **one shared file**, included ev
 A reserved link-message code triggers, in every script of the linkset, a report:
 
 ```
-[Nexus] <ScriptName> free <bytes> b | observed min <bytes> b
+[Nexus] <ScriptName> heap <bytes> b | observed min <bytes> b | lsd <bytes> b free
 ```
 
 - Reserved code: **970290** (carried over from the old base; to be fixed in `nexus_header.lsl`).

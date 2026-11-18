@@ -1,30 +1,61 @@
 #define SCRIPT_NAME    "Nexus_Server"
-#define SCRIPT_VERSION "v0.2.0"
-#include "nexus_header.lsl"
+#define SCRIPT_VERSION "v0.3.1"
+#include "nexus_header"
 
-// Nexus stock server (Model 1: physical objects + server referee).
-// Authority on QUANTITIES only. See dev/stock-protocol.md.
-// Single fixed prim. Ledger + ticket holds live in LinksetData, survive reset/re-rez.
+// Nexus server (Model 1: physical objects + server referee).
+// TWO planes, one prim, one channel for now (stock-protocol §7):
+//   STOCK plane (hot)  : authority on QUANTITIES. reserve/commit/release.
+//   WORLD plane (cold) : authority on the compiled dictionaries. pull + cache, versioned.
+// Ledger + ticket holds + world buffer live in LinksetData, survive reset/re-rez.
 //
-// Wire (region say on NX_STOCK, fields "|"):
+// STOCK wire (region say on NX_STOCK, fields "|"):
 //   component -> srv : NX|REGISTER|<sid>|<owner>|<dnaHash>|<expiryUnix>|<initQty>
 //   srv -> *         : NX|QTY|<sid>|<available>          (available = total minus all reserved)
 //   any -> srv       : NX|DISCOVER|<owner>|<name>        srv -> who : NX|SERVER|<srvKey>
 //   ws  -> srv       : NX|RESERVE|<ticket>|<sid>:<u>^... (DECLARATIVE: the ticket should hold exactly this set)
 //                      srv -> ws : NX|RES_OK|<ticket> | NX|RES_NO|<ticket>|<sid>:<avail>^...
 //   ws  -> srv       : NX|COMMIT|<ticket>[|OUT|<newSid>|<qty>|<dnaHash>]  srv -> ws : NX|COMMIT_OK|<ticket> | NX|COMMIT_NO|<ticket>
-//   ws  -> srv       : NX|RELEASE|<ticket>               srv -> ws : NX|REL_OK|<ticket>   (whole ticket; unpick = a smaller RESERVE)
+//   ws  -> srv       : NX|RELEASE|<ticket>               srv -> ws : NX|REL_OK|<ticket>
 //   any -> srv       : NX|DISCARD|<sid>                  srv -> * : NX|QTY|<sid>|0
 //
-// Model: reserve at pick / commit at take / release at discard. The reservation is held by the BENCH for the
-// whole (possibly paused) craft: NO TTL, NO keep-alive. Freed only by COMMIT or RELEASE (a human act). RESERVE
-// is declarative and idempotent by construction (re-sending the same set is a no-op); COMMIT/RELEASE idempotent
-// by ticket state. Redo on loss. No ACK/sequence. Ever.
+// WORLD wire (region say on NX_STOCK, fields "|"; payload is OPAQUE -> extract by position, never re-split):
+//   ws  -> srv : NX|HELLO|<wsKey>|<cachedVer>
+//   srv -> ws  : NX|WORLD_OK|<ver>                       cache valid -> WS boots from LSD, no transfer
+//   srv -> ws  : NX|WORLD_BEGIN|<ver>|<nLines>
+//   srv -> ws  : NX|WORLD_CHUNK|<ver>|<seq>|<payload>    payload = world lines joined by "\n"
+//   srv -> ws  : NX|WORLD_END|<ver>|<nChunks>
+//   srv -> ws  : NX|WORLD_WAIT                           world not ingested yet (retry on BUMP/soon)
+//   srv -> *   : NX|WORLD_BUMP|<ver>                     world re-ingested with a new version
+//
+// Version: an "ver = <token>" header line in monde.nc, posted by the compiler (future contract). If absent,
+// the server derives a folded-md5 content signature "sig-<hash>" so the mechanism works today. The header line
+// is metadata: it is NOT stored as world data. Everything else is stored verbatim.
+//
+// Reservation model: reserve at pick / commit at take / release at discard. Held by the BENCH for the whole
+// (possibly paused) craft: NO TTL, NO keep-alive. Freed only by COMMIT or RELEASE. RESERVE is declarative and
+// idempotent; COMMIT/RELEASE idempotent by ticket state. Redo on loss. No ACK/sequence. Ever.
 
 integer NX_STOCK = -918280;          // REVIEW: single channel for cold+hot for now (stock-protocol §7).
 
-// Ledger key  sv:q:<sid>  = "avail|expiryUnix|owner|dnaHash"   (avail = total minus units reserved by any ticket)
-// Ticket key  sv:t:<tk>   = "<state>|<sid>:<u>^..."            state R=reserved C=committed X=released
+// ---- STOCK keys ----
+// Ledger key  sv:q:<sid>   = "avail|expiryUnix|owner|dnaHash"   (avail = total minus units reserved by any ticket)
+// Ticket key  sv:t:<tk>    = "<state>|<sid>:<u>^..."            state R=reserved C=committed X=released
+// ---- WORLD keys ----
+// w:ver  = version token      w:n = stored line count      w:<i> = i-th world data line (verbatim)
+// ---- registry ----
+// sv:bench:<wsKey> = last version served to that bench (info/admin only)
+
+string  WORLD_NC = "monde.nc";       // preferred world notecard; else first card not named bench_config
+integer WORLD_BUDGET = 900;          // max payload chars per WORLD_CHUNK (region say cap ~1024 bytes)
+
+// ---- world ingest state ----
+key     gWorldQ;                     // active notecard read handle
+string  gWorldName;                  // notecard being ingested
+integer gWorldLine;                  // current notecard line number
+integer gWorldIx;                    // stored data-line count
+string  gWorldSig;                   // folded content signature
+string  gWorldVerHdr;                // explicit "ver =" header, if seen
+string  gWorldPrevVer;               // version before this ingest (for BUMP)
 
 sayTo(key who, string msg){ llRegionSayTo(who, NX_STOCK, msg); }
 pushQty(key sid){
@@ -63,8 +94,8 @@ reg(list f, key who){
 // negative deltas (unpick) always apply. Re-sending the same set changes nothing.
 reserveSet(key ticket, string pairs, key who){
     list tr = llParseStringKeepNulls(llLinksetDataRead("sv:t:" + (string)ticket), ["|"], []);
-    string state = llList2String(tr, 0);
-    if(state == "C" || state == "X"){ sayTo(who, "NX|RES_NO|" + (string)ticket + "|"); return; }  // finalized ticket
+    string tstate = llList2String(tr, 0);
+    if(tstate == "C" || tstate == "X"){ sayTo(who, "NX|RES_NO|" + (string)ticket + "|"); return; }  // finalized ticket (state is reserved -> tstate)
 
     list cs; list cu;                              // current held
     list items = llParseStringKeepNulls(llList2String(tr, 1), ["^"], []);
@@ -172,6 +203,70 @@ discard(key sid, key who){
     pushQty(sid);
 }
 
+// ============================================================
+//  WORLD plane — ingest monde.nc into LSD, then stream on demand
+// ============================================================
+
+// notecard to ingest: WORLD_NC if present, else first card that is NOT bench_config
+string pickWorldNC(){
+    if(llGetInventoryType(WORLD_NC) == INVENTORY_NOTECARD) return WORLD_NC;
+    integer n = llGetInventoryNumber(INVENTORY_NOTECARD);
+    integer i;
+    for(i = 0; i < n; ++i){
+        string nm = llGetInventoryName(INVENTORY_NOTECARD, i);
+        if(llToLower(nm) != "bench_config") return nm;
+    }
+    return "";
+}
+
+// wipe the w:* buffer (never touches sv:* stock or registry)
+wipeWorld(){
+    list keys = llLinksetDataFindKeys("^w:", 0, 512);
+    integer guard = 0;
+    while(llGetListLength(keys) > 0 && guard < 20000){
+        integer L = llGetListLength(keys); integer i;
+        for(i = 0; i < L; ++i) llLinksetDataDelete(llList2String(keys, i));
+        guard += L;
+        keys = llLinksetDataFindKeys("^w:", 0, 512);
+    }
+}
+
+startWorldIngest(){
+    gWorldPrevVer = llLinksetDataRead("w:ver");
+    wipeWorld();
+    gWorldLine = 0; gWorldIx = 0; gWorldSig = ""; gWorldVerHdr = "";
+    gWorldName = pickWorldNC();
+    if(gWorldName == ""){ llOwnerSay("[Nexus] server: no world notecard (drop '" + WORLD_NC + "')."); return; }
+    llOwnerSay("[Nexus] server ingesting world '" + gWorldName + "'...");
+    gWorldQ = llGetNotecardLine(gWorldName, 0);
+}
+
+// stream the cached world to one bench, synchronously from LSD (concurrent-safe)
+streamWorld(key who, string ver){
+    integer n = (integer)llLinksetDataRead("w:n");
+    sayTo(who, "NX|WORLD_BEGIN|" + ver + "|" + (string)n);
+    integer i = 0; integer seq = 0; string buf = "";
+    while(i < n){
+        string line = llLinksetDataRead("w:" + (string)i);
+        if(buf != "" && llStringLength(buf) + 1 + llStringLength(line) > WORLD_BUDGET){
+            sayTo(who, "NX|WORLD_CHUNK|" + ver + "|" + (string)seq + "|" + buf);
+            ++seq; buf = "";
+        }
+        if(buf == "") buf = line; else buf += "\n" + line;
+        ++i;
+    }
+    if(buf != ""){ sayTo(who, "NX|WORLD_CHUNK|" + ver + "|" + (string)seq + "|" + buf); ++seq; }
+    sayTo(who, "NX|WORLD_END|" + ver + "|" + (string)seq);
+}
+
+hello(key wsKey, string cachedVer, key who){
+    string ver = llLinksetDataRead("w:ver");
+    if(ver == ""){ sayTo(who, "NX|WORLD_WAIT"); return; }   // world not ingested yet
+    llLinksetDataWrite("sv:bench:" + (string)wsKey, ver);   // registry (info/admin)
+    if(cachedVer == ver){ sayTo(who, "NX|WORLD_OK|" + ver); return; }
+    streamWorld(who, ver);
+}
+
 default
 {
     state_entry()
@@ -179,9 +274,43 @@ default
         nexusBoot();
         llListen(NX_STOCK, "", NULL_KEY, "");
         llRegionSay(NX_STOCK, "NX|SERVER|" + (string)llGetKey());   // announce presence (clients refresh cached key)
+        startWorldIngest();                                         // ingest world into LSD (cold plane)
     }
     on_rez(integer p){ llResetScript(); }
-    changed(integer c){ if(c & CHANGED_OWNER) llResetScript(); }
+    changed(integer c)
+    {
+        if(c & CHANGED_OWNER){ llResetScript(); return; }
+        if(c & CHANGED_INVENTORY) startWorldIngest();               // new monde.nc dropped -> re-ingest + BUMP
+    }
+
+    dataserver(key id, string data)
+    {
+        if(id != gWorldQ) return;
+        if(data == EOF){
+            llLinksetDataWrite("w:n", (string)gWorldIx);
+            string ver = gWorldVerHdr;
+            if(ver == "") ver = "sig-" + gWorldSig;
+            llLinksetDataWrite("w:ver", ver);
+            llOwnerSay("[Nexus] server world ready: " + (string)gWorldIx + " lines, ver " + ver);
+            if(gWorldPrevVer != "" && gWorldPrevVer != ver)
+                llRegionSay(NX_STOCK, "NX|WORLD_BUMP|" + ver);      // tell benches to re-HELLO
+            return;
+        }
+        string line = llStringTrim(data, STRING_TRIM);
+        if(line != "" && llGetSubString(line, 0, 0) != "#"){
+            integer sep = llSubStringIndex(line, "=");
+            string kk = "";
+            if(sep > 0) kk = llStringTrim(llGetSubString(line, 0, sep - 1), STRING_TRIM);
+            if(kk == "ver"){                                        // version header: metadata, not world data
+                gWorldVerHdr = llStringTrim(llGetSubString(line, sep + 1, -1), STRING_TRIM);
+            } else {
+                llLinksetDataWrite("w:" + (string)gWorldIx, line);  // store verbatim (opaque payload)
+                gWorldSig = llMD5String(gWorldSig + line, 0);       // fold content signature (fallback version)
+                ++gWorldIx;
+            }
+        }
+        gWorldQ = llGetNotecardLine(gWorldName, ++gWorldLine);
+    }
 
     listen(integer chan, string nm, key who, string msg)
     {
@@ -190,6 +319,10 @@ default
         if(llList2String(f, 0) != "NX") return;
         string verb = llList2String(f, 1);
 
+        // --- world plane ---
+        if(verb == "HELLO" && llGetListLength(f) == 4){ hello((key)llList2String(f, 2), llList2String(f, 3), who); return; }
+
+        // --- stock plane ---
         if(verb == "DISCOVER"){
             if(llList2Key(f, 2) == llGetOwner() && llList2String(f, 3) == llGetObjectName())
                 sayTo(who, "NX|SERVER|" + (string)llGetKey());
@@ -210,3 +343,5 @@ default
 // REVIEW: no TTL sweep. A reservation is held until COMMIT/RELEASE (the bench owns the craft). If the bench
 // itself is derezzed mid-craft, its ticket orphans; a very long safety sweep could reclaim it later (stock-protocol §7).
 // REVIEW: committed/released tickets (sv:t C/X) are never pruned -> add retention/GC before scaling.
+// REVIEW: world ingest trusts the NC; md5-fold is one-time at boot. Explicit "ver =" header (compiler) overrides.
+// REVIEW: sv:bench:* registry is info-only and never pruned; a cold-plane BUMP is broadcast, not per-bench.

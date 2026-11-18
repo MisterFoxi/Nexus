@@ -51,7 +51,7 @@ SPECIES never go through the compiler: a component is a runtime notecard
 Usage: python compiler.py axes.src taxonomy.src laws.src > monde.nc
 """
 
-import re, sys, os, json
+import re, sys, os, json, hashlib
 
 VERDICTS = {"react": 0, "danger": 1, "yield": 2}
 MAX_DEPTH = 4
@@ -992,7 +992,12 @@ def main():
     write_craft_map(os.path.join(d_, "craft_map.txt"), nodes, tx, dims, laws)
     out = []
     emit(dims, taxdim, organdim, nodes, tx, laws, axis_aliases, stations, out)
-    sys.stdout.write("\n".join(out) + "\n")
+    # Version header: md5(12) of the emitted body. Deterministic — changes only when the world changes.
+    # Nexus_Server reads this "ver =" line as the authoritative world version (metadata, not stored as data);
+    # absent, the server falls back to its own folded-md5 signature. See socle §7.
+    body = "\n".join(out)
+    ver = hashlib.md5(body.encode("utf-8")).hexdigest()[:12]
+    sys.stdout.write("ver = " + ver + "\n" + body + "\n")
 
 if __name__ == "__main__":
     main()
