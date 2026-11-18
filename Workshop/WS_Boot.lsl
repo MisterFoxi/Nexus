@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Boot"
-#define SCRIPT_VERSION "v0.1.1"
+#define SCRIPT_VERSION "v0.2.2"
 #include "nexus_header"
 
 // WS_Boot — the Workshop's world/OPR gate. Counterpart of Nexus_Server's world plane.
@@ -15,7 +15,7 @@
 //   WORLD_BUMP  -> world republished; re-HELLO to resync (even once OPR).
 //
 // Wire (region say on NX_STOCK, server side in Server/nexus_server.lsl):
-//   ws -> srv : NX|HELLO|<wsKey>|<cachedVer>
+//   ws -> srv : NX|HELLO|<wsKey>|<cachedVer>|<type>   (type = bench Genre, read from bench_config)
 //   srv -> ws : NX|WORLD_OK|<ver> | NX|WORLD_BEGIN|<ver>|<n> | NX|WORLD_CHUNK|<ver>|<seq>|<payload>
 //               NX|WORLD_END|<ver>|<nChunks> | NX|WORLD_WAIT | (broadcast) NX|WORLD_BUMP|<ver>
 //   payload is OPAQUE: world lines joined by "\n". Re-split on "\n" only.
@@ -25,6 +25,9 @@ integer WS_OPR   = 970110;               // link_message to the rest of the WS: 
 float   RETRY    = 10.0;                  // re-HELLO cadence while not OPR (or awaiting the server)
 string  WORLD_RE = "^(tok|tax|law|idx|dom):";   // world-knowledge realms (wiped before a fresh stream)
 string  VER_KEY  = "ws:worldver";         // cached world version, persists across reset/re-rez
+string  CFG_NC   = "bench_config";        // local config notecard (owner-only): Genre, MaxEffect, Batch…
+string  CFG_RE   = "^ws:cfg:";            // stored config realm (one key per config line)
+string  GENRE_KEY = "ws:genre";             // bench type = its Genre, reported to the server at HELLO
 
 integer gOpr;                             // TRUE once the world is ready and OPR announced
 key     gServer;                          // last server that answered (for the info menu)
@@ -33,12 +36,71 @@ string  gPendVer;                         // version of the stream in progress
 integer gExpectN;                         // line count announced by WORLD_BEGIN
 integer gWritten;                         // physics lines written so far
 integer gChunks;                          // chunks received
+// --- config read state ---
+integer gCfgDone;                         // TRUE once bench_config is read (type known) -> HELLO allowed
+key     gCfgQ;                            // notecard read handle
+integer gCfgLine;                         // current config line
+string  gCfgName;                         // notecard actually read ("" if none found)
+integer gCfgKeys;                         // config keys stored this read
 
 setStatus(string s){ llSetText("Nexus • " + s, <1.0,1.0,1.0>, 1.0); }
 
 helloNow(){
+    if(!gCfgDone) return;                 // hold HELLO until the bench type is known
     string cached = llLinksetDataRead(VER_KEY);
-    llRegionSay(NX_STOCK, "NX|HELLO|" + (string)llGetKey() + "|" + cached);
+    llRegionSay(NX_STOCK, "NX|HELLO|" + (string)llGetKey() + "|" + cached + "|" + llLinksetDataRead(GENRE_KEY));
+}
+
+// --- bench config (local identity/params) -> ws:cfg:*, Genre -> type ---
+wipeCfg(){
+    list keys = llLinksetDataFindKeys(CFG_RE, 0, 256);
+    integer guard = 0;
+    while(llGetListLength(keys) > 0 && guard < 20000){
+        integer L = llGetListLength(keys); integer i;
+        for(i = 0; i < L; ++i) llLinksetDataDelete(llList2String(keys, i));
+        guard += L;
+        keys = llLinksetDataFindKeys(CFG_RE, 0, 256);
+    }
+}
+// one "Key = Value   # comment" config line -> ws:cfg:<Key>; capture Genre as the bench type
+cfgLine(string line){
+    line = llStringTrim(line, STRING_TRIM);
+    if(line == "" || llGetSubString(line, 0, 0) == "#") return;
+    integer sep = llSubStringIndex(line, "=");
+    if(sep <= 0) return;
+    string k = llStringTrim(llGetSubString(line, 0, sep - 1), STRING_TRIM);
+    string v = llStringTrim(llGetSubString(line, sep + 1, -1), STRING_TRIM);
+    integer h = llSubStringIndex(v, "#");                 // strip inline comment on the value
+    if(h != -1) v = llStringTrim(llGetSubString(v, 0, h - 1), STRING_TRIM);
+    llLinksetDataWrite("ws:cfg:" + k, v);
+    ++gCfgKeys;
+    if(llToLower(k) == "genre") llLinksetDataWrite(GENRE_KEY, v);   // Genre = this bench's type (case-insensitive)
+}
+// pick the config notecard: exact "bench_config", else first card whose name starts with it (case-insensitive)
+string pickCfgNC(){
+    if(llGetInventoryType(CFG_NC) == INVENTORY_NOTECARD) return CFG_NC;
+    integer n = llGetInventoryNumber(INVENTORY_NOTECARD);
+    integer i;
+    for(i = 0; i < n; ++i){
+        string nm = llGetInventoryName(INVENTORY_NOTECARD, i);
+        if(llSubStringIndex(llToLower(nm), "bench_config") == 0) return nm;
+    }
+    return "";
+}
+startConfig(){
+    gCfgDone = FALSE;
+    wipeCfg();
+    llLinksetDataDelete(GENRE_KEY);                        // clear stale type (empty write is a no-op in LSD)
+    gCfgLine = 0; gCfgKeys = 0;
+    gCfgName = pickCfgNC();
+    if(gCfgName == ""){                                   // no config card: boot anyway, empty type
+        gCfgDone = TRUE;
+        llOwnerSay("[Nexus] WS_Boot: no bench_config notecard found -> type empty.");
+        helloNow();
+        llSetTimerEvent(RETRY);
+        return;
+    }
+    gCfgQ = llGetNotecardLine(gCfgName, 0);
 }
 
 // wipe the world realms (never touches live state: state:/rz_/ws:)
@@ -83,11 +145,29 @@ default
         gOpr = FALSE; gPendVer = ""; gExpectN = 0; gWritten = 0; gChunks = 0;
         llListen(NX_STOCK, "", NULL_KEY, "");
         setStatus("boot — Looking for server…");
-        helloNow();
-        llSetTimerEvent(RETRY);
+        startConfig();                 // read bench_config (type) -> then HELLO + retry timer
     }
     on_rez(integer p){ llResetScript(); }
-    changed(integer c){ if(c & CHANGED_OWNER) llResetScript(); }
+    changed(integer c)
+    {
+        if(c & CHANGED_OWNER){ llResetScript(); return; }
+        if(c & CHANGED_INVENTORY) startConfig();     // bench_config swapped -> re-read type, re-HELLO
+    }
+
+    dataserver(key id, string data)
+    {
+        if(id != gCfgQ) return;
+        if(data == EOF){
+            gCfgDone = TRUE;
+            llOwnerSay("[Nexus] WS_Boot config '" + gCfgName + "': " + (string)gCfgKeys
+                + " keys, type='" + llLinksetDataRead(GENRE_KEY) + "'.");   // diag: see the type read at a glance
+            helloNow();                 // type known -> contact the server
+            llSetTimerEvent(RETRY);
+            return;
+        }
+        cfgLine(data);
+        gCfgQ = llGetNotecardLine(gCfgName, ++gCfgLine);
+    }
 
     timer(){ if(!gOpr) helloNow(); }      // keep knocking until the server answers / sync completes
 
@@ -96,6 +176,7 @@ default
         string info = "Nexus — WS_Boot " + SCRIPT_VERSION + "\n"
             + "State : " + (string)llList2String(["SYNC/attente","OPR"], gOpr) + "\n"
             + "World : " + llLinksetDataRead(VER_KEY) + "\n"
+            + "Type : " + llLinksetDataRead(GENRE_KEY) + "\n"
             + "Server : " + (string)gServer + "\n"
             + "Mem free : " + (string)llGetFreeMemory() + " o"
             + " | lsd " + (string)llLinksetDataAvailable() + " b free";

@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "Nexus_Server"
-#define SCRIPT_VERSION "v0.3.2"
+#define SCRIPT_VERSION "v0.4.2"
 #include "nexus_header"
 
 // Nexus server (Model 1: physical objects + server referee).
@@ -19,7 +19,7 @@
 //   any -> srv       : NX|DISCARD|<sid>                  srv -> * : NX|QTY|<sid>|0
 //
 // WORLD wire (region say on NX_STOCK, fields "|"; payload is OPAQUE -> extract by position, never re-split):
-//   ws  -> srv : NX|HELLO|<wsKey>|<cachedVer>
+//   ws  -> srv : NX|HELLO|<wsKey>|<cachedVer>|<type>   (type = bench Genre, from bench_config; optional/empty ok)
 //   srv -> ws  : NX|WORLD_OK|<ver>                       cache valid -> WS boots from LSD, no transfer
 //   srv -> ws  : NX|WORLD_BEGIN|<ver>|<nLines>
 //   srv -> ws  : NX|WORLD_CHUNK|<ver>|<seq>|<payload>    payload = world lines joined by "\n"
@@ -259,10 +259,10 @@ streamWorld(key who, string ver){
     sayTo(who, "NX|WORLD_END|" + ver + "|" + (string)seq);
 }
 
-hello(key wsKey, string cachedVer, key who){
+hello(key wsKey, string cachedVer, string genre, key who){
     string ver = llLinksetDataRead("w:ver");
-    if(ver == ""){ sayTo(who, "NX|WORLD_WAIT"); return; }   // world not ingested yet
-    llLinksetDataWrite("sv:bench:" + (string)wsKey, ver);   // registry (info/admin)
+    if(ver == ""){ sayTo(who, "NX|WORLD_WAIT"); return; }         // world not ingested yet
+    llLinksetDataWrite("sv:bench:" + (string)wsKey, ver + "|" + genre);   // registry: "<ver>|<type>" (info/admin)
     if(cachedVer == ver){ sayTo(who, "NX|WORLD_OK|" + ver); return; }
     streamWorld(who, ver);
 }
@@ -277,7 +277,9 @@ dumpBenches(){
     integer i;
     for(i = 0; i < n; ++i){
         string k = llList2String(ks, i);
-        llOwnerSay("  WS " + llGetSubString(k, 9, -1) + " -> world " + llLinksetDataRead(k));   // strip "sv:bench:" (9 chars)
+        list bv = llParseStringKeepNulls(llLinksetDataRead(k), ["|"], []);   // "<ver>|<type>"
+        string ty = llList2String(bv, 1); if(ty == "") ty = "(unconfigured)";
+        llOwnerSay("  WS " + llGetSubString(k, 9, -1) + " | genre " + ty + " | world " + llList2String(bv, 0));   // strip "sv:bench:" (9 chars)
     }
     if(n == 0) llOwnerSay("  (no bench has said HELLO yet)");
 }
@@ -292,7 +294,16 @@ default
         startWorldIngest();                                         // ingest world into LSD (cold plane)
     }
     on_rez(integer p){ llResetScript(); }
-    touch_start(integer tn){ if(llDetectedKey(0) == llGetOwner()) dumpBenches(); }   // owner: dump registered benches
+    touch_start(integer tn)                                      // owner: dump + push a world-update to all benches
+    {
+        if(llDetectedKey(0) != llGetOwner()) return;
+        dumpBenches();
+        string ver = llLinksetDataRead("w:ver");
+        if(ver != ""){
+            llRegionSay(NX_STOCK, "NX|WORLD_BUMP|" + ver);       // force every bench to re-HELLO and re-sync
+            llOwnerSay("[Nexus] server pushed WORLD_BUMP " + ver + " to all benches.");
+        }
+    }
     changed(integer c)
     {
         if(c & CHANGED_OWNER){ llResetScript(); return; }
@@ -336,7 +347,7 @@ default
         string verb = llList2String(f, 1);
 
         // --- world plane ---
-        if(verb == "HELLO" && llGetListLength(f) == 4){ hello((key)llList2String(f, 2), llList2String(f, 3), who); return; }
+        if(verb == "HELLO" && llGetListLength(f) >= 4){ hello((key)llList2String(f, 2), llList2String(f, 3), llList2String(f, 4), who); return; }   // f[4] type, "" if absent
 
         // --- stock plane ---
         if(verb == "DISCOVER"){

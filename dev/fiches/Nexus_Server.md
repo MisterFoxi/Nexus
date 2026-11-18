@@ -12,7 +12,7 @@ The single in-sim authority, over two planes on one prim:
 
 ## Current version
 
-`v0.3.2 (SCRIPT_NAME "Nexus_Server")` — stock plane (reserve/commit/release, no TTL, declarative RESERVE) **+ world plane** (ingest/version/stream, `HELLO`/`WORLD_*`) **+ owner-touch bench dump**.
+`v0.4.2 (SCRIPT_NAME "Nexus_Server")` — stock plane (reserve/commit/release, no TTL, declarative RESERVE) **+ world plane** (ingest/version/stream, `HELLO`/`WORLD_*`) **+ owner-touch bench dump & world-update push**.
 
 ## Changelog
 
@@ -23,6 +23,9 @@ The single in-sim authority, over two planes on one prim:
 | v0.3.0 | 2026-11-18 | **world plane added** (WS_Boot's counterpart): ingest `monde.nc`→LSD at boot and on `CHANGED_INVENTORY`; version = `ver =` header if present else folded-md5 `sig-…`; `HELLO` → `WORLD_OK` (cache hit) or `WORLD_BEGIN`/`WORLD_CHUNK`(opaque, `\n`-packed)/`WORLD_END`; `WORLD_WAIT` pre-ingest; `WORLD_BUMP` broadcast on version change; `sv:bench:*` info registry. Stock plane byte-unchanged |
 | v0.3.1 | 2026-11-18 | fix: `reserveSet` local `state` renamed `tstate` (`state` is an LSL reserved word → strict parser rejected it; latent since v0.1.0). Include directive de-extensioned (`"nexus_header"`). No interface change |
 | v0.3.2 | 2026-11-18 | admin: owner **touch** → `dumpBenches()` lists the `sv:bench:*` registry (each WS key + world version last served) with a world/stock header line. Read-only |
+| v0.4.0 | 2026-11-18 | `HELLO` gains an optional `<type>` field (bench Genre from `bench_config`); registry value becomes `<ver>\|<type>`; dump shows the type per bench (`(unconfigured)` if empty). `HELLO` accepts 4 or 5 fields (back-compatible) |
+| v0.4.1 | 2026-11-18 | rename: `hello()` param `type`→`genre` (LSL keyword hygiene). No protocol/format change |
+| v0.4.2 | 2026-11-18 | owner **touch** now also pushes `WORLD_BUMP <ver>` to all benches (manual, reliable world-update trigger, in addition to the auto-BUMP on re-ingest) |
 
 ## Dependencies
 
@@ -31,7 +34,7 @@ The single in-sim authority, over two planes on one prim:
 - **Inventory**: `monde.nc` (compiled world) must be dropped in the server prim; re-drop = re-ingest + BUMP.
 - **LinksetData (stock)**: `sv:q:<sid>` (`avail|expiry|owner|dnaHash`), `sv:t:<ticket>` (`state|sid:u^…`, state R/C/X). Persistent.
 - **LinksetData (world)**: `w:ver` (version token), `w:n` (line count), `w:<i>` (i-th world line, verbatim). Rebuilt each ingest.
-- **LinksetData (registry)**: `sv:bench:<wsKey>` (last version served; info-only).
+- **LinksetData (registry)**: `sv:bench:<wsKey>` = `<ver>|<type>` (last version served + bench type; info-only).
 - **Include**: `nexus_header.lsl`.
 
 ## Interfaces (messages)
@@ -45,12 +48,12 @@ The single in-sim authority, over two planes on one prim:
 | in | `COMMIT` | ticket [, `OUT` newSid qty hash] | finalize held + create output SID → `COMMIT_OK`/`COMMIT_NO` |
 | in | `RELEASE` | ticket | return all held, mark X → `REL_OK` |
 | in | `DISCARD` | sid | zero stock (owner-gated) → `QTY 0` |
-| in | `HELLO` | wsKey, cachedVer | register bench; cache hit → `WORLD_OK`; else stream; pre-ingest → `WORLD_WAIT` |
+| in | `HELLO` | wsKey, cachedVer, [type] | register bench (+ type); cache hit → `WORLD_OK`; else stream; pre-ingest → `WORLD_WAIT` |
 | out | `WORLD_OK` | ver | cached world valid → WS boots from LSD, no transfer |
 | out | `WORLD_BEGIN` / `WORLD_CHUNK` / `WORLD_END` | ver, n / ver, seq, payload / ver, nChunks | directed stream; payload opaque, lines `\n`-joined |
 | out | `WORLD_WAIT` | — | world not yet ingested; WS retries on `WORLD_BUMP`/shortly |
 | out | `WORLD_BUMP` | ver | broadcast: world re-ingested with a new version → benches re-HELLO |
-| in | owner `touch` | — | `dumpBenches()` → owner-say the `sv:bench:*` registry + world/stock header |
+| in | owner `touch` | — | `dumpBenches()` (key+type+version) **and** broadcast `WORLD_BUMP <ver>` to force all benches to re-sync |
 | in | link `970290` | — | memory report |
 
 ## State & persistence
