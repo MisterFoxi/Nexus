@@ -10,7 +10,7 @@ The bench-side state machine. **First slice:** occupancy lock (reservation) + HU
 
 ## Current version
 
-`v0.3.0 (SCRIPT_NAME "WS_Core")` — reservation lock (= craft lifetime, no TTL, persisted), HUD probe/give on `NX_HUD`, bind (`OFFER`/`ACCEPT`/`BOUND`), "in use"/force contention, release stand-in.
+`v0.3.1 (SCRIPT_NAME "WS_Core")` — reservation lock (= craft lifetime, no TTL, persisted), HUD probe/give on `NX_HUD`, bind (`OFFER`/`ACCEPT`/`BOUND`), "in use"/force contention, release stand-in.
 
 ## Changelog
 
@@ -19,6 +19,7 @@ The bench-side state machine. **First slice:** occupancy lock (reservation) + HU
 | v0.1.0 | 2026-11-18 | created — socle §8: touch→lock when OPR & free; probe worn HUD (`NX|HUDQ`→`NX|HUDA`) and give the reference HUD if absent/mismatched; holder present→"in use", holder out-of-region→Force dialog (keeps pending craft); locker re-touch→Release stand-in. Lock persisted in `state:lock`/`state:lockname`/`state:craft`. OPR gate via `WS_OPR` link + `ws:worldver` fallback |
 | v0.2.0 | 2026-11-18 | **bind** (ported from `docs/README_workshop_link.md` "Association and lock"): on a successful probe (HUD present) `OFFER` the session; on `NX\|ACCEPT` from the holder's HUD, confirm `NX\|BOUND`. Session minted at `acquire()` (`state:session`), kept across Force, cleared at release. kind/single/keep read from the bench config (WS_Boot → `ws:genre` / `ws:cfg:*`). Holder re-touch while not bound → re-probe (handles wearing a just-given HUD); after give, prompt "wear it and touch again" |
 | v0.3.0 | 2026-11-19 | **takeover when HUD gone**: handle `NX\|UNBIND` from the holder's detaching HUD (sets `gHudGone`); a newcomer touching now gets the Force dialog even if the holder is still in region (message "has no HUD"). `gHudGone` cleared on acquire / force / bind (ACCEPT). Craft still kept on force (§8). |
+| v0.3.1 | 2026-11-19 | HUD-gone detection made reliable: a `llRegionSayTo` in the HUD's detach event is not reliably delivered, so WS_Core now **pings the holder's HUD** when a 2nd avatar contends an in-region holder; no `HUDA` in `PROBE_WAIT` → treat as HUD-gone → Force. The `NX\|UNBIND` path stays as a best-effort fast-path. |
 
 ## Dependencies
 
