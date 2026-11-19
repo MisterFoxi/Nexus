@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Core"
-#define SCRIPT_VERSION "v0.4.1"
+#define SCRIPT_VERSION "v0.4.2"
 #include "nexus_header"
 
 // WS_Core — the bench-side state machine. First slice: reservation (occupancy lock) + HUD provisioning
@@ -27,6 +27,7 @@
 
 integer NX_HUD = -918282;              // bench <-> worn HUD
 integer WS_OPR = 970110;               // link_message from WS_Boot: "OPR|<ver>"
+integer STOCK_RELEASE_REQ = 918250;    // -> WS_Stock: take/discard -> release the reserved basket
 float   HEARTBEAT = 5.0;               // seconds between holder-HUD pings while locked
 integer MISS_MAX  = 3;                 // consecutive unanswered pings before the bench frees itself (~15 s)
 
@@ -146,8 +147,8 @@ release(){
     llLinksetDataWrite("state:craft", "0");
     gBound = FALSE; gMisses = 0; gGiven = FALSE;
     llSetTimerEvent(0.0);
+    llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, "", NULL_KEY);   // WS_Stock releases the reserved basket
     status();
-    // REVIEW: wire COMMIT/RELEASE to WS_Stock here when the craft flow exists.
 }
 
 default

@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_Scan_Refresh"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.1.1"
 #include "nexus_header"
 
 // Current installation uses NX_Nearby_Controller instead of the archived MC_Nearby_Display.
@@ -7,7 +7,7 @@
 // Remove the old script from the Refresh button; its touches must reach root.
 // Only touching the named button starts a scan. Display receives relays.
 string REFRESH_NAME = "P0_ACTION1";
-integer TEST_CHANNEL = -918274;
+integer TEST_CHANNEL = -918281;    // NX_SCAN (component scan channel)
 integer SCAN_REFRESH = 918270;
 integer SCAN_BEGIN   = 918271;
 integer SCAN_ITEM    = 918272;

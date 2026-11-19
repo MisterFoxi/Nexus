@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "Nexus_Component"
-#define SCRIPT_VERSION "v0.2.0"
+#define SCRIPT_VERSION "v0.2.1"
 #include "nexus_header.lsl"
 
 // Nexus component — full component, stock CLIENT of Nexus_Server. See dev/stock-protocol.md.
@@ -169,10 +169,13 @@ integer effPerMille(){
 string dnaHash(){ return llMD5String(gTaxonomy + "|" + gStage + "|" + gProps, 0); }
 
 ensureSid(){
-    if(gSid != NULL_KEY){ llLinksetDataWrite("rz_sid", (string)gSid); return; }
-    string s = llLinksetDataRead("rz_sid");
-    if(s != "") gSid = (key)s;
-    else { gSid = llGenerateKey(); llLinksetDataWrite("rz_sid", (string)gSid); }
+    // if(gSid) is FALSE for both NULL_KEY and (key)"" — unlike (gSid != NULL_KEY),
+    // which wrongly passes for an empty-string key and leaves the SID blank.
+    if(gSid){ llLinksetDataWrite("rz_sid", (string)gSid); return; }
+    gSid = (key)llLinksetDataRead("rz_sid");
+    if(gSid){ llLinksetDataWrite("rz_sid", (string)gSid); return; }
+    gSid = llGenerateKey();
+    llLinksetDataWrite("rz_sid", (string)gSid);
 }
 registerToServer(){
     llRegionSay(NX_STOCK, "NX|REGISTER|" + (string)gSid + "|" + (string)llGetOwner()

@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_Nearby_Controller"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.2.0"
 #include "nexus_header"
 
 // Nearby data and independent pagination controller. Install in ROOT with NX_Render.
@@ -13,6 +13,10 @@ integer ADD = 918300;
 integer TX_STATE = 918302;
 integer STOCK = 918305;
 integer REFRESH_REQUEST = 918287;
+integer NX_HUD = -918282;              // pick -> bench
+integer BIND_INFO = 918260;            // <- NX_HudFace: "<bench>|<session>"
+key gBench = NULL_KEY;
+string gSession = "";
 // Verify these names against the physical '+' buttons before installation.
 string ADD_PREFIX = "P0_ADD_";
 integer gTxBusy = TRUE;
@@ -72,7 +76,7 @@ render()
         else
         {
             list fields = llParseStringKeepNulls(llList2String(gRows, index + 2), ["|"], []);
-            view += [llList2String(gRows, index), llList2Integer(fields, 3),
+            view += [llList2String(gRows, index), llList2Integer(fields, 4),
                 llList2String(fields, 13), 1];
         }
     }
@@ -95,20 +99,24 @@ button(string name)
     for (row = 0; row < 4; ++row)
         if (name == llToLower(ADD_PREFIX) + (string)row)
         {
-            if (gTxBusy) { llOwnerSay("[Nearby] Wait for the transaction manager."); return; }
+            if (gBench == NULL_KEY || gSession == "") { llOwnerSay("[Nearby] HUD not bound to a bench yet."); return; }
             integer index = (gPage * 4 + row) * 3;
             if (index >= llGetListLength(gRows)) return;
             key source = llList2Key(gRows, index + 1);
             if (!llGetListLength(llGetObjectDetails(source, [OBJECT_NAME])))
             {
                 gRows = llDeleteSubList(gRows, index, index + 2);
-                gWaiting = FALSE; gReceiving = FALSE; gPending = [];
+                gPending = [];
                 render();
-                llOwnerSay("[Nearby] Source missing: row removed; no ingredient taken.");
+                llOwnerSay("[Nearby] Source missing: row removed.");
                 llMessageLinked(LINK_THIS, REFRESH_REQUEST, "KEEP_PAGE", NULL_KEY);
                 return;
             }
-            llMessageLinked(LINK_THIS, ADD, llList2String(gRows, index + 2), llList2Key(gRows, index + 1));
+            // pick -> bench: NX|PICK|<session>|<sid>|1|<name>|<icon>  (sid=field 2, name=3, icon=13 of HERE)
+            list h = llParseStringKeepNulls(llList2String(gRows, index + 2), ["|"], []);
+            string picon = "";
+            if (llGetListLength(h) > 13) picon = llList2String(h, 13);
+            llRegionSayTo(gBench, NX_HUD, "NX|PICK|" + gSession + "|" + llList2String(h, 2) + "|1|" + llList2String(h, 3) + "|" + picon);
             return;
         }
 }
@@ -117,13 +125,13 @@ button(string name)
 addPending(string payload)
 {
     list fields = llParseStringKeepNulls(payload, ["|"], []);
-    if (llGetListLength(fields) < 10 || llList2String(fields, 0) != "HERE") return;
+    if (llGetListLength(fields) < 13 || llList2String(fields, 0) != "HERE") return;
     key source = llList2Key(fields, 1);
-    if (source == NULL_KEY || llList2Integer(fields, 3) <= 0) return;
+    if (source == NULL_KEY || llList2Integer(fields, 4) <= 0) return;
     integer i;
     for (i = 0; i < llGetListLength(gPending); i += 3)
         if (llList2Key(gPending, i + 1) == source) return;
-    gPending += [llList2String(fields, 2), source, payload];
+    gPending += [llList2String(fields, 3), source, payload];   // display name = field 3
 }
 
 default
@@ -148,6 +156,7 @@ default
     link_message(integer sender, integer number, string payload, key request)
     {
         if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
+        if (number == BIND_INFO) { list bi = llParseStringKeepNulls(payload, ["|"], []); gBench = (key)llList2String(bi, 0); gSession = llList2String(bi, 1); return; }
         if (sender == llGetLinkNumber() && number == REFRESH_REQUEST)
         { gPreserveNextScan = payload == "KEEP_PAGE"; return; }
         if (sender == llGetLinkNumber() && number == TX_STATE)

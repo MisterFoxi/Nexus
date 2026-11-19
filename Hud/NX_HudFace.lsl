@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_HudFace"
-#define SCRIPT_VERSION "v0.3.0"
+#define SCRIPT_VERSION "v0.3.1"
 #include "nexus_header"
 
 // NX_HudFace — the worn HUD's thin face toward the bench.
@@ -22,6 +22,7 @@
 // Fail-safe: a name that does not parse -> silent (no HUDA, no ACCEPT) so the bench re-provisions.
 
 integer NX_HUD = -918282;              // bench <-> worn HUD
+integer BIND_INFO = 918260;            // -> HUD linkset: "<bench>|<session>" so pick/basket scripts know the bench
 
 string  gModel;                        // parsed model (name before " v") = our kind
 string  gVersion;                      // parsed version ("vX.Y.Z")
@@ -106,6 +107,7 @@ default
             if(id != gBench || gSession == "") return;
             if(llList2String(f, 2) != gSession) return;
             gBound = TRUE;
+            llMessageLinked(LINK_SET, BIND_INFO, (string)gBench + "|" + gSession, NULL_KEY);
             llOwnerSay("[Nexus] HUD bound to the bench.");
             return;
         }

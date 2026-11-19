@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_Scan"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.2.0"
 #include "nexus_header"
 
 // NX_Scan v1.0 - reusable companion script, no HUD dependency.
@@ -12,7 +12,7 @@
 // A new request replaces an unfinished scan; only the newest gets a result.
 // Local request UUIDs are NOT transmitted by the existing PING/HERE protocol.
 
-integer CRAFT_CHANNEL = -918273;
+integer CRAFT_CHANNEL = -918281;   // NX_SCAN (component announces HERE/BLANK here)
 float SCAN_SECONDS = 2.0;
 integer SCAN_REFRESH = 918270;
 integer SCAN_BEGIN   = 918271;
@@ -123,9 +123,8 @@ default
         if (verb == "HERE")
         {
             // REVIEW: numeric fields and payload lengths are not fully validated; bound metadata before it enters the HUD snapshots.
-            if (count < 10) return;
-            if (llList2Integer(fields, 9) != 5) return;
-            if (llList2Integer(fields, 3) <= 0)
+            if (count < 13) return;                 // HERE|objkey|sid|name|qty|...|icon
+                if (llList2Integer(fields, 4) <= 0)   // qty is field 4 now
                 gItems = removeSource(gItems, source);
             else
                 gItems = upsert(gItems, source, payload);

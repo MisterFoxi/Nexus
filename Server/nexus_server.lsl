@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "Nexus_Server"
-#define SCRIPT_VERSION "v0.4.2"
+#define SCRIPT_VERSION "v0.4.3"
 #include "nexus_header"
 
 // Nexus server (Model 1: physical objects + server referee).
@@ -190,8 +190,8 @@ release(key ticket, key who){
     list tr = llParseStringKeepNulls(llLinksetDataRead("sv:t:" + (string)ticket), ["|"], []);
     if(llList2String(tr, 0) == "R"){
         restoreUnits(llList2String(tr, 1));
-        llLinksetDataWrite("sv:t:" + (string)ticket, "X|" + llList2String(tr, 1));
     }
+    llLinksetDataDelete("sv:t:" + (string)ticket);   // delete (not "X") so the ticket is reusable for the next pick
     sayTo(who, "NX|REL_OK|" + (string)ticket);
 }
 

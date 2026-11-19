@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_HudNav"
-#define SCRIPT_VERSION "v0.2.0"
+#define SCRIPT_VERSION "v0.3.0"
 #include "nexus_header"
 
 // NX_HudNav — the HUD-side navigation hub: detect player actions, drive page rotation.
@@ -18,6 +18,8 @@
 // that old controller in-world so the Continue button is not driven twice.
 
 integer TURN_CONTINUE = 918310;        // -> NX_Turn_Z: "CONTINUE" (ticket) rotates to P1
+integer CANCONT = 918261;              // <- NX_Selected_Controller: current basket count
+integer gCanCount;                     // basket size (0 = nothing selected -> Continue blocked)
 
 // Single FURWARE init for the whole HUD: a full reset re-reads the box layout and clears stale content,
 // then FURWARE emits fw_ready and every renderer repaints (empty). Expensive (FURWARE unavailable a few
@@ -40,15 +42,18 @@ default
         for(i = 0; i < n; ++i){
             if(llDetectedKey(i) == llGetOwner()){
                 string name = llToLower(llStringTrim(llGetLinkName(llDetectedLinkNumber(i)), STRING_TRIM));
-                if(name == "p0_action2")                    // Continue -> craft page
-                    llMessageLinked(LINK_THIS, TURN_CONTINUE, "CONTINUE", llGenerateKey());
+                if(name == "p0_action2"){                   // Continue -> craft page (only with a selection)
+                    if(gCanCount <= 0){ llRegionSayTo(llGetOwner(), 0, "[Nexus] Select at least one component first."); }
+                    else llMessageLinked(LINK_THIS, TURN_CONTINUE, "CONTINUE", llGenerateKey());
+                }
             }
         }
     }
 
     link_message(integer s, integer num, string str, key id)
     {
-        if(num == NEXUS_MEM_REPORT) nexusMemReport();
+        if(num == NEXUS_MEM_REPORT){ nexusMemReport(); return; }
+        if(num == CANCONT) gCanCount = (integer)str;
     }
 }
 // REVIEW: 2026-11-18 — navigation-pure slice: only P0->P1 is wired. P4 (PAUSE/observe) and P3 (TAKE) are
