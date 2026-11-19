@@ -1,3 +1,7 @@
+#define SCRIPT_NAME    "NX_Render"
+#define SCRIPT_VERSION "v0.1.0"
+#include "nexus_header"
+
 // Shared rendering implementation. Install in ROOT beside FURWARE.
 // One instance per panel: PANEL = "NEARBY" or "SELECTED".
 // Selected uses the same development face layout as Nearby; settings stay explicit.
@@ -178,7 +182,7 @@ render()
 default
 {
     state_entry()
-    {
+    { nexusBoot();
         if (PANEL != "NEARBY" && PANEL != "SELECTED" && PANEL != "P3_NEAR" && PANEL != "P3_SEL")
         { llOwnerSay("[Render] Invalid PANEL setting."); return; }
         configure();
@@ -193,6 +197,7 @@ default
     }
     link_message(integer sender, integer number, string payload, key panel)
     {
+        if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         if ((string)panel == "fw_ready") { render(); return; }
         if (sender != llGetLinkNumber() || number != VIEW || (string)panel != PANEL) return;
         // REVIEW: decoding has no field-length budget; same-root producers must bound the view payload.

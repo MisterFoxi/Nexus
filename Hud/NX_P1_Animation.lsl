@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_P1_Animation"
-#define SCRIPT_VERSION "v0.11.0"
+#define SCRIPT_VERSION "v0.1.0"
 #include "nexus_header"
 
 // ROOT. P1 playback + active-time clock + atlas/button/progress bring-up for the worn HUD.
@@ -508,7 +508,7 @@ default
             else
             {
                 gButtonsAttempts = 4; gButtonsLoadTicket = NULL_KEY;
-                llOwnerSay("[Chop buttons] No button renderer response. Install/run MC_Playback_Buttons in ROOT with MC_P1_Animation.");
+                llOwnerSay("[Chop buttons] No button renderer response. Install/run NX_Playback_Buttons in ROOT with NX_P1_Animation.");
             }
         }
         if (!gProgressLoaded && gProgressAttempts > 0 && gProgressAttempts < 4
@@ -519,7 +519,7 @@ default
             {
                 gProgressAttempts = 4;
                 gProgressLoadTicket = NULL_KEY;
-                llOwnerSay("[Chop progress] No renderer response. Install/run MC_Chop_Progress in ROOT with MC_P1_Animation.");
+                llOwnerSay("[Chop progress] No renderer response. Install/run NX_Chop_Progress in ROOT with NX_P1_Animation.");
             }
         }
         if (gClockActive)

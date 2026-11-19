@@ -1,4 +1,8 @@
-// Nearby data and independent pagination controller. Install in ROOT with MC_Render.
+#define SCRIPT_NAME    "NX_Nearby_Controller"
+#define SCRIPT_VERSION "v0.1.0"
+#include "nexus_header"
+
+// Nearby data and independent pagination controller. Install in ROOT with NX_Render.
 // Replaces MC_Nearby_Display; never install both controllers together.
 // All physical buttons are script-free; root receives their touch events.
 string PREV_NAME = "P0_PREV";
@@ -16,7 +20,7 @@ integer gRescan;
 integer gPreserveNextScan;
 integer gKeepPage;
 integer SCAN_REFRESH = 918270;
-// MC_Scan_Refresh relays SCAN_* messages with code + 10, same text/request.
+// NX_Scan_Refresh relays SCAN_* messages with code + 10, same text/request.
 integer DISPLAY_BEGIN = 918281;
 integer DISPLAY_ITEM  = 918282;
 integer DISPLAY_BLANK = 918283;
@@ -124,7 +128,7 @@ addPending(string payload)
 
 default
 {
-    state_entry() { render(); }
+    state_entry() { nexusBoot(); render(); }
 
     on_rez(integer parameter) { llResetScript(); }
 
@@ -143,6 +147,7 @@ default
 
     link_message(integer sender, integer number, string payload, key request)
     {
+        if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         if (sender == llGetLinkNumber() && number == REFRESH_REQUEST)
         { gPreserveNextScan = payload == "KEEP_PAGE"; return; }
         if (sender == llGetLinkNumber() && number == TX_STATE)

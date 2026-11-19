@@ -2,7 +2,7 @@
 #define SCRIPT_VERSION "v0.1.0"
 #include "nexus_header"
 
-// MC_Turn_Z — ROOT page-rotation executor for the worn HUD (kept visual layer, adapted to the refonte).
+// NX_Turn_Z — ROOT page-rotation executor for the worn HUD (kept visual layer, adapted to the refonte).
 // Dumb rotator: it turns the root prim's local Z to a page and holds X/Y. Navigation LOGIC lives in
 // NX_HudNav; this script only reacts to rotation triggers.
 //   P0 = 0 , P1 = -90 , P4 = +90 , P3 = 180 (local Z).

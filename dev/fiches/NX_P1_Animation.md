@@ -1,6 +1,6 @@
-# Fiche — MC_P1_Animation
+# Fiche — NX_P1_Animation
 
-*Dev & tracking fiche. See `CONVENTIONS.md`, `claude/socle-refonte-reseau.md` §4, `Hud/docs/README_Atlas.md`, `README_chop_progress.md`, `README_P4.md`. File: `Hud/MC_P1_Animation.lsl`.*
+*Dev & tracking fiche. See `CONVENTIONS.md`, `claude/socle-refonte-reseau.md` §4, `Hud/docs/README_Atlas.md`, `README_chop_progress.md`, `README_P4.md`. File: `Hud/NX_P1_Animation.lsl`.*
 
 ---
 
@@ -10,7 +10,7 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 
 ## Current version
 
-`v0.11.0 (SCRIPT_NAME "MC_P1_Animation")` — refonte migration: convention header/banner; craft START authorized locally (no removed-backend ACK); owns the `craft_started` flag.
+`v0.11.0 (SCRIPT_NAME "NX_P1_Animation")` — refonte migration: convention header/banner; craft START authorized locally (no removed-backend ACK); owns the `craft_started` flag.
 
 ## Changelog
 
@@ -21,7 +21,7 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 
 ## Dependencies
 
-- **Peers (same ROOT)**: `MC_Playback_Buttons` (button textures: LOAD 918340 / STATE 918342 / STATUS 918343), `MC_Atlas_Player` (chop animation: 918330–918336), `MC_Chop_Progress` (progress: 918350/918351/918353). Later: WS_Stock (will re-gate START), the craft/eval flow (918372 SNAPSHOT, 918371 finalize).
+- **Peers (same ROOT)**: `NX_Playback_Buttons` (button textures: LOAD 918340 / STATE 918342 / STATUS 918343), `NX_Atlas_Player` (chop animation: 918330–918336), `NX_Chop_Progress` (progress: 918350/918351/918353). Later: WS_Stock (will re-gate START), the craft/eval flow (918372 SNAPSHOT, 918371 finalize).
 - **Buttons (no script)**: `p1_action1` (CUT/CONT), `p1_action2` (PAUSE/TAKE), `p1_action3`/`p1_later` (suspend), `p1_heat_plus/minus`, `p1_test`.
 - **LinksetData**: `mc:chop:session` (own clock/heat state), `mc:simple:craft_started` (now owned here). Still reads the dead `mc:workshop:session` in the craft-flow paths (debt).
 - **Include**: `nexus_header` (no extension).
@@ -58,7 +58,7 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 
 ## Test (in-world)
 
-1. HUD worn. At boot: banner `[Nexus] MC_P1_Animation v0.11.0 ...`; P1 buttons show their atlas textures (STOPPED state).
+1. HUD worn. At boot: banner `[Nexus] NX_P1_Animation v0.11.0 ...`; P1 buttons show their atlas textures (STOPPED state).
 2. On P1, click CUT (`p1_action1`) → clock runs, button goes to PLAYING, progress advances. (No 5s "start not confirmed" timeout.)
 3. Click PAUSE (`p1_action2`) → suspends and opens P4; BACK returns paused.
 4. Click DISCARD (`p1_action3`) → preparation resets, `mc:simple:craft_started` cleared.

@@ -4,20 +4,20 @@
 
 // NX_HudNav — the HUD-side navigation hub: detect player actions, drive page rotation.
 // Takes over the navigation role the removed MC_Selected_Controller / MC_Workshop_Link used to play.
-// Rotation itself stays in MC_Turn_Z (the dumb executor); this script only decides transitions and feeds it.
+// Rotation itself stays in NX_Turn_Z (the dumb executor); this script only decides transitions and feeds it.
 //
 // This slice (navigation-pure, no craft/basket yet): P0 -> P1 on the Continue button.
-//   - P0 Continue = prim "p0_action2" -> emit 918310 CONTINUE (fresh ticket) -> MC_Turn_Z rotates to P1.
+//   - P0 Continue = prim "p0_action2" -> emit 918310 CONTINUE (fresh ticket) -> NX_Turn_Z rotates to P1.
 //     No basket gate here: in the old code MC_Selected_Controller gated on available ingredients; that
 //     gating returns with the scan/stock flow. For now Continue always turns to P1.
-//   - Return to P0 (discard) is already owned by MC_Turn_Z (the P1_DISCARD touch) + the basket controller.
+//   - Return to P0 (discard) is already owned by NX_Turn_Z (the P1_DISCARD touch) + the basket controller.
 //   - P1<->P4 (PAUSE/observe) and P1->P3 (TAKE/recipient) are craft-coupled (clock / evaluation) and are
 //     wired when the craft flow exists. See docs/README_P4.md, docs/README_P3.md and the fiche.
 //
 // Install in HUD ROOT. It replaces MC_Selected_Controller's p0_action2 -> 918310 navigation emit; remove
 // that old controller in-world so the Continue button is not driven twice.
 
-integer TURN_CONTINUE = 918310;        // -> MC_Turn_Z: "CONTINUE" (ticket) rotates to P1
+integer TURN_CONTINUE = 918310;        // -> NX_Turn_Z: "CONTINUE" (ticket) rotates to P1
 
 default
 {

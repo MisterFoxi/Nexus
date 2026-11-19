@@ -1,5 +1,9 @@
-// Current installation uses MC_Nearby_Controller instead of the archived MC_Nearby_Display.
-// Place in the HUD ROOT prim, beside MC_Scan and MC_Nearby_Display.
+#define SCRIPT_NAME    "NX_Scan_Refresh"
+#define SCRIPT_VERSION "v0.1.0"
+#include "nexus_header"
+
+// Current installation uses NX_Nearby_Controller instead of the archived MC_Nearby_Display.
+// Place in the HUD ROOT prim, beside NX_Scan and MC_Nearby_Display.
 // Remove the old script from the Refresh button; its touches must reach root.
 // Only touching the named button starts a scan. Display receives relays.
 string REFRESH_NAME = "P0_ACTION1";
@@ -27,6 +31,7 @@ startRefresh()
 
 default
 {
+    state_entry() { nexusBoot(); }
     on_rez(integer parameter) { llResetScript(); }
 
     touch_start(integer count)
@@ -40,6 +45,7 @@ default
 
     link_message(integer sender, integer number, string payload, key request)
     {
+        if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         if (number == REFRESH_REQUEST && sender == llGetLinkNumber()) { startRefresh(); return; }
         // REVIEW: matching a ticket alone does not validate the scan responder link; restrict sender when child scripts are not trusted.
         if (!gWaiting || request != gRequest) return;
@@ -62,7 +68,7 @@ default
         if (gWaiting)
         {
             llMessageLinked(LINK_SET, DISPLAY_ABORT, "", gRequest);
-            llOwnerSay("[HUD Refresh] No complete scan result within 10 seconds. Check MC_Scan.");
+            llOwnerSay("[HUD Refresh] No complete scan result within 10 seconds. Check NX_Scan.");
         }
         gWaiting = FALSE;
         gReceiving = FALSE;

@@ -1,4 +1,8 @@
-// MC_Scan v1.0 - reusable companion script, no HUD dependency.
+#define SCRIPT_NAME    "NX_Scan"
+#define SCRIPT_VERSION "v0.1.0"
+#include "nexus_header"
+
+// NX_Scan v1.0 - reusable companion script, no HUD dependency.
 // Put in the SAME prim as its client. Only this script owns its timer/listen.
 // Request: link_message 918270, str = optional chat channel, id = request UUID.
 // Empty str uses production channel; test client explicitly uses -918274.
@@ -87,7 +91,7 @@ finishScan()
 default
 {
     state_entry()
-    {
+    { nexusBoot();
         gScanning = FALSE;
         llSetTimerEvent(0.0);
     }
@@ -96,6 +100,7 @@ default
 
     link_message(integer sender, integer number, string payload, key request)
     {
+        if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         if (number != SCAN_REFRESH || request == NULL_KEY) return;
         integer channel = CRAFT_CHANNEL;
         if (payload != "") channel = (integer)payload;

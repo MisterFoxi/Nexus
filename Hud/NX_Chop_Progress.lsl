@@ -1,4 +1,8 @@
-// ROOT. Self-initializing renderer for P1_CURSOR; timing belongs to MC_P1_Animation.
+#define SCRIPT_NAME    "NX_Chop_Progress"
+#define SCRIPT_VERSION "v0.1.0"
+#include "nexus_header"
+
+// ROOT. Self-initializing renderer for P1_CURSOR; timing belongs to NX_P1_Animation.
 // 918350 LOAD: inventory texture name, empty = known default names below.
 // 918351 SHOW: active seconds, IDLE (cursor at zero), or SPOILED. Replies use 918353, echo id.
 integer LOAD = 918350;
@@ -121,11 +125,13 @@ default
 {
     state_entry()
     {
+        nexusBoot();
         loadTexture("", NULL_KEY); // Draw even if no controller handshake arrives.
         reply("READY", NULL_KEY);
     }
     link_message(integer sender, integer number, string text, key ticket)
     {
+        if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         if (sender != llGetLinkNumber()) return;
         if (number == LOAD) { loadTexture(text, ticket); return; }
         if (number != SHOW) return;

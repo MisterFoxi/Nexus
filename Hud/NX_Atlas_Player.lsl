@@ -1,3 +1,7 @@
+#define SCRIPT_NAME    "NX_Atlas_Player"
+#define SCRIPT_VERSION "v0.1.0"
+#include "nexus_header"
+
 // ROOT atlas player. Textures are in ROOT inventory.
 // Resolves the child display prim by name; callers use LINK_THIS from ROOT.
 // Owns the display prim's texture animation and this script's timer.
@@ -131,6 +135,7 @@ default
 {
     state_entry()
     {
+        nexusBoot();
         gDisplayLink = findDisplay();
         stopPlayback();
         llMessageLinked(LINK_THIS, STATUS, "READY", NULL_KEY);
@@ -138,6 +143,7 @@ default
 
     link_message(integer sender, integer number, string text, key ticket)
     {
+        if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         // Only root-local clients may control this face; all scripts in the root share this authority.
         if (sender != llGetLinkNumber()) return;
         if (number == LOAD) { loadAtlas(sender, text, ticket); return; }

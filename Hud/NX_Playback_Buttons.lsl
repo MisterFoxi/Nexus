@@ -1,9 +1,13 @@
+#define SCRIPT_NAME    "NX_Playback_Buttons"
+#define SCRIPT_VERSION "v0.1.0"
+#include "nexus_header"
+
 // ROOT-only visual library for atlas-p1-boutons-v2.
 // 918340 LOAD: exact texture inventory name, or empty for DEFAULT_ATLAS.
 // 918341 SHOW: JSON [primName, face, label], label CUT/CONT/PAUSE/TAKE/DISCARD.
 // 918342 STATE: STOPPED (unused), PLAYING, PAUSED, USED or SPOILED.
 // 918343 STATUS: READY/LOADED/SHOWN:label/STATE:state/UNLOADED/ERROR:reason.
-// Button state is supplied by MC_P1_Animation on 918342.
+// Button state is supplied by NX_P1_Animation on 918342.
 // Replies echo request id. No touches, playback commands, or timers are owned here.
 integer LOAD = 918340;
 integer SHOW = 918341;
@@ -176,6 +180,7 @@ default
 {
     state_entry()
     {
+        nexusBoot();
         llListen(DIAGNOSTIC_CHANNEL, "", llGetOwner(), "");
         list session = llJson2List(llLinksetDataRead("mc:chop:session"));
         gUsed = llList2Integer(session, 0) || llLinksetDataRead("mc:simple:craft_started") == "1";
@@ -184,6 +189,7 @@ default
 
     link_message(integer sender, integer number, string text, key ticket)
     {
+        if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         if (sender != llGetLinkNumber()) return;
         if (number == 918317 && (text == "DISCARD_DONE" || text == "CRAFT_DONE") && ticket != NULL_KEY
             && llLinksetDataRead("mc:simple:craft_started") != "1")

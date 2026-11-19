@@ -1,6 +1,6 @@
-# Fiche — MC_Turn_Z
+# Fiche — NX_Turn_Z
 
-*Dev & tracking fiche. See `CONVENTIONS.md`, `claude/socle-refonte-reseau.md` §4, and `Hud/docs/README_P4.md` / `README_P3.md`. File: `Hud/MC_Turn_Z.lsl`.*
+*Dev & tracking fiche. See `CONVENTIONS.md`, `claude/socle-refonte-reseau.md` §4, and `Hud/docs/README_P4.md` / `README_P3.md`. File: `Hud/NX_Turn_Z.lsl`.*
 
 ---
 
@@ -10,7 +10,7 @@ ROOT **page-rotation executor** for the worn HUD — kept visual-layer script, a
 
 ## Current version
 
-`v0.1.0 (SCRIPT_NAME "MC_Turn_Z")` — legacy rotator brought onto the convention (header/banner/SemVer); dead-store P4 gate removed.
+`v0.1.0 (SCRIPT_NAME "NX_Turn_Z")` — legacy rotator brought onto the convention (header/banner/SemVer); dead-store P4 gate removed.
 
 ## Changelog
 
@@ -53,4 +53,4 @@ ROOT **page-rotation executor** for the worn HUD — kept visual-layer script, a
 
 1. HUD worn on P0. `918310 CONTINUE` (via NX_HudNav / Continue button) → rotate to P1.
 2. Touch `p1_action3` on P1 → back to P0.
-3. Banner at boot: `[Nexus] MC_Turn_Z v0.1.0 (...) | heap … | lsd …`.
+3. Banner at boot: `[Nexus] NX_Turn_Z v0.1.0 (...) | heap … | lsd …`.
