@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_HudNav"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.2.0"
 #include "nexus_header"
 
 // NX_HudNav — the HUD-side navigation hub: detect player actions, drive page rotation.
@@ -19,9 +19,18 @@
 
 integer TURN_CONTINUE = 918310;        // -> NX_Turn_Z: "CONTINUE" (ticket) rotates to P1
 
+// Single FURWARE init for the whole HUD: a full reset re-reads the box layout and clears stale content,
+// then FURWARE emits fw_ready and every renderer repaints (empty). Expensive (FURWARE unavailable a few
+// seconds) and GLOBAL, so it is issued once, here, at install — never per-renderer.
+fwReset()
+{
+    llMessageLinked(LINK_SET, 0, "", "fw_reset");
+}
+
 default
 {
-    state_entry(){ nexusBoot(); }
+    state_entry(){ nexusBoot(); fwReset(); }
+    attach(key id){ if (id != NULL_KEY) fwReset(); }   // wear = install: re-init FURWARE once
     on_rez(integer p){ llResetScript(); }
     changed(integer c){ if(c & CHANGED_OWNER) llResetScript(); }
 

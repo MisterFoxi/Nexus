@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_Render"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.1.2"
 #include "nexus_header"
 
 // Shared rendering implementation. Install in ROOT beside FURWARE.
@@ -186,6 +186,7 @@ default
         if (PANEL != "NEARBY" && PANEL != "SELECTED" && PANEL != "P3_NEAR" && PANEL != "P3_SEL")
         { llOwnerSay("[Render] Invalid PANEL setting."); return; }
         configure();
+        gView = [1, 1, "", 0, "", 0, "", 0, "", 0, "", 0, "", 0, "", 0, "", 0];   // boot: clear the panel (empty 18-field view) instead of leaving stale prims
         render();
         llMessageLinked(LINK_THIS, RENDER_READY, PANEL, NULL_KEY);
     }

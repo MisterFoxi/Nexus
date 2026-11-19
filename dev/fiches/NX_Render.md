@@ -10,13 +10,14 @@ ROOT **shared panel renderer** (one instance per panel via the `PANEL` var: `NEA
 
 ## Current version
 
-`v0.1.0 (SCRIPT_NAME "NX_Render")` — refonte adoption (header/banner/SemVer + mem report); rendering logic unchanged.
+`v0.1.1 (SCRIPT_NAME "NX_Render")` — refonte adoption (header/banner/SemVer + mem report); rendering logic unchanged.
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v0.1.0 | 2026-11-19 | migrated from legacy `MC_Render`: added `nexus_header`, SemVer, renamed `NX_`. No behaviour change. Set `PANEL = "NEARBY"` for the P0 available instance. |
+| v0.1.1 | 2026-11-19 | **empty-view boot init**: `state_entry` seeds `gView` with an empty 18-field view so the first `render()` clears the FURWARE table and hides row icons, instead of leaving stale prim content when no scan/VIEW has arrived. |
 
 ## Dependencies
 
@@ -38,7 +39,7 @@ ROOT **shared panel renderer** (one instance per panel via the `PANEL` var: `NEA
 
 ## Open points / debt
 
-- [ ] 2026-11-19 — the SELECTED / P3_NEAR / P3_SEL instances are still the legacy `MC_Render_Selected` / `MC_Render_P3_*` copies; migrate with the basket (bench) and P3.
+- [ ] 2026-11-19 — the SELECTED instance is now `NX_Render_Selected` (migrated, same empty-boot fix); P3_NEAR / P3_SEL are still the legacy `MC_Render_P3_*` copies, migrated with P3.
 - [ ] 2026-11-19 — REVIEW (legacy): view decoding has no field-length budget; same-root producers must bound the payload.
 
 ## Test (in-world)
