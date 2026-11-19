@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Core"
-#define SCRIPT_VERSION "v0.4.0"
+#define SCRIPT_VERSION "v0.4.1"
 #include "nexus_header"
 
 // WS_Core — the bench-side state machine. First slice: reservation (occupancy lock) + HUD provisioning
@@ -83,13 +83,14 @@ giveHud(key av){
     llRegionSayTo(av, 0, "[Nexus] HUD delivered: " + gModel + " " + gVersion + ". Wear it.");
 }
 
+// kind = the reference HUD MODEL (what the worn HUD gates its ACCEPT on), NOT the craft genre. The worn
+// HUD and the bench's reference HUD are the same model, so this matches; the genre is a craft concept
+// delivered later for scan gating, not a bind key.
 offerHud(key av){
-    string kind = llLinksetDataRead("ws:cfg:HUDKind");
-    if(kind == "") kind = llLinksetDataRead("ws:genre");
     string single = (string)((integer)llLinksetDataRead("ws:cfg:SingleIngredient"));
     string keep   = (string)((integer)llLinksetDataRead("ws:cfg:AllowKeep"));
     llRegionSayTo(av, NX_HUD, "NX|OFFER|" + (string)llGetKey() + "|"
-        + llLinksetDataRead("state:session") + "|" + kind + "|" + single + "|" + keep);
+        + llLinksetDataRead("state:session") + "|" + gModel + "|" + single + "|" + keep);
 }
 
 pingHolder(){
