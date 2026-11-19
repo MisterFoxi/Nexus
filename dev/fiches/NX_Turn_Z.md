@@ -10,13 +10,17 @@ ROOT **page-rotation executor** for the worn HUD — kept visual-layer script, a
 
 ## Current version
 
-`v0.1.0 (SCRIPT_NAME "NX_Turn_Z")` — legacy rotator brought onto the convention (header/banner/SemVer); dead-store P4 gate removed.
+`v0.1.4 (SCRIPT_NAME "NX_Turn_Z")` — legacy rotator brought onto the convention (header/banner/SemVer); dead-store P4 gate removed.
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v0.1.0 | 2026-11-18 | refonte adoption of the kept legacy rotator: added `nexus_header` (banner + mem report), SemVer. **Removed** the `918410 OPEN` gate that read the now-dead store `mc:workshop:session` (gating moves to the craft flow). Rotation behaviour otherwise unchanged. |
+| v0.1.1 | 2026-11-19 | **default page P0**: force `pageZero()` + clear page flags at `state_entry`, `attach` (wear) and `on_rez`, so the worn HUD never opens on a stale page (bug: opened on P4). |
+| v0.1.2 | 2026-11-19 | P0 reset made robust on wear: the `attach` rotation was clobbered by the viewer, so a one-shot timer re-applies `pageZero()` ~0.3 s after attach/rez/boot. |
+| v0.1.3 | 2026-11-19 | **absolute 2D rotations**: pages are absolute local Z rotations (X/Y = 0), P0 = `ZERO_ROTATION`. Stopped reading `llGetLocalRot()` and preserving X/Y — stale/attach-time X/Y noise was offsetting the page (HUD opened on P4). |
+| v0.1.4 | 2026-11-19 | **correct page angles**: P0 home = 270, P1 cut = 180, P3 transfer = 90, P4 observation = 0 (absolute). The earlier P0=0 was wrong — Z=0 is observation, which is why the HUD opened on P4. Dropped the attach-timer (the reset applies fine; the bug was the angle, not a clobber). |
 
 ## Dependencies
 
