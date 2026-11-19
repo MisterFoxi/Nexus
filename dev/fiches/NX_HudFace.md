@@ -10,7 +10,7 @@ The worn HUD's thin face toward the bench. **Built so far:** provisioning probe 
 
 ## Current version
 
-`v0.2.0 (SCRIPT_NAME "NX_HudFace")` — probe responder + bind handshake on `NX_HUD`; identity (model = kind) parsed from own object name; fail-silent when misnamed; one bench at a time.
+`v0.3.0 (SCRIPT_NAME "NX_HudFace")` — probe responder + bind handshake on `NX_HUD`; identity (model = kind) parsed from own object name; fail-silent when misnamed; one bench at a time.
 
 ## Changelog
 
@@ -18,6 +18,7 @@ The worn HUD's thin face toward the bench. **Built so far:** provisioning probe 
 |---|---|---|
 | v0.1.0 | 2026-11-18 | created — socle §8: listen on `NX_HUD`, on `NX|HUDQ` reply `NX|HUDA|<model>|<version>`. Model+version parsed from own name `<model> v<X.Y.Z>`. Misnamed → stay silent. |
 | v0.2.0 | 2026-11-18 | **bind** — ported `OFFER`/`ACCEPT`/`BOUND` from `docs/README_workshop_link.md` onto `NX_HUD`: on `NX\|OFFER` (speaker = named bench, kind = our model) store bench+session, reply `NX\|ACCEPT\|<session>\|<kind>`; on `NX\|BOUND` mark bound. One bench at a time (OFFERs from other benches ignored while bound); reset (re-wear) clears the bind. session = the bench lock (§8); single/keep carried but not stored yet. |
+| v0.3.0 | 2026-11-19 | **unbind on detach**: `attach(NULL_KEY)` sends `NX\|UNBIND\|<session>` to the bound bench, so WS_Core can let another avatar take over (Force) when the HUD is removed but the holder stays in region. |
 
 ## Dependencies
 

@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_HudFace"
-#define SCRIPT_VERSION "v0.2.0"
+#define SCRIPT_VERSION "v0.3.0"
 #include "nexus_header"
 
 // NX_HudFace — the worn HUD's thin face toward the bench.
@@ -57,7 +57,13 @@ default
         parseSelf();
     }
 
-    attach(key id){ if(id != NULL_KEY) llResetScript(); }   // (re)read name + clear bind on wear
+    attach(key id)
+    {
+        if(id != NULL_KEY){ llResetScript(); return; }     // worn: (re)read name + clear bind
+        // detached: tell our bench we're gone so another avatar can take over (WS_Core Force, craft kept)
+        if(gBench != NULL_KEY && gSession != "")
+            llRegionSayTo(gBench, NX_HUD, "NX|UNBIND|" + gSession);
+    }
     on_rez(integer p){ llResetScript(); }
     changed(integer c)
     {

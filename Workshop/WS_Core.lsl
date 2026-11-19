@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Core"
-#define SCRIPT_VERSION "v0.2.0"
+#define SCRIPT_VERSION "v0.3.1"
 #include "nexus_header"
 
 // WS_Core — the bench-side state machine. First slice: reservation (occupancy lock) + HUD provisioning
@@ -22,8 +22,9 @@
 //   wornHUD-> bench  : NX|ACCEPT|<session>|<kind>
 //   bench  -> avatar : NX|BOUND|<session>
 //
-// Contention: holder present in region -> "in use"; holder away (out of region) -> offer Force. Forcing
-// transfers the lock and LEAVES any pending craft (and its session) in the bench for the new player.
+// Contention: a 2nd toucher gets "in use" only if the holder is in region AND their HUD answers a ping;
+// holder away, or present but HUD not answering (and the best-effort NX|UNBIND fast-path) -> offer Force.
+// Forcing transfers the lock and LEAVES any pending craft (and its session) in the bench for the new player.
 //
 // OPR gate: reservations are refused until the world is loaded (WS_Boot broadcasts WS_OPR; we also infer
 // readiness from ws:worldver being set, to survive a lone WS_Core reset).
@@ -41,9 +42,11 @@ string  gHudInv;                       // exact inventory name of the reference 
 string  gModel;                        // parsed model (name before " v")
 string  gVersion;                      // parsed expected version ("vX.Y.Z")
 
-key     gProbeAv = NULL_KEY;           // avatar currently being probed
+key     gProbeAv = NULL_KEY;           // avatar whose HUD we are pinging (provisioning or contention check)
+key     gChallenger = NULL_KEY;         // a 2nd avatar waiting to know if the holder still has a HUD
 integer gHasHud;                       // a matching NX|HUDA was heard this probe
 integer gBound;                        // HUD ACCEPT received for the current session
+integer gHudGone;                      // holder's HUD announced detach (NX|UNBIND) -> takeover allowed
 
 integer gDlgChan;                      // dialog channel
 key     gDlgAv = NULL_KEY;             // avatar in the current dialog
@@ -107,7 +110,7 @@ acquire(key av){
     llLinksetDataWrite("state:lockname", llKey2Name(av));
     if(llLinksetDataRead("state:session") == "")
         llLinksetDataWrite("state:session", (string)llGenerateKey());  // new craft session (ticket)
-    gBound = FALSE;
+    gBound = FALSE; gHudGone = FALSE;
     status();
     llRegionSayTo(av, 0, "[Nexus] Bench reserved.");
     startProbe(av);
@@ -116,7 +119,7 @@ acquire(key av){
 forceTo(key av){
     llLinksetDataWrite("state:lock", (string)av);
     llLinksetDataWrite("state:lockname", llKey2Name(av));  // state:craft + state:session kept: pending craft inherited
-    gBound = FALSE;
+    gBound = FALSE; gHudGone = FALSE;
     status();
     if(llLinksetDataRead("state:craft") == "1")
         llRegionSayTo(av, 0, "[Nexus] Bench forced. A craft is pending here - take or discard it.");
@@ -145,7 +148,7 @@ default
         llListen(gDlgChan, "", NULL_KEY, "");
         parseHud();
         gReady = (llLinksetDataRead("ws:worldver") != "");
-        gProbeAv = NULL_KEY; gDlgAv = NULL_KEY; gBound = FALSE;
+        gProbeAv = NULL_KEY; gChallenger = NULL_KEY; gDlgAv = NULL_KEY; gBound = FALSE; gHudGone = FALSE;
         status();
     }
     on_rez(integer p){ llResetScript(); }
@@ -174,12 +177,22 @@ default
             return;
         }
         key hk = (key)holder;                              // locked by someone else
-        if(inRegion(hk)){
-            llRegionSayTo(av, 0, "[Nexus] Bench in use by " + llLinksetDataRead("state:lockname") + ".");
-        } else {
+        if(gHudGone || !inRegion(hk)){                     // known HUD-gone, or away -> offer Force now
             gDlgAv = av; gDlgKind = "force";
-            llDialog(av, llLinksetDataRead("state:lockname") + " seems away.\nForce allocation?", ["Force", "Cancel"], gDlgChan);
+            string why = " seems away";
+            if(gHudGone) why = " has no HUD";
+            llDialog(av, llLinksetDataRead("state:lockname") + why + ".\nForce allocation?", ["Force", "Cancel"], gDlgChan);
+            return;
         }
+        if(gProbeAv != NULL_KEY){                          // a probe is already running; ask the 2nd avatar to retry
+            llRegionSayTo(av, 0, "[Nexus] Bench busy, try again in a moment.");
+            return;
+        }
+        // holder in region, HUD status unknown: ping their HUD; no answer in PROBE_WAIT -> treat as HUD-gone
+        gChallenger = av;
+        gProbeAv = hk; gHasHud = FALSE;
+        llRegionSayTo(hk, NX_HUD, "NX|HUDQ|" + (string)llGetKey() + "|" + gModel + "|" + gVersion);
+        llSetTimerEvent(PROBE_WAIT);
     }
 
     listen(integer chan, string nm, key id, string msg)
@@ -188,11 +201,16 @@ default
             list f = llParseStringKeepNulls(msg, ["|"], []);
             if(llList2String(f, 0) != "NX") return;
             string verb = llList2String(f, 1);
-            if(verb == "HUDA"){                            // provisioning answer during a probe -> HUD present, bind now
+            if(verb == "HUDA"){                            // a probed HUD answered
                 if(gProbeAv != NULL_KEY && id != NULL_KEY && llGetOwnerKey(id) == gProbeAv
                    && llList2String(f, 2) == gModel && llList2String(f, 3) == gVersion){
                     gHasHud = TRUE;
-                    offerHud(gProbeAv);
+                    if(gChallenger != NULL_KEY){           // contention check: holder has a HUD -> in use
+                        llRegionSayTo(gChallenger, 0, "[Nexus] Bench in use by " + llLinksetDataRead("state:lockname") + ".");
+                        gChallenger = NULL_KEY; gProbeAv = NULL_KEY; llSetTimerEvent(0.0);
+                    } else {
+                        offerHud(gProbeAv);                // provisioning: bind
+                    }
                 }
                 return;
             }
@@ -201,8 +219,15 @@ default
                 if(holder == "" || id == NULL_KEY || llGetOwnerKey(id) != (key)holder) return;
                 if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
                 llRegionSayTo((key)holder, NX_HUD, "NX|BOUND|" + llLinksetDataRead("state:session"));
-                gBound = TRUE;
+                gBound = TRUE; gHudGone = FALSE;
                 llOwnerSay("[Nexus] WS_Core: HUD bound (" + llLinksetDataRead("state:lockname") + ").");
+            }
+            if(verb == "UNBIND"){                          // holder's HUD detached -> allow takeover (Force)
+                string holder2 = llLinksetDataRead("state:lock");
+                if(holder2 == "" || id == NULL_KEY || llGetOwnerKey(id) != (key)holder2) return;
+                if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
+                gHudGone = TRUE; gBound = FALSE;
+                llOwnerSay("[Nexus] WS_Core: HUD gone; bench can be taken over (" + llLinksetDataRead("state:lockname") + ").");
             }
             return;
         }
@@ -216,14 +241,23 @@ default
 
     timer()
     {
-        llSetTimerEvent(0.0);                              // one-shot: provisioning window elapsed
-        if(gProbeAv != NULL_KEY){
+        llSetTimerEvent(0.0);                              // one-shot window elapsed
+        if(gProbeAv == NULL_KEY) return;
+        if(gChallenger != NULL_KEY){                       // contention check timed out
+            if(!gHasHud){                                  // holder has no HUD -> offer Force to the challenger
+                gDlgAv = gChallenger; gDlgKind = "force";
+                llDialog(gChallenger, llLinksetDataRead("state:lockname") + " has no HUD.\nForce allocation?", ["Force", "Cancel"], gDlgChan);
+            } else {
+                llRegionSayTo(gChallenger, 0, "[Nexus] Bench in use by " + llLinksetDataRead("state:lockname") + ".");
+            }
+            gChallenger = NULL_KEY;
+        } else {                                           // provisioning window
             if(!gHasHud){
                 giveHud(gProbeAv);
                 llRegionSayTo(gProbeAv, 0, "[Nexus] Wear the HUD, then touch the bench again.");
             }
-            gProbeAv = NULL_KEY;
         }
+        gProbeAv = NULL_KEY;
     }
 }
 // REVIEW: 2026-11-18 — version match is exact (reported == expected); a semver ">=" compare would avoid
@@ -232,3 +266,5 @@ default
 // REVIEW: 2026-11-18 — release() is a stand-in; COMMIT/RELEASE to WS_Stock wired with the craft flow.
 // REVIEW: 2026-11-18 — the bind has no RELEASE round-trip to the HUD yet; the HUD clears its bind on re-wear.
 // REVIEW: 2026-11-18 — one probe at a time (single timer); concurrent reservations are not expected yet.
+// REVIEW: 2026-11-19 — gHudGone is runtime (not persisted); a WS_Core reset forgets a HUD-detach until the
+//   holder is out of region or re-touches. Acceptable for now.
