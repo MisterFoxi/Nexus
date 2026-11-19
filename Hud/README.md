@@ -1,52 +1,43 @@
-# Development HUD
+# HUD (worn) — network refonte
 
-The root contains only the **current HUD scripts**, to install in the linkset's root prim alongside FURWARE (supplied separately).
+> **Status (18 nov. 2026): being rebuilt as a thin face of the bench.** The old HUD
+> owned the basket (`mc:simple:row`), ran per-unit `TAKE/RETURN/COMMIT` on `-918274`,
+> and streamed rows up to the bench via stop-and-wait **MCW** on `-918275`
+> (`MC_Selected_Controller`, `MC_Transactions`, `MC_Workshop_Link`). That backend is
+> **superseded**: stock is server-authoritative, the basket + evaluation live in the
+> **bench**, and the HUD only sends intents and renders. Decision record:
+> `claude/socle-refonte-reseau.md` §4 (generic HUD) and §8 (reservation/provisioning).
 
-| Function | Scripts |
-|---|---|
-| Scanning | MC_Scan, MC_Scan_Refresh |
-| Selection and basket | MC_Nearby_Controller, MC_Selected_Controller, MC_Transactions |
-| Rendering | MC_Render, MC_Render_Selected, MC_Render_P1 |
-| Craft page and rotation | MC_P1_Controller, MC_Turn_Z |
-| P4 observations and action atlas | MC_P4_Controller |
-| Animation | MC_Atlas_Player, MC_P1_Animation |
-| Button textures (connected to animation controller) | MC_Playback_Buttons |
-| Chopping progress on P1_PROGRESS | MC_Chop_Progress |
-| Workshop HUD endpoint | MC_Workshop_Link |
+## Keep vs replace
 
-## Current installation
+**Keep — the visual layer** (the real asset):
+- Page rotation: P0 selection 0°, P1 craft −90°, P4 observation +90°, P3 recipient 180°
+  (`MC_Turn_Z`).
+- FURWARE tables + atlases + renderers (`MC_Render*`, `MC_Atlas_Player`, `MC_P1_Animation`,
+  `MC_Playback_Buttons`, `MC_Chop_Progress`), button mapping, prim naming
+  (`P1_Icon_n`, `P1_REMOVE_n`, `P4_Table1`, `P1_PROGRESS`, …).
+- Page controllers' UX: P1 (CUT/CONT, PAUSE→P4, DISCARD + active clock), P4 (read-only
+  observation), P3 (recipient), P0 (pick list).
 
-- [Selection and basket](docs/README_simple.md)
-- [Craft page, returns, and Discard](docs/README_P1.md)
-- [P4 observation page and action atlas](docs/README_P4.md)
-- [Atlas player and Cut/Stop integration](docs/README_Atlas.md)
-- [Playback button atlas and visual library API](docs/README_playback_buttons.md)
-- [Chopping progression, 10-second active clock and used-component latch](docs/README_chop_progress.md)
-- [Workshop HUD endpoint, installation and whisper contract](docs/README_workshop_link.md)
+**Replace — the backend**: `MC_Selected_Controller`, `MC_Transactions`, `MC_Workshop_Link`
+and the `-918274`/`-918275` protocols. The new HUD is a thin client of `WS_Core`:
+it sends picks/craft/observe/recipient intents and shows what the bench returns.
 
-The atlas player, button texture library, and both atlas textures belong in the root prim's inventory; the display prim is **P1_DISPLAY**. HUD buttons contain no scripts. Diagnostic scripts, fixtures, and old controllers are not part of this installation.
+## Provisioning contract (built, bench side = WS_Core v0.1.0)
 
-## Organization
+The bench gives the HUD on reservation if the player lacks it. The worn HUD **must**
+answer the bench probe on `NX_HUD = -918282`:
+- bench → avatar: `NX|HUDQ|<benchKey>|<model>|<version>`
+- worn HUD → bench: `NX|HUDA|<model>|<version>`
 
-- `assets/`: textures, including the validated `atlas_chop_fond_fixe_v3.png`, `hud_p2.png` (background without a central image), the digit atlas, and retained P0 variants.
-- `assets/sources/`: prompts, layers, and the atlas build script.
-- `docs/`: documentation for the current assembly.
-- `tools/`: optional diagnostic tools and a standalone atlas test.
-- `tests/fixtures/`: simulated sources, to install in separate objects.
-- `tests/`: syntax checks and behavior scenarios.
-- `archive/2026-10-23/`: superseded versions, old experiments, and duplicates. Its manifest records moves and file hashes; originals of adapted files are in `before_cleanup/`.
+The reference HUD object lives in the bench inventory, named `<model> v<X.Y.Z>`; the worn
+HUD reports the same model + its own SemVer. Exact match → not re-given.
 
-P0 texture variants are retained: the cleanup did not choose a different layout. No files were deleted during that cleanup. Historical archives retain their original language.
+## Next steps
 
-## Verification
+1. Minimal worn-HUD responder (`NX|HUDA`) so provisioning stops re-giving.
+2. Thin HUD↔`WS_Core` session/intents contract (bind on reservation; pick/craft/observe/recipient).
+3. Repoint the kept visual pages onto that contract.
 
-From PowerShell, run `./tests/run_hud_checks.ps1`. It covers selection, the craft page, Discard, and atlas integration. AST tests do not replace Mono compilation and visual checks in Second Life.
-
-**Review:** the runner currently references `../Tools/MC_Memory_Probe.lsl`, which is absent from this checkout. Restore that optional tool or remove its entry from the runner before using the complete command. The runtime paths and VS Code parser path are specific to the development machine.
-
-The chopping controller now commits the existing craft_started latch before first
-playback, tracks 10-second active-time progress and never reoffers START for a used
-preparation. CONT resumes; confirmed Discard releases the latch. Source reservations
-and discard remain with the existing basket/transaction owners. Product evaluation
-and physical output are delegated to the five Workshop scripts; see
-[Workshop installation and memory checks](../Workshop/README.md).
+Legacy docs for the old pages remain under `docs/` (P1/P3/P4/simple, workshop_link) as
+UX/asset reference; their MCW/stock protocol sections are superseded.

@@ -1,308 +1,57 @@
-# Workshop v0.9.1: factored coordinator, configuration and interface
+# Workshop (bench) — network refonte
 
-> Live P4 observations: add Workshop_Observe in ROOT and follow
-> [the observation installation guide](README_observations.md). This adds an
-> eighth script for read-only consultation. The seven-script crafting setup
-> below remains the baseline. Config now maps the same inputs for both paths.
+> **Status (18 nov. 2026): under rebuild.** The old 7–8 script MCW coordinator
+> (`Workshop`, `Workshop_Config`, `Workshop_Interface`, `Workshop_HUD`,
+> `Workshop_Eval`, `Workshop_Output`, `Workshop_Storage`, `Workshop_Observe`) is
+> **superseded**. It implemented distributed, HUD-mirrored stock over a hand-rolled
+> reliable-whisper (MCW) — the exact machinery the refonte removes. Decision record:
+> `claude/socle-refonte-reseau.md` (project doc). This README describes the **new**
+> bench; the legacy scripts remain in git history and in `old/` only as salvage
+> reference.
 
-Run these seven scripts together in the same ROOT prim of an idle workshop:
+## What the bench is now
 
-| Script | Owns |
-|---|---|
-| Workshop | Player/HUD lease, collector identity, current treatment phase, durable input acceptance |
-| Workshop_Config | Notecard parsing, action list, heat/duration input mapping, future consultation hook |
-| Workshop_Interface | Player information, Resume/Exit/Text menu, HUD provisioning, product-state display |
-| Workshop_HUD | MCW radio endpoint, durable input rows, derived evaluation groups |
-| Workshop_Eval | Existing aggregation, rule resolution, yield and product calculation |
-| Workshop_Output | Product pending delivery, container discovery, CONFIG and CUT/GIVE, sounds/particles |
-| Workshop_Storage | Kept products, expiry, progressive migration/read access |
+Authority moved out of the bench and into an in-sim **server** (`Server/nexus_server.lsl`):
+- **Stock** (quantities) → server, authoritative (`reserve/commit/release`, no TTL; the
+  bench holds the reservation for the whole craft). Spec: `dev/stock-protocol.md`.
+- **World** (compiled `monde.nc` dictionaries) → server, versioned, pulled + cached by
+  the bench at boot.
+- **Identity/DNA/freshness** stays in the Component objects (`Component/nexus_component.lsl`).
 
-For this v0.9.1 update, replace Workshop and add Workshop_Config and
-Workshop_Interface. Keep the existing HUD, Eval, Output and Storage scripts,
-bench_config, compiled tok:/tax:/law:/idx: data and inventory objects/sounds.
-Do not run an old coordinator beside the new one. Both new scripts are required:
-the coordinator blocks association until configuration and interface are ready.
-Install idle; there is no reset, purge, recipe change or in-world installation
-performed by the source update. monde.nc and every compiler file are unchanged.
-Field retains its existing evaluator interface.
+The bench is decomposed **one script per function** (socle §7). Each boundary is a
+documented message contract; see the per-script fiches in `dev/fiches/`.
 
-## Memory ownership
+| Script | Role | State |
+|---|---|---|
+| `WS_Boot` | World/OPR gate: `HELLO`→server, cache+version, write physics to LSD, go OPR; reads `bench_config` (type = `Genre`) | **built** v0.2.2 |
+| `WS_Core` | Bench state machine: reservation lock + HUD provisioning + contention/force; later the craft phases | **built** v0.1.0 (lock+provisioning slice) |
+| `WS_Stock` | Server client: `RESERVE`/`COMMIT`/`RELEASE`/`DISCARD`, forges output SIDs | todo |
+| `WS_Scan` | `PING`/`HERE`/`BLANK`, basket build (DNA + SID) | todo |
+| `WS_Action` | Temporal pausable action (grind/heat/elapsed), local observation (`consult`) | todo |
+| `Workshop_Eval` | The evaluator — **kept as-is** (pure, no stock/session) | kept |
+| `WS_Output` | Recipient `CONFIG` with the output SID; `CUT`/`GIVE` | todo |
+| `WS_HMI` | `llSetText` status + touch menu + dialogs (UI layer) | todo |
 
-Workshop no longer owns gIng, gPicks, gCons, gRec, gKept, output DNA, ingredient
-menus or the action stepper. Selection, gesture and source-stock transactions
-are owned by the HUD. The coordinator now has no global list: configured action
-names move to Workshop_Config. Configuration parsing, input calculations and the
-read-only consultation extension are removed from its heap/code. Interface owns
-menu listeners, provisioning and product-DNA decoding for HUD display. No module
-receives a complete serialized basket as part of this factorization.
+## Boot & lifecycle
 
-Workshop_HUD saves one incoming source per ws:in:row:N key. Stop-and-wait ROW
-acknowledgements are sent only after persistence. Duplicates must match the
-saved row exactly. On END, one event processes one source to create stored
-evaluation groups. This preserves the old Workshop name/stage batch grouping,
-first source's metadata for that group, and first group's role as principal.
-Every raw source's metadata remains in the spool for physical output. This
-split does not redefine ingredient identity or recipe/yield arithmetic.
+1. **Boot** (`WS_Boot`): `NX|HELLO|<wsKey>|<cachedVer>|<type>` on `NX_STOCK` (-918280). Server
+   replies `WORLD_OK` (cache valid) or streams `WORLD_BEGIN/CHUNK/END`; bench writes the
+   `tok:/tax:/law:/idx:/dom:` realms to LinksetData, caches `ws:worldver`, goes **OPR**.
+   `WORLD_BUMP` (auto on re-ingest, or on server owner-touch) → re-sync.
+2. **Reserve** (`WS_Core`): player touches the bench → exclusive lock (OPR+free), persisted
+   in `state:lock`. The bench provisions the player's HUD over `NX_HUD` (-918282): probe
+   `NX|HUDQ`, worn HUD answers `NX|HUDA|model|version`; give the reference HUD if
+   absent/mismatched. Contention: holder present → "in use"; holder out-of-region → Force.
+3. **Craft** (todo): select components (reserve) → temporal action → evaluate (local) →
+   take (COMMIT) or discard (RELEASE). Lock frees only on take/discard.
 
-Workshop_Eval reads one stored group per event. Its accumulator and first group
-stay in Eval; the complete flattened groups list is not constructed for the
-Workshop path. Output uses the same calculation functions as before. The old
-direct request used by Field remains available. No new recipe or legacy stock
-protocol has been added.
+## Channels
 
-Output keeps only its current product in script memory. Blank containers are
-stored one per key and consumed one per event. Storage keeps one product per
-record and returns one record per page request. The former state:kept is
-imported with deterministic keys and deleted only after all rows were copied.
+`NX_STOCK = -918280` (stock + world), `NX_SCAN = -918281` (component scan),
+`NX_HUD = -918282` (bench ↔ worn HUD).
 
-Source size is not a Mono memory measurement. This factorization reduces the
-coordinator from about 27.6 kB / 611 lines to 19.7 kB / 421 lines. Actual free
-memory must be checked in-world with 970290, which reports all seven scripts,
-including Eval with the loaded world rules. Rule lookup/aggregation still run
-in Eval and retain their existing vocabulary-dependent cost.
+## Conventions
 
-## Module boundaries and recovery
-
-Workshop remains the sole writer of ws:core and ws:collector. Their formats are
-unchanged; gAction remains in the durable core record for evaluation recovery.
-Workshop_Config publishes the small ws:config record and keeps only its action
-configuration, never source rows. Workshop_Interface reads durable identities;
-it cannot create a lease or change treatment phase. ws:hover carries the current
-display preference; it is initialized from the existing notecard on config load.
-
-The new internal ROOT messages are:
-
-| Code | Direction / purpose |
-|---|---|
-| 970250 / 970251 | Core requests configuration; Config replies with a correlated snapshot or ERROR; RESET asks Core to reload |
-| 970252 | Core requests Output configuration from Config |
-| 970254 / 970255 | Core requests pure input mapping; Config replies with choice, raw seconds, heat and action header, or NO |
-| 970256 | Core delegates an authenticated read-only INSPECT request to Config |
-| 970260 / 970261 | Core requests interface display/menu/provisioning; Interface sends a session-correlated menu choice |
-
-BEGIN/ROW/END and all MCW radio messages keep their existing formats. A new
-BEGIN is acknowledged only after the matching input calculation returns and
-ws:inputs plus ws:core are persisted. A second or late mapping result cannot
-replace a pending run. Mapping requests are transient, have a timeout, and are
-never replayed after coordinator reset. A configuration restart rebuilds settings
-without replaying stock transactions or recreating pending output. Inspection
-timeouts belong to Config. The live adapter API 970240/970241 and snapshot
-transport are documented in README_observations.md.
-
-The standard check runner includes test_factorization.py for module ordering,
-missing modules, stale replies, resets, storage failure and unchanged stock.
-
-## Version 0.8.1 type information
-
-Workshop and Workshop_Output now announce v0.8.1. Replace both together; the
-other three Workshop scripts remain v0.8.0. After bench_config finishes loading,
-the coordinator reports `WS type (Genre) = ... | HUDKind = ...`. Both fields also
-appear in touch/menu information and the pending-product hover. Genre is retained
-separately from HUDKind, so an explicit HUDKind does not mask the station type.
-Omitted HUDKind still defaults to the first Genre. Recipe selection and MCW
-association are unchanged. Multiple Genre entries are all shown as configured.
-
-## Version 0.8.0 installation and lifetime
-
-All five Workshop scripts print their own name, revision and date at state_entry,
-before loading configuration or restoring records. Eval's v0.7.2 dimensional
-routing correction is retained; only its revision banner changes in this release.
-Update the five ROOT scripts together on an idle station. Update HUD
-MC_P1_Animation, MC_Workshop_Link and MC_P3_Controller together. Keep the existing
-HUD geometry and P0/P1/P3 rotations (0/180/90 degrees). DEV=1 still uses the
-already worn HUD. No reset or data clear is part of this source update.
-
-Update Component to v0.7.3 in recipient containers to honor the optional absolute
-expiry sent in CONFIG. Existing components remain readable as ingredient sources;
-older recipient scripts ignore that field and cannot guarantee the lot's expiry.
-
-The HUD measures P1 active seconds and owns preparation/selection/stock closure.
-The Workshop converts those seconds into configured action intensity, evaluates
-the laws and owns the result, physical delivery and remaining product. No autonomous
-CookTime step runs after submission. CookTime, CollectWindow, MaxQuantity,
-MinLifetime and Channel have been removed from the example bench configurations;
-older notecards containing them remain readable and those options have no effect.
-
-The product lot receives one absolute expiry when Output persists the evaluated
-product: now + lifetime * inherited freshness / 1000. Each partial transfer and
-reset keeps this same expiry. `ws:output` now has 11 fields, appending expiry to
-the former 10 fields; 0 means unlimited and -1 means unknown legacy age.
-CONFIG carries current freshness and this expiry; Component keeps the base
-lifetime and stores that exact expiry in rz_exp. Time inside the WS is counted.
-Expired remaining quantity is retired without CONFIG or another stock operation;
-ingredient acknowledgements must still be settled before another preparation.
-
-Old 10-field records remain readable. A pending perishable lot with no recorded
-expiry is retained in HOLD with its quantity, rather than receiving a fabricated
-fresh lifetime. A legacy RECEIPTING record finishes its receipt without CONFIG;
-an unknown-age remainder enters HOLD. Old unlimited COOKING records move directly
-to output. Physical dispatch boundaries still restore as HOLD. No automatic purge
-or replay is introduced. Install idle for a straightforward upgrade.
-
-CookSound and smoke now follow authenticated HUD P1 activity (918394 locally,
-MCW ACTIVITY over radio). This is cosmetic; it never advances the craft clock.
-The HUD refreshes active effects, and an eight-second loss of cosmetic activity
-stops them. Stop, pause, submission and exit stop them immediately. ReadySound
-and FailSound retain their purpose. The existing Resume/Exit/Text menu and the
-component HOVER command remain available.
-
-Touch reports the current player and, for a treatment, its originating player.
-Product hover shows the current collector, remaining quantity and seconds to
-expiry. Player names fall back to UUIDs if unavailable. Touching by another
-player still changes the current collector; the information grants no reservation.
-
-## Configuration
-
-The existing bench_config remains valid. Existing Genre, Action, GrindScale,
-GrindMax, ShowHover and sound fields are retained. CookTime is no longer used. Numeric evaluator
-configuration (MaxEffect, FluxAbs, Batch, NMax, SpoilMin/Max) is still read by Eval.
-
-Additional optional fields, owned by the coordinator:
-
-```
-HUDKind = cutting_board
-SingleIngredient = 1
-AllowKeep = 0
-DEV = 1
-# HUDObject = inventory object name, required when DEV=0
-```
-
-HUDKind defaults to the first Genre. The dedicated HUD's HUD_KIND must match it.
-SingleIngredient defaults to 1. AllowKeep defaults to 0 and is always forced to
-0 for cutting_board. DEV defaults to 1: use the already worn development HUD.
-With DEV=0 the coordinator rezzes the configured HUDObject; its MC_Workshop_Link
-handles attach permission/temporary attach. Provisioning, permissions and
-inventory copying still require in-world validation.
-
-Action names/configuration are not inferred from the obsolete cutting-board
-laws. As before, configured action values use round(activeSeconds * GrindScale)
-bounded to 0..GrindMax. Workshop_Config v0.10.5 also supplies the cutting board's
-degree directly through fab.grind when that axis has no explicit mapping:
-rounded active seconds, capped at 10, using the bands in axes.src. No additional
-bench_config entry is required. Other stations without Action retain an empty
-action header. Laws and
-compiler/axes.src are unchanged by this segmentation.
-
-MCW authorizes the touched player and associated HUD/session. Ingredient stock access remains same-owner. See the P3 guide for visitor HUD provisioning.
-
-## Session and physical output
-
-The workshop takes its lease before OFFER and accepts one dedicated HUD. It
-keeps that lease across preparations. Workshop_HUD implements the documented
-MCW contract in Hud/docs/README_workshop_link.md on whisper channel -918275.
-The coordinator rejects unrelated senders, sessions and treatments. The existing
-physical Component protocol remains on -918273; the HUD stock relay remains
-on its existing channel.
-
-BEGIN/ROW/END spool the confirmed basket and gesture. Eval stores its result
-before sending its reference to the coordinator. The coordinator passes only
-the run UUID/choice/player to Output; product DNA is read there. No source
-TAKE, RETURN or COMMIT is sent by any Workshop subsystem.
-
-Immediately after evaluation, a valid CONTAINER product enters WAIT_CONTAINER and is
-collected through HUD P3. See [P3 installation and protocol](../Hud/docs/README_P3.md).
-The existing RESULT OK now starts ingredient COMMIT closure when the durable
-product is ready, independently of physical collection. CLOSED records ingredient
-closure; the PRODUCT phase retains the output remainder. Transfer uses only
-explicitly selected recipient UUIDs, revalidated by Output. P1 Take now evaluates
-before P3 is opened. Direct inventory output completes on P1 and returns optional
-RESULT detail `OK|GIVE` so the HUD can announce delivery and return to P0. There is no P3 Discard UI or protocol. Mesh/organ CUT/GIVE and KEEP retain their existing flow.
-
-Touching pending output identifies its current collector, including a different
-player with their own dedicated HUD. Origin stock closure and collector identity
-are persisted separately. A new preparation requires both confirmed ingredient
-closure and terminal product output. A missing original COMMIT acknowledgement
-does not block another player's recovery, but still blocks a new craft.
-
-Exit is accepted after the HUD's own stock cleanup. The release receipt is
-stored before clearing the lease, allowing an exact duplicate EXIT to receive
-RELEASED again. No timeout guesses that held stock or a pending output is gone.
-
-When the recorded player touches an associated workshop with no submitted
-treatment (BOUND), a Resume/Exit menu is offered. Resume retains the same
-session. Exit sends an authenticated MCW EXIT_REQUEST with NULL_KEY as run;
-the idle HUD performs its normal cleanup before requesting release. Replace
-both Workshop.lsl and MC_Workshop_Link.lsl for this menu. A stale menu cannot
-release a treatment that has since begun. Other active phases are reported by
-name instead of being mislabeled as another user's session.
-
-CONFIG and GIVE remain the existing one-way physical messages. This split
-does not claim a new Component delivery acknowledgement. Output writes a
-dispatch boundary before those calls. Reset at an uncertain boundary enters
-HOLD, retains the session and reports the ambiguity without automatically
-repeating delivery. Such a HOLD needs an in-world check of the physical result;
-no destructive recovery/purge command is provided here.
-
-## Persistence and reset
-
-Each subsystem owns its namespace:
-
-| Namespace | Owner |
-|---|---|
-| ws:core, ws:released, ws:collector, ws:closed | Coordinator |
-| ws:input, ws:in:* | HUD input |
-| ws:eval:result | Eval |
-| ws:output (including absolute expiry), ws:product, ws:out:blank:*, ws:out:request, ws:out:receipt | Output |
-| ws:kept:*, ws:storage:* | Storage |
-
-Input groups/label indexes are derived caches. A reset during grouping clears
-only those caches and rebuilds from the durable raw source rows. Completed
-evaluation is cached by run UUID, so retries return the same result. Output's
-DONE state acknowledges a repeated START without producing again. Pending
-container output and Keep survive subsystem resets.
-
-Storage exposes an internal progressive PAGE API. Publication of multiple kept
-lots as sources compatible with the current HUD scan/stock protocol is a
-separate remaining hookup; no virtual object UUID is fabricated by this split.
-
-## Internal linked messages
-
-All five scripts are in ROOT. Large input/output data is referenced through
-owned records; all treatment messages carry their run UUID in id.
-
-| Code | Purpose |
-|---|---|
-| 970210 / 970211 | MCW inbound control / outbound wire |
-| 970213 / 970214 / 970215 | Input command / progressive step / status |
-| 970202 / 970203 / 970201 | Stored-input evaluation / step / result reference |
-| 970220 / 970221 / 970222 / 970223 | Output command / outcome / config / step |
-| 970230 / 970231 / 970232 | Storage KEEP or PAGE / reply / import step |
-| 970298 / 970299 | Subsystem availability query/reply |
-| 970290 | Report each subsystem's current llGetFreeMemory |
-
-Send `llMessageLinked(LINK_THIS, 970290, "", NULL_KEY);` from a diagnostic script
-in ROOT to request the five memory reports. Measure after reset, input, Eval,
-partial delivery, closure and a second preparation. No sixth runtime script is
-required for the five production responsibilities.
-
-## Verification
-
-Identity conditions retain their dimension during evaluation: taxonomic ancestry
-named plant does not satisfy meta.stage=plant on an already harvested leaf.
-Organ names and eligibility tags likewise cannot stand in for a stage or a
-taxonomy. Unqualified token presence and numeric aggregation retain their rules.
-Whole-plant GIVE/organ mesh output remains available; leaf transformations still
-produce container DNA under the loaded laws. No world records or recipes change.
-After replacing Eval, submit a new treatment to evaluate again; an existing run's
-cached result is intentionally not recalculated or replayed.
-
-Run `Workshop/tests/run_workshop_split_checks.ps1` (including `test_cleanup.py`). The runner uses the installed
-Tailslide parser and exercises the actual script ASTs, including the actual HUD
-endpoint, basket and stock relay. Test doubles provide LSL services, containers
-and source replies. The before-split Eval fixture is used only for arithmetic
-and rule-resolution parity tests, with synthetic laws; it is not an installation
-script or a reference for current cutting-board recipes.
-
-These tests do not replace Mono compilation, memory measurements, permissions
-or inventory-delivery checks in Second Life. The scripts report existing
-persistent errors instead of dropping products or silently retrying dispatch.
-
-`tests/test_stage_routing.py` reproduces the Kanda leaf failure using the taxonomy
-ancestry and harvest/chop/mince conditions from the supplied in-world dump. It
-checks leaf without a mesh reaching CONFIG to a selected recipient, whole plant
-retaining GIVE, whole species retaining multi-organ output, stage progression,
-dimension collisions and aggregate cleanup between evaluations.
-
-## Independent cooking inputs — v0.9.0
-
-Workshop v0.9.0 and HUD MC_P1_Animation/MC_Workshop_Link v0.9.0 add independent heat and active-duration inputs, plus a future read-only product consultation hook. See [cooking inputs](../Hud/docs/README_cooking_inputs.md). Existing single-input configurations remain valid. The other four Workshop scripts retain their current revisions.
+Every script: boot banner `[Nexus] <name> v<x.y.z> (<date>) | heap <b> | lsd <b> free`,
+SemVer, a fiche in `dev/fiches/`, `#include "nexus_header"` (**no extension**). See
+`CONVENTIONS.md`.

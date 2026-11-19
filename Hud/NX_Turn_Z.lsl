@@ -1,5 +1,16 @@
-// ROOT. Continue opens P1; observation opens P4; output opens P3; closure returns P0.
-// MC_Selected_Controller sends 918310 only after checking the basket.
+#define SCRIPT_NAME    "NX_Turn_Z"
+#define SCRIPT_VERSION "v0.1.0"
+#include "nexus_header"
+
+// MC_Turn_Z — ROOT page-rotation executor for the worn HUD (kept visual layer, adapted to the refonte).
+// Dumb rotator: it turns the root prim's local Z to a page and holds X/Y. Navigation LOGIC lives in
+// NX_HudNav; this script only reacts to rotation triggers.
+//   P0 = 0 , P1 = -90 , P4 = +90 , P3 = 180 (local Z).
+//   918310 CONTINUE -> P1 ; 918410 OPEN/BACK -> P4/P1 ; 918391 WAIT_CONTAINER -> P3, CLOSED/RELEASED -> P0 ;
+//   918317 DISCARD_DONE/CRAFT_DONE -> P0 ; owner touch on P1_DISCARD (p1_action3) -> P0 directly.
+// Refonte change: the old P4-OPEN gate read the dead store mc:workshop:session; removed (that gating moves
+// to the craft flow).
+
 key gLastTicket;
 key gLastDiscard;
 integer gProductPage;
@@ -23,6 +34,7 @@ default
 {
     state_entry()
     {
+        nexusBoot();
         llMessageLinked(LINK_THIS, 918390, "STATUS", NULL_KEY);
     }
     touch_start(integer count)
@@ -37,12 +49,10 @@ default
     }
     link_message(integer sender, integer number, string payload, key ticket)
     {
+        if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         if(sender == llGetLinkNumber() && number == 918410 && ticket != NULL_KEY && !gProductPage){
             if(payload == "OPEN"){
-                list session = llJson2List(llLinksetDataRead("mc:workshop:session"));
-                string phase = llList2String(session,5);
-                if(phase != "" && phase != "IDLE") return;
-                gObservationPage = TRUE;
+                gObservationPage = TRUE;                   // craft-paused observation; gating moved to the craft flow
             }
             else if(payload == "BACK"){
                 if(!gObservationPage) return;

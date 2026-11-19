@@ -1,5 +1,13 @@
-string VERSION = "MC_P1_Animation v0.10.0 (2026-11-16)";
-// ROOT. One preparation: first START commits craft_started, CONT never consumes again.
+#define SCRIPT_NAME    "NX_P1_Animation"
+#define SCRIPT_VERSION "v0.11.0"
+#include "nexus_header"
+
+// ROOT. P1 playback + active-time clock + atlas/button/progress bring-up for the worn HUD.
+// Migrated into the refonte (was v0.10.0): brought onto the convention, and the craft START no longer
+// waits for the removed backend's CRAFT_STARTED ACK — start is authorized LOCALLY (the stock commitment
+// will re-gate it when WS_Stock exists). Everything visual (textures, clock, PAUSE->P4, SNAPSHOT) is kept.
+//
+// One preparation: first START commits craft_started, CONT never consumes again.
 // 918360 START/CONT/STOP: explicit preparation actions, unique non-null request id.
 // ACTION1 is CUT/CONT. ACTION2 is PAUSE -> P4 while active, TAKE while paused.
 // Explicit START on an already used preparation spoils it; CONT never restarts it.
@@ -221,21 +229,26 @@ spoil()
     llOwnerSay("[Chop] Spoiled: this preparation cannot be started again. Discard it.");
 }
 
+// Refonte: craft start authorized LOCALLY (no basket CRAFT_STARTED ACK). The stock commitment will
+// re-gate this when WS_Stock exists; this replaces the old 918315/918317 handshake.
 startPreparation()
 {
     if (gFinalizing) return;
-    if (gSpoiled || gStarted || llLinksetDataRead("mc:simple:craft_started") == "1")
-    { spoil(); return; }
-    if (gStartTicket != NULL_KEY) return; // Same in-flight first start is idempotent.
+    if (gSpoiled || gStarted) { spoil(); return; }
+    if (gStartTicket != NULL_KEY) return;
     if (!gLoaded) { llOwnerSay("[Chop] Wait for the animation atlas to load."); return; }
     if (gState != "STOPPED" || gCommandTicket != NULL_KEY)
     { llOwnerSay("[Chop] Wait for the previous visual stop."); return; }
     gWanted = "PLAYING";
-    gStartTicket = llGenerateKey();
-    gStartAt = llGetTime();
+    gStarted = TRUE;
+    llLinksetDataWrite("mc:simple:craft_started", "1"); // this script now owns the used-preparation flag
+    gElapsed = 0.0;                                      // sole first-start initialization
+    gClockAt = llGetTime();
+    gClockActive = !gSpoiled && !gFinalizing;
+    if (!saveSession()) { showVisuals(); updateTimer(); return; }
     showVisuals();
-    llMessageLinked(LINK_THIS, 918315, "CRAFT_STARTED", gStartTicket);
-    updateTimer(); // No animation or active-time clock before the persisted basket ACK.
+    applyDesired();
+    updateTimer();
 }
 
 continuePreparation()
@@ -346,7 +359,7 @@ visualStatus(integer number, string text, key ticket)
 
 default
 {
-    state_entry() { llOwnerSay("[Nexus] " + VERSION); restoreSession(); loadAtlas(); loadButtons(); loadProgress(); }
+    state_entry() { nexusBoot(); restoreSession(); loadAtlas(); loadButtons(); loadProgress(); }
     touch_start(integer count)
     {
         integer i;
@@ -356,6 +369,7 @@ default
     }
     link_message(integer sender, integer number, string text, key ticket)
     {
+        if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         if (sender != llGetLinkNumber()) return;
         if (number == 918412 && text == "RESET" && ticket == NULL_KEY)
         {
@@ -420,26 +434,10 @@ default
         }
         if (number == 918310 && text == "CONTINUE" && ticket != NULL_KEY && ticket != gLastContinue)
         { gLastContinue = ticket; suspend(FALSE); return; } // Navigation is not a new preparation.
-        if (number == 918317 && text == "CRAFT_STARTED" && ticket == gStartTicket && ticket != NULL_KEY)
-        {
-            gStartTicket = NULL_KEY;
-            gObservationTicket = NULL_KEY; gObservationOpen = FALSE; gObservationDeadline = 0.0;
-            gStarted = TRUE;
-            gElapsed = 0.0; // The sole first-start initialization for this preparation.
-            gClockAt = llGetTime();
-            // Stock commitment authorizes the action. Visual PLAYING is not a clock ACK.
-            gClockActive = gWanted == "PLAYING" && !gSpoiled && !gFinalizing;
-            if (!saveSession()) { showVisuals(); updateTimer(); return; }
-            showVisuals();
-            applyDesired();
-            updateTimer();
-            return;
-        }
         if (number == 918317 && (text == "DISCARD_DONE" || text == "CRAFT_DONE") && ticket != NULL_KEY && ticket != gLastDiscard)
         {
-            if (llLinksetDataRead("mc:simple:craft_started") == "1") return;
             gLastDiscard = ticket;
-            // Only confirmed basket disposal releases the used-component latch.
+            // Refonte: this script owns closure now; release the used-component latch and clear the flag.
             clock();
             gClockActive = FALSE;
             gStarted = FALSE;
@@ -450,6 +448,7 @@ default
             gStartTicket = NULL_KEY;
             gObservationTicket = NULL_KEY; gObservationOpen = FALSE; gObservationDeadline = 0.0;
             gWanted = "STOPPED";
+            llLinksetDataDelete("mc:simple:craft_started");
             saveSession();
             showVisuals();
             applyDesired();
@@ -527,13 +526,6 @@ default
         {
             if (!saveSession()) applyDesired();
             showVisuals();
-        }
-        if (gStartTicket != NULL_KEY && llGetTime() - gStartAt >= 5.0)
-        {
-            gStartTicket = NULL_KEY;
-            gWanted = "STOPPED";
-            if (llLinksetDataRead("mc:simple:craft_started") == "1") spoil();
-            else llOwnerSay("[Chop] Start not confirmed by the basket. Nothing started.");
         }
         updateTimer();
     }

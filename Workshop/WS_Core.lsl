@@ -1,10 +1,10 @@
 #define SCRIPT_NAME    "WS_Core"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.2.0"
 #include "nexus_header"
 
 // WS_Core — the bench-side state machine. First slice: reservation (occupancy lock) + HUD provisioning
-// + contention/force. Craft phases (select/action/commit) come later. Runs in the bench linkset, shares
-// its LinksetData with WS_Boot (OPR gate, world, bench config).
+// + contention/force + bind. Craft phases (select/action/commit) come later. Runs in the bench linkset,
+// shares its LinksetData with WS_Boot (OPR gate, world, bench config).
 //
 // Lock = craft lifetime (socle §8): one player per bench, acquired on touch when OPR and free, released
 // only when the player takes (COMMIT) or discards (RELEASE) their craft. No TTL. Persisted in LSD so a
@@ -15,8 +15,15 @@
 //   bench  -> avatar : NX|HUDQ|<benchKey>|<model>|<version>
 //   wornHUD-> bench  : NX|HUDA|<model>|<version>
 //
+// Bind (ported from docs/README_workshop_link.md "Association and lock"): once the HUD is present, the bench
+// OFFERs the session; the HUD ACCEPTs; the bench confirms BOUND. session = state:session (minted at acquire,
+// kept across force, cleared at release). kind/single/keep come from the bench config (WS_Boot -> LSD).
+//   bench  -> avatar : NX|OFFER|<benchKey>|<session>|<kind>|<single>|<keep>
+//   wornHUD-> bench  : NX|ACCEPT|<session>|<kind>
+//   bench  -> avatar : NX|BOUND|<session>
+//
 // Contention: holder present in region -> "in use"; holder away (out of region) -> offer Force. Forcing
-// transfers the lock and LEAVES any pending craft in the bench (new player decides take/discard later).
+// transfers the lock and LEAVES any pending craft (and its session) in the bench for the new player.
 //
 // OPR gate: reservations are refused until the world is loaded (WS_Boot broadcasts WS_OPR; we also infer
 // readiness from ws:worldver being set, to survive a lone WS_Core reset).
@@ -26,7 +33,8 @@ integer WS_OPR = 970110;               // link_message from WS_Boot: "OPR|<ver>"
 float   PROBE_WAIT = 2.5;              // seconds to wait for a worn-HUD answer before giving
 
 // LSD (shared linkset): state:lock = holder avatar key ("" free), state:lockname = legible name,
-//                       state:craft = "0"/"1" pending craft to decide.
+//                       state:craft = "0"/"1" pending craft, state:session = bind/craft session (ticket).
+// Bench config read from WS_Boot: ws:genre, ws:cfg:HUDKind, ws:cfg:SingleIngredient, ws:cfg:AllowKeep.
 
 integer gReady;                        // OPR reached (world loaded)
 string  gHudInv;                       // exact inventory name of the reference HUD ("<model> v<X.Y.Z>")
@@ -35,6 +43,7 @@ string  gVersion;                      // parsed expected version ("vX.Y.Z")
 
 key     gProbeAv = NULL_KEY;           // avatar currently being probed
 integer gHasHud;                       // a matching NX|HUDA was heard this probe
+integer gBound;                        // HUD ACCEPT received for the current session
 
 integer gDlgChan;                      // dialog channel
 key     gDlgAv = NULL_KEY;             // avatar in the current dialog
@@ -83,9 +92,22 @@ startProbe(key av){
     llSetTimerEvent(PROBE_WAIT);
 }
 
+// kind/single/keep for the bind OFFER, from the bench config WS_Boot wrote to LSD.
+offerHud(key av){
+    string kind = llLinksetDataRead("ws:cfg:HUDKind");
+    if(kind == "") kind = llLinksetDataRead("ws:genre");               // HUDKind defaults to the Genre
+    string single = (string)((integer)llLinksetDataRead("ws:cfg:SingleIngredient"));
+    string keep   = (string)((integer)llLinksetDataRead("ws:cfg:AllowKeep"));
+    llRegionSayTo(av, NX_HUD, "NX|OFFER|" + (string)llGetKey() + "|"
+        + llLinksetDataRead("state:session") + "|" + kind + "|" + single + "|" + keep);
+}
+
 acquire(key av){
     llLinksetDataWrite("state:lock", (string)av);
     llLinksetDataWrite("state:lockname", llKey2Name(av));
+    if(llLinksetDataRead("state:session") == "")
+        llLinksetDataWrite("state:session", (string)llGenerateKey());  // new craft session (ticket)
+    gBound = FALSE;
     status();
     llRegionSayTo(av, 0, "[Nexus] Bench reserved.");
     startProbe(av);
@@ -93,7 +115,8 @@ acquire(key av){
 
 forceTo(key av){
     llLinksetDataWrite("state:lock", (string)av);
-    llLinksetDataWrite("state:lockname", llKey2Name(av));  // state:craft kept as-is: pending craft is inherited
+    llLinksetDataWrite("state:lockname", llKey2Name(av));  // state:craft + state:session kept: pending craft inherited
+    gBound = FALSE;
     status();
     if(llLinksetDataRead("state:craft") == "1")
         llRegionSayTo(av, 0, "[Nexus] Bench forced. A craft is pending here - take or discard it.");
@@ -105,7 +128,9 @@ forceTo(key av){
 release(){
     llLinksetDataDelete("state:lock");
     llLinksetDataDelete("state:lockname");
+    llLinksetDataDelete("state:session");                  // end the craft session (ticket)
     llLinksetDataWrite("state:craft", "0");                // take/discard clears the pending craft
+    gBound = FALSE;
     status();
     // REVIEW: wire COMMIT/RELEASE to WS_Stock here when the craft flow exists.
 }
@@ -120,7 +145,7 @@ default
         llListen(gDlgChan, "", NULL_KEY, "");
         parseHud();
         gReady = (llLinksetDataRead("ws:worldver") != "");
-        gProbeAv = NULL_KEY; gDlgAv = NULL_KEY;
+        gProbeAv = NULL_KEY; gDlgAv = NULL_KEY; gBound = FALSE;
         status();
     }
     on_rez(integer p){ llResetScript(); }
@@ -142,7 +167,8 @@ default
         if(!ready()){ llRegionSayTo(av, 0, "[Nexus] Bench not ready (still booting)."); return; }
         string holder = llLinksetDataRead("state:lock");
         if(holder == ""){ acquire(av); return; }
-        if((key)holder == av){                             // locker re-touch: offer release (stand-in for take/discard)
+        if((key)holder == av){                             // locker re-touch
+            if(!gBound){ startProbe(av); return; }         // not bound yet (e.g. just wore the given HUD) -> (re)probe & bind
             gDlgAv = av; gDlgKind = "locker";
             llDialog(av, "You hold this bench.\nRelease it (take/discard your work)?", ["Release", "Close"], gDlgChan);
             return;
@@ -158,11 +184,25 @@ default
 
     listen(integer chan, string nm, key id, string msg)
     {
-        if(chan == NX_HUD){                                // worn-HUD answer during a probe
-            if(id != NULL_KEY && llGetOwnerKey(id) == gProbeAv){
-                list f = llParseStringKeepNulls(msg, ["|"], []);
-                if(llList2String(f, 0) == "NX" && llList2String(f, 1) == "HUDA")
-                    if(llList2String(f, 2) == gModel && llList2String(f, 3) == gVersion) gHasHud = TRUE;
+        if(chan == NX_HUD){                                // worn-HUD traffic
+            list f = llParseStringKeepNulls(msg, ["|"], []);
+            if(llList2String(f, 0) != "NX") return;
+            string verb = llList2String(f, 1);
+            if(verb == "HUDA"){                            // provisioning answer during a probe -> HUD present, bind now
+                if(gProbeAv != NULL_KEY && id != NULL_KEY && llGetOwnerKey(id) == gProbeAv
+                   && llList2String(f, 2) == gModel && llList2String(f, 3) == gVersion){
+                    gHasHud = TRUE;
+                    offerHud(gProbeAv);
+                }
+                return;
+            }
+            if(verb == "ACCEPT"){                          // HUD accepts the offer -> confirm BOUND
+                string holder = llLinksetDataRead("state:lock");
+                if(holder == "" || id == NULL_KEY || llGetOwnerKey(id) != (key)holder) return;
+                if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
+                llRegionSayTo((key)holder, NX_HUD, "NX|BOUND|" + llLinksetDataRead("state:session"));
+                gBound = TRUE;
+                llOwnerSay("[Nexus] WS_Core: HUD bound (" + llLinksetDataRead("state:lockname") + ").");
             }
             return;
         }
@@ -178,7 +218,10 @@ default
     {
         llSetTimerEvent(0.0);                              // one-shot: provisioning window elapsed
         if(gProbeAv != NULL_KEY){
-            if(!gHasHud) giveHud(gProbeAv);
+            if(!gHasHud){
+                giveHud(gProbeAv);
+                llRegionSayTo(gProbeAv, 0, "[Nexus] Wear the HUD, then touch the bench again.");
+            }
             gProbeAv = NULL_KEY;
         }
     }
@@ -187,4 +230,5 @@ default
 //   re-giving when the player has a newer HUD. Fine while HUDs are single-source.
 // REVIEW: 2026-11-18 — llSetText is shared with WS_Boot (socle §6); WS_HMI will own the text layer.
 // REVIEW: 2026-11-18 — release() is a stand-in; COMMIT/RELEASE to WS_Stock wired with the craft flow.
+// REVIEW: 2026-11-18 — the bind has no RELEASE round-trip to the HUD yet; the HUD clears its bind on re-wear.
 // REVIEW: 2026-11-18 — one probe at a time (single timer); concurrent reservations are not expected yet.
