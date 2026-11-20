@@ -10,18 +10,19 @@ ROOT **component scanner** (the HUD scans; socle §4). PINGs on the craft channe
 
 ## Current version
 
-`v0.1.0 (SCRIPT_NAME "NX_Scan")` — refonte adoption (header/banner/SemVer + mem report); scan logic unchanged.
+`v0.2.0 (SCRIPT_NAME "NX_Scan")` — scan channel aligned to the canonical `NX_SCAN -918281`; scan logic otherwise unchanged.
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v0.1.0 | 2026-11-19 | migrated from legacy `MC_Scan`: added `nexus_header`, SemVer, renamed `NX_`. No behaviour change. |
+| v0.2.0 | 2026-11-19 | **scan channel fixed** to `NX_SCAN = -918281` (was `-918273`), so the HUD scan reaches the components that announce on `NX_SCAN` — part of the empty-list / display fix. Components reply `HERE` (qty in field 4, icon in field 13) / `BLANK` / `GONE`. |
 
 ## Dependencies
 
 - **Client (same ROOT)**: `NX_Scan_Refresh` (sends SCAN_REFRESH 918270, relays the BEGIN/ITEM/BLANK/END back as DISPLAY_* to `NX_Nearby_Controller`).
-- **Chat channel**: `CRAFT_CHANNEL = -918273` (PING → components reply `HERE|…`/`BLANK|…`). Test channel `-918274` via payload.
+- **Chat channel**: `CRAFT_CHANNEL = NX_SCAN = -918281` (PING → components reply `HERE|…`/`BLANK|…`/`GONE`). An explicit channel can be passed via the request payload.
 - **Window**: `SCAN_SECONDS = 2.0`.
 - **Include**: `nexus_header`.
 

@@ -10,7 +10,7 @@ ROOT **shared panel renderer** (one instance per panel via the `PANEL` var: `NEA
 
 ## Current version
 
-`v0.1.1 (SCRIPT_NAME "NX_Render")` — refonte adoption (header/banner/SemVer + mem report); rendering logic unchanged.
+`v0.1.2 (SCRIPT_NAME "NX_Render")` — empty-view boot init + repaint on `fw_ready`; the global FURWARE reset now lives in `NX_HudNav` (this renderer no longer issues `fw_reset`).
 
 ## Changelog
 
@@ -18,6 +18,7 @@ ROOT **shared panel renderer** (one instance per panel via the `PANEL` var: `NEA
 |---|---|---|
 | v0.1.0 | 2026-11-19 | migrated from legacy `MC_Render`: added `nexus_header`, SemVer, renamed `NX_`. No behaviour change. Set `PANEL = "NEARBY"` for the P0 available instance. |
 | v0.1.1 | 2026-11-19 | **empty-view boot init**: `state_entry` seeds `gView` with an empty 18-field view so the first `render()` clears the FURWARE table and hides row icons, instead of leaving stale prim content when no scan/VIEW has arrived. |
+| v0.1.2 | 2026-11-19 | **FURWARE reset centralized** (display fix "Fixing tables cleaning"): the renderer no longer issues its own `fw_reset`; the single global reset is owned by `NX_HudNav`. This script just repaints on `fw_ready` and re-renders static controls each `render()`. |
 
 ## Dependencies
 

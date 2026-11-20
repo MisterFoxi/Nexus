@@ -10,13 +10,14 @@ ROOT renderer for the P0 **basket (SELECTED)** zone — same shared code as `NX_
 
 ## Current version
 
-`v0.1.0 (SCRIPT_NAME "NX_Render_Selected")` — refonte adoption (header/banner/SemVer + mem report) + empty-view boot init.
+`v0.1.1 (SCRIPT_NAME "NX_Render_Selected")` — refonte adoption + empty-view boot init; FURWARE reset centralized in `NX_HudNav`, repaint on `fw_ready`.
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v0.1.0 | 2026-11-19 | migrated from legacy `MC_Render_Selected`: added `nexus_header`, SemVer, renamed `NX_`. **Empty-view boot init** so the basket table/icons start blank. No other behaviour change. |
+| v0.1.1 | 2026-11-19 | **FURWARE reset centralized** (display fix): no longer issues its own `fw_reset`; relies on `NX_HudNav`'s single global reset and repaints on `fw_ready`. |
 
 ## Dependencies
 

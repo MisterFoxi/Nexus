@@ -10,19 +10,20 @@ ROOT bridge for the P0 Refresh button: a touch on `P0_ACTION1` (or a `REFRESH_RE
 
 ## Current version
 
-`v0.1.0 (SCRIPT_NAME "NX_Scan_Refresh")` — refonte adoption (header/banner/SemVer + mem report; a `state_entry` was added for the banner); relay logic unchanged.
+`v0.1.1 (SCRIPT_NAME "NX_Scan_Refresh")` — scan channel aligned to `NX_SCAN -918281`; relay logic unchanged.
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v0.1.0 | 2026-11-19 | migrated from legacy `MC_Scan_Refresh`: added `nexus_header` + a `state_entry(){ nexusBoot(); }`, SemVer, renamed `NX_`. No behaviour change. |
+| v0.1.1 | 2026-11-19 | **scan channel fixed**: the channel passed to `NX_Scan` is now `NX_SCAN -918281` (was `-918274`), matching `NX_Scan` — part of the empty-list / display fix. |
 
 ## Dependencies
 
 - **Peers (same ROOT)**: `NX_Scan` (SCAN_REFRESH 918270 → SCAN_BEGIN/ITEM/BLANK/END 918271–274); `NX_Nearby_Controller` (receives DISPLAY_BEGIN/ITEM/BLANK/END 918281–284, i.e. SCAN_* + 10).
 - **Button**: `P0_ACTION1` (Refresh).
-- **Test channel**: `-918274` (passed to NX_Scan).
+- **Scan channel**: `NX_SCAN -918281` (passed to NX_Scan).
 - **Include**: `nexus_header`.
 
 ## Interfaces
