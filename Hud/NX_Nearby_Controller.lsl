@@ -42,6 +42,16 @@ list gRows;
 // REVIEW: both snapshots retain complete HERE messages without a size/count budget; many sources or large payloads can exhaust script memory.
 list gPending;
 
+// --- observation assembly (feeds P4 via NX_Eval; see docs) ---
+integer OBS_REQ = 918420;        // <- NX_P4_Controller: assemble a snapshot and observe
+integer OBS_RESULT = 918421;     // -> NX_P4_Controller: "<name>|<escaped description>" or "ERROR|<reason>"
+integer INSPECT = 918372;        // -> NX_P1_Animation: "INSPECT" (read the live cut gesture)
+integer INSPECT_REPLY = 918399;  // <- NX_P1_Animation: "OK|<elapsed>|<heat>" or "NO"
+float   CHOP_FULL = 10.0;        // active seconds for a full cut; fab.grind = round(elapsed) capped here (per Workshop_Config)
+list    gBasket;                 // stride 2: sid, qty  — the picked set (mirrored from NX|BASKET)
+string  gBasketName;             // first picked source's display name
+key     gObsTicket = NULL_KEY;   // pending INSPECT for an in-flight observation assembly
+
 integer pageCount()
 {
     integer count = (llGetListLength(gRows) / 3 + 3) / 4;
@@ -134,6 +144,53 @@ addPending(string payload)
     gPending += [llList2String(fields, 3), source, payload];   // display name = field 3
 }
 
+// Find the complete HERE payload of a scanned source by its stable sid (HERE field 2); "" if absent.
+string obsHere(string sid)
+{
+    integer r;
+    for (r = 0; r < llGetListLength(gRows); r += 3)
+    {
+        list h = llParseStringKeepNulls(llList2String(gRows, r + 2), ["|"], []);
+        if (llList2String(h, 2) == sid) return llList2String(gRows, r + 2);
+    }
+    return "";
+}
+
+// Build the eval snapshot: "fab.grind=N" + blank line + groups "taxonomy|count|use|stage|props|life|eff|organ",
+// grouped by taxonomy/stage, joining the picked basket with the live scan metadata.
+string obsSnapshot(integer grind)
+{
+    list labels;
+    list groups;
+    integer i;
+    for (i = 0; i < llGetListLength(gBasket); i += 2)
+    {
+        string sid = llList2String(gBasket, i);
+        integer qty = llList2Integer(gBasket, i + 1);
+        string here = obsHere(sid);
+        if (here != "")
+        {
+            list h = llParseStringKeepNulls(here, ["|"], []);
+            string label = llList2String(h, 7) + "/" + llList2String(h, 8);   // taxonomy/stage
+            integer fi = llListFindList(labels, [label]);
+            if (fi == -1)
+            {
+                labels += [label];
+                groups += [llList2String(h, 7) + "|" + (string)qty + "|" + llList2String(h, 5)
+                    + "|" + llList2String(h, 8) + "|" + llList2String(h, 9) + "|" + llList2String(h, 6)
+                    + "|" + llList2String(h, 10) + "|" + llList2String(h, 12)];
+            }
+            else
+            {
+                list g = llParseStringKeepNulls(llList2String(groups, fi), ["|"], []);
+                g = llListReplaceList(g, [(integer)llList2String(g, 1) + qty], 1, 1);
+                groups = llListReplaceList(groups, [llDumpList2String(g, "|")], fi, fi);
+            }
+        }
+    }
+    return "fab.grind=" + (string)grind + "\n\n" + llDumpList2String(groups, "\n");
+}
+
 default
 {
     state_entry() { nexusBoot(); llListen(NX_HUD, "", NULL_KEY, ""); render(); }
@@ -157,16 +214,66 @@ default
     {
         if (chan != NX_HUD) return;
         list f = llParseStringKeepNulls(msg, ["|"], []);
-        if (llList2String(f, 0) != "NX" || llList2String(f, 1) != "RESCAN") return;
+        if (llList2String(f, 0) != "NX") return;
+        string verb = llList2String(f, 1);
         if (gSession == "" || llList2String(f, 2) != gSession) return;          // only our bound session
         if (gBench != NULL_KEY && who != NULL_KEY && llGetOwnerKey(who) != llGetOwnerKey(gBench)) return;
-        llMessageLinked(LINK_SET, REFRESH_REQUEST, "KEEP_PAGE", NULL_KEY);       // server qty changed -> fresh scan, keep page
+        if (verb == "RESCAN")
+        {
+            llMessageLinked(LINK_SET, REFRESH_REQUEST, "KEEP_PAGE", NULL_KEY);   // server qty changed -> fresh scan, keep page
+            return;
+        }
+        if (verb == "BASKET")
+        {
+            // Mirror the picked set (sid+qty) for observation assembly; the SELECTED display stays NX_Selected's job.
+            gBasket = [];
+            gBasketName = "";
+            list rows = llParseStringKeepNulls(llList2String(f, 4), ["^"], []);
+            integer i;
+            for (i = 0; i < llGetListLength(rows); ++i)
+            {
+                list e = llParseStringKeepNulls(llList2String(rows, i), ["~"], []);  // sid~name~qty~icon
+                gBasket += [llList2String(e, 0), (integer)llList2String(e, 2)];
+                if (i == 0) gBasketName = llList2String(e, 1);
+            }
+            return;
+        }
+        if (verb == "OBSERVED")
+        {
+            // NX|OBSERVED|ticket|STATUS|descEsc|nameEsc  ->  P4 as  STATUS|nameEsc|descEsc
+            llMessageLinked(LINK_THIS, OBS_RESULT, llList2String(f, 3) + "|" + llList2String(f, 5) + "|" + llList2String(f, 4), NULL_KEY);
+            return;
+        }
     }
 
     link_message(integer sender, integer number, string payload, key request)
     {
         if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         if (number == BIND_INFO) { list bi = llParseStringKeepNulls(payload, ["|"], []); gBench = (key)llList2String(bi, 0); gSession = llList2String(bi, 1); return; }
+        if (number == OBS_REQ && sender == llGetLinkNumber())
+        {
+            gObsTicket = llGenerateKey();
+            llMessageLinked(LINK_THIS, INSPECT, "INSPECT", gObsTicket);   // fetch the live cut gesture first
+            return;
+        }
+        if (number == INSPECT_REPLY && request == gObsTicket && gObsTicket != NULL_KEY)
+        {
+            gObsTicket = NULL_KEY;
+            integer grind = 0;
+            list parts = llParseStringKeepNulls(payload, ["|"], []);
+            if (llList2String(parts, 0) == "OK")
+            {
+                // Match Workshop_Config.actionHeader exactly: fab.grind = round(elapsed), capped at CHOP_FULL.
+                float e = (float)llList2String(parts, 1);
+                grind = (integer)CHOP_FULL;
+                if (e < CHOP_FULL) grind = llRound(e);
+                if (grind < 0) grind = 0;
+            }
+            if (gBench != NULL_KEY && gSession != "")
+                llRegionSayTo(gBench, NX_HUD, "NX|OBSERVE|" + gSession + "|"
+                    + llEscapeURL(gBasketName) + "|" + llEscapeURL(obsSnapshot(grind)));
+            return;
+        }
         if (sender == llGetLinkNumber() && number == REFRESH_REQUEST)
         { gPreserveNextScan = payload == "KEEP_PAGE"; return; }
         if (sender == llGetLinkNumber() && number == TX_STATE)
