@@ -23,6 +23,8 @@
 
 integer NX_HUD = -918282;              // bench <-> worn HUD
 integer BIND_INFO = 918260;            // -> HUD linkset: "<bench>|<session>" so pick/basket scripts know the bench
+integer DISCARD_REQ  = 918315;         // <- NX_P1_Animation (P1 DISCARD button): "DISCARD"
+integer DISCARD_DONE = 918317;         // -> HUD linkset: "DISCARD_DONE" closes every page
 
 string  gModel;                        // parsed model (name before " v") = our kind
 string  gVersion;                      // parsed version ("vX.Y.Z")
@@ -74,7 +76,21 @@ default
 
     link_message(integer s, integer num, string str, key id)
     {
-        if(num == NEXUS_MEM_REPORT) nexusMemReport();
+        if(num == NEXUS_MEM_REPORT){ nexusMemReport(); return; }
+        if(s != llGetLinkNumber()) return;
+        if(num == DISCARD_REQ && str == "DISCARD")
+        {
+            // Player DISCARD on P1: tell the bench to release (consume the reserved basket) and unbind,
+            // then close every HUD page. Closure fires whether or not a bench is currently bound.
+            if(gBench != NULL_KEY && gSession != "")
+            {
+                llRegionSayTo(gBench, NX_HUD, "NX|DISCARD|" + gSession);
+                gBench = NULL_KEY; gSession = ""; gBound = FALSE;
+                llMessageLinked(LINK_SET, BIND_INFO, "|", NULL_KEY);   // pick/basket scripts -> unbound
+            }
+            llMessageLinked(LINK_THIS, DISCARD_DONE, "DISCARD_DONE", llGenerateKey());
+            return;
+        }
     }
 
     listen(integer chan, string nm, key id, string msg)

@@ -319,7 +319,14 @@ button(string name)
         else llMessageLinked(LINK_THIS, 918370, "CONTAINER", llGenerateKey());
         return;
     }
-    if (name == "p1_later" || name == "p1_action3") suspend(FALSE);
+    if (name == "p1_later") { suspend(FALSE); return; }
+    if (name == "p1_action3")
+    {
+        // DISCARD: close the preparation and consume the committed resource. The bench release
+        // round-trip (NX|DISCARD -> WS_Core.release -> WS_Stock) and the local page reset
+        // (918317 DISCARD_DONE) are driven by NX_HudFace on this request. Available in every P1 state.
+        llMessageLinked(LINK_THIS, 918315, "DISCARD", llGenerateKey());
+    }
 }
 
 visualStatus(integer number, string text, key ticket)

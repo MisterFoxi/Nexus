@@ -208,6 +208,11 @@ default
             string holder = llLinksetDataRead("state:lock");
             if(holder == "" || id == NULL_KEY || llGetOwnerKey(id) != (key)holder) return;  // only the holder's HUD matters
 
+            if(verb == "DISCARD"){                         // player discard on the HUD -> release the craft + stock
+                if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
+                release();
+                return;
+            }
             if(verb == "HUDA"){                            // holder's HUD answered the heartbeat
                 if(llList2String(f, 2) == gModel && llList2String(f, 3) == gVersion){
                     gPingAck = TRUE; gMisses = 0;
