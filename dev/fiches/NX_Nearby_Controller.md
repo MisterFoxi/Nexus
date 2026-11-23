@@ -10,7 +10,7 @@ ROOT controller for the P0 **nearby/available** zone: holds the scanned rows, pa
 
 ## Current version
 
-`v0.2.0 (SCRIPT_NAME "NX_Nearby_Controller")` — pick → bench (`NX|PICK` over `NX_HUD`, bench learned via `918260 BIND_INFO`); scan/display logic unchanged.
+`v0.2.1 (SCRIPT_NAME "NX_Nearby_Controller")` — pick → bench (`NX|PICK`); listens on `NX_HUD` for `NX|RESCAN` → re-scan NEARBY (KEEP_PAGE) when server availability changes.
 
 ## Changelog
 
@@ -18,11 +18,12 @@ ROOT controller for the P0 **nearby/available** zone: holds the scanned rows, pa
 |---|---|---|
 | v0.1.0 | 2026-11-19 | migrated from legacy `MC_Nearby_Controller`: added `nexus_header`, SemVer, renamed `NX_`. No behaviour change (pick still went through the legacy transaction backend). |
 | v0.2.0 | 2026-11-19 | **pick → bench wired** (refonte, socle §4): learns the bound bench + session from `918260 BIND_INFO` (emitted by `NX_HudFace` on BOUND); `P0_ADD_<n>` now sends `NX\|PICK\|<session>\|<sid>\|1\|<name>\|<icon>` to the bench over `NX_HUD` (refused with "HUD not bound" until bound). The legacy `TX_STATE` (918302) / `STOCK` (918305) gate is no longer on the pick path (those branches are vestigial — no producer in the refonte). |
+| v0.2.1 | 2026-11-20 | **NEARBY availability fix**: listen on `NX_HUD`; on `NX\|RESCAN\|<session>` (our session, bench owner) emit `REFRESH_REQUEST "KEEP_PAGE"` → a fresh scan refreshes the shown qty. Fixes the shown qty staying stale after a pick (the displayed number came from the scan snapshot and was never updated). Re-scan, not local decrement, because the same component can be reserved by another workshop — only a scan reads the authoritative server qty. |
 
 ## Dependencies
 
 - **Peers (same ROOT)**: `NX_Scan_Refresh` (DISPLAY_* 918281–284), `NX_Render` (VIEW 918290 / RENDER_READY 918291), `NX_HudFace` (`918260 BIND_INFO` → bench + session).
-- **Bench (other object, `NX_HUD` -918282)**: out `NX|PICK` on a pick; the bench's `WS_Stock` reserves and pushes the basket back.
+- **Bench (other object, `NX_HUD` -918282)**: out `NX|PICK` on a pick; in `NX|RESCAN` (from `WS_Stock` after a server availability change) → re-scan NEARBY. The bench's `WS_Stock` reserves and pushes the basket back.
 - **Buttons**: `P0_PREV`, `P0_NEXT`, `P0_ADD_0..3`.
 - **Include**: `nexus_header`.
 - **Vestigial (refonte)**: `TX_STATE` (918302) and `STOCK` (918305) link handlers remain but have no producer; they came from the removed `MC_Transactions` / `MC_Selected_Controller`.
@@ -33,6 +34,7 @@ ROOT controller for the P0 **nearby/available** zone: holds the scanned rows, pa
 |---|---|---|
 | in | 918281–284 DISPLAY_* | build/refresh the nearby rows |
 | in | `918260 BIND_INFO` `<bench>\|<session>` | learn the bound bench (enables picks) |
+| in | NX_HUD `NX\|RESCAN\|<session>` | server qty changed → emit `REFRESH_REQUEST KEEP_PAGE` (fresh scan) |
 | in | touch `P0_PREV`/`P0_NEXT` | paginate |
 | in | touch `P0_ADD_<n>` | pick → `NX\|PICK` to the bench (if bound) |
 | out | NX_HUD `NX\|PICK\|<session>\|<sid>\|1\|<name>\|<icon>` | pick to the bench (WS_Stock) |

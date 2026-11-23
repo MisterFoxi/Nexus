@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Stock"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.1.1"
 #include "nexus_header"
 
 // WS_Stock — bench stock client. Holds the craft basket and reserves it with the server. The HUD never
@@ -83,6 +83,16 @@ pushBasket(){
         "NX|BASKET|" + ticket + "|" + (string)llGetListLength(b) + "|" + lines);
 }
 
+// Ask the holder's HUD to re-scan NEARBY. The server just changed availability (this bench OR another
+// workshop reserving the same sid), so the authoritative qty must come from a fresh component scan, not a
+// local decrement. The scan window (2 s) absorbs the server->component NX|QTY propagation.
+rescanHud(){
+    string holder = llLinksetDataRead("state:lock");
+    string ticket = llLinksetDataRead("state:session");
+    if(holder == "" || ticket == "") return;
+    llRegionSayTo((key)holder, NX_HUD, "NX|RESCAN|" + ticket);
+}
+
 default
 {
     state_entry()
@@ -151,7 +161,7 @@ default
 
         if(chan == NX_STOCK){
             if(llGetListLength(f) < 3 || llList2String(f, 2) != ticket) return;  // our ticket only
-            if(verb == "RES_OK"){ gPendSid = ""; llSetTimerEvent(0.0); return; }
+            if(verb == "RES_OK"){ gPendSid = ""; llSetTimerEvent(0.0); rescanHud(); return; }
             if(verb == "RES_NO"){
                 // not enough: revert the pending pick and tell the HUD
                 string avail = "";
@@ -171,9 +181,10 @@ default
                 gPendSid = ""; llSetTimerEvent(0.0);
                 reserveNow();                           // re-assert the corrected set
                 pushBasket();
+                rescanHud();                            // avail changed -> refresh NEARBY from a scan
                 return;
             }
-            if(verb == "REL_OK"){ return; }
+            if(verb == "REL_OK"){ rescanHud(); return; }
             return;
         }
     }

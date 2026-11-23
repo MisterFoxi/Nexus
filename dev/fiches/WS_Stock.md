@@ -10,13 +10,14 @@ Bench **stock client**: holds the craft basket and reserves it with the server. 
 
 ## Current version
 
-`v0.1.0 (SCRIPT_NAME "WS_Stock")` — pick/unpick → declarative RESERVE; basket persisted (`state:stock`); push BASKET / PICKNO; release on take/discard; server-reply timeout.
+`v0.1.1 (SCRIPT_NAME "WS_Stock")` — pick/unpick → declarative RESERVE; basket persisted (`state:stock`); push BASKET / PICKNO; release on take/discard; server-reply timeout; **asks the HUD to re-scan NEARBY on every server availability change**.
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v0.1.0 | 2026-11-19 | created — the pick→reserve slice (socle option B). PICK/UNPICK from the HUD → declarative `RESERVE|<ticket>|sid:u^…` to the server; RES_OK → push BASKET; RES_NO → revert the pending pick + PICKNO; timeout (SRV_WAIT) → treat server as down, revert. RELEASE on WS_Core take/discard (`STOCK_RELEASE_REQ` link). Basket in `state:stock` survives reset/HUD loss (§8). |
+| v0.1.1 | 2026-11-20 | **NEARBY availability fix**: on `RES_OK` / `RES_NO` / `REL_OK` send `NX\|RESCAN\|<session>` to the holder's HUD. The server has just changed availability (this bench, or another workshop reserving the same sid), so the HUD must re-read the authoritative qty from a fresh component scan rather than decrement its snapshot locally. |
 
 ## Dependencies
 
@@ -34,6 +35,7 @@ Bench **stock client**: holds the craft basket and reserves it with the server. 
 | in NX_HUD | `NX\|UNPICK\|<session>\|<sid>` | remove → RESERVE → BASKET |
 | out NX_HUD | `NX\|BASKET\|<session>\|<count>\|sid~name~qty~icon^…` | basket to the holder |
 | out NX_HUD | `NX\|PICKNO\|<session>\|<sid>\|<avail>` | pick refused (avail, or `SRVDOWN`) |
+| out NX_HUD | `NX\|RESCAN\|<session>` | on RES_OK/RES_NO/REL_OK → holder's HUD re-scans NEARBY |
 | out NX_STOCK | `NX\|RESERVE\|<ticket>\|sid:u^…` / `NX\|RELEASE\|<ticket>` | to the server |
 | in NX_STOCK | `NX\|RES_OK` / `NX\|RES_NO\|…sid:avail^…` / `NX\|REL_OK` | server verdicts (our ticket only) |
 | in link | `918250 STOCK_RELEASE_REQ` | WS_Core take/discard → RELEASE + clear basket |

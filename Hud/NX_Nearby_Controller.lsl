@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_Nearby_Controller"
-#define SCRIPT_VERSION "v0.2.0"
+#define SCRIPT_VERSION "v0.2.1"
 #include "nexus_header"
 
 // Nearby data and independent pagination controller. Install in ROOT with NX_Render.
@@ -136,7 +136,7 @@ addPending(string payload)
 
 default
 {
-    state_entry() { nexusBoot(); render(); }
+    state_entry() { nexusBoot(); llListen(NX_HUD, "", NULL_KEY, ""); render(); }
 
     on_rez(integer parameter) { llResetScript(); }
 
@@ -151,6 +151,16 @@ default
                 button(name);
             }
         }
+    }
+
+    listen(integer chan, string nm, key who, string msg)
+    {
+        if (chan != NX_HUD) return;
+        list f = llParseStringKeepNulls(msg, ["|"], []);
+        if (llList2String(f, 0) != "NX" || llList2String(f, 1) != "RESCAN") return;
+        if (gSession == "" || llList2String(f, 2) != gSession) return;          // only our bound session
+        if (gBench != NULL_KEY && who != NULL_KEY && llGetOwnerKey(who) != llGetOwnerKey(gBench)) return;
+        llMessageLinked(LINK_SET, REFRESH_REQUEST, "KEEP_PAGE", NULL_KEY);       // server qty changed -> fresh scan, keep page
     }
 
     link_message(integer sender, integer number, string payload, key request)
