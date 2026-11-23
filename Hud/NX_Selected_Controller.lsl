@@ -98,9 +98,12 @@ default
         if(num == NEXUS_MEM_REPORT){ nexusMemReport(); return; }
         if(num == BIND_INFO){
             list p = llParseStringKeepNulls(str, ["|"], []);
-            gBench = (key)llList2String(p, 0);
-            gSession = llList2String(p, 1);
-            if(gBench == NULL_KEY || gSession == "") clearBasket();   // unbound -> empty
+            key nb = (key)llList2String(p, 0);
+            string ns = llList2String(p, 1);
+            // Unbound, or a NEW session (fresh craft after a consume-discard) -> start from an empty basket.
+            // A re-bind to the SAME session keeps the current rows (the bench re-pushes BASKET if any).
+            if(nb == NULL_KEY || ns == "" || ns != gSession) clearBasket();
+            gBench = nb; gSession = ns;
             return;
         }
     }

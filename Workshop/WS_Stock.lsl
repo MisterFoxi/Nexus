@@ -22,7 +22,8 @@
 
 integer NX_HUD   = -918282;
 integer NX_STOCK = -918280;
-integer STOCK_RELEASE_REQ = 918250;   // link from WS_Core: take/discard -> release the whole ticket
+integer STOCK_RELEASE_REQ = 918250;   // link from WS_Core: discard before start -> release (return) the ticket
+integer STOCK_COMMIT_REQ  = 918251;   // link from WS_Core: discard after start -> commit (consume) the ticket
 
 float   SRV_WAIT = 3.0;                // seconds to wait for a server reply before giving up
 string  gPendSid = "";                 // sid of a pick awaiting a server reply ("" = idle)
@@ -123,6 +124,15 @@ default
                 llRegionSayTo(holder, NX_HUD, "NX|BASKET|" + ticket + "|0|");
                 llRegionSayTo(holder, NX_HUD, "NX|RESCAN|" + ticket);
             }
+            return;
+        }
+        if(num == STOCK_COMMIT_REQ){                   // WS_Core: discard after start -> consume the basket
+            string ticket = str;                       // held units already subtracted at reserve time
+            if(ticket != "") llRegionSay(NX_STOCK, "NX|COMMIT|" + ticket);   // no OUT: consumed, no product
+            llLinksetDataDelete("state:stock");
+            gPendSid = ""; llSetTimerEvent(0.0);
+            // No HUD refresh: SELECTED clears on the session rotation (re-bind), and NEARBY already shows
+            // the reduced quantity from the reservation (COMMIT keeps it subtracted).
             return;
         }
     }

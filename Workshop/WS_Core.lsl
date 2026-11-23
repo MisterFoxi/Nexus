@@ -27,7 +27,8 @@
 
 integer NX_HUD = -918282;              // bench <-> worn HUD
 integer WS_OPR = 970110;               // link_message from WS_Boot: "OPR|<ver>"
-integer STOCK_RELEASE_REQ = 918250;    // -> WS_Stock: take/discard -> release the reserved basket
+integer STOCK_RELEASE_REQ = 918250;    // -> WS_Stock: discard before start -> release (return) the basket
+integer STOCK_COMMIT_REQ  = 918251;    // -> WS_Stock: discard after start -> commit (consume) the basket
 float   HEARTBEAT = 5.0;               // seconds between holder-HUD pings while locked
 integer MISS_MAX  = 3;                 // consecutive unanswered pings before the bench frees itself (~15 s)
 
@@ -139,15 +140,26 @@ freeLock(string why){
     llOwnerSay("[Nexus] WS_Core: bench freed (" + why + ").");
 }
 
-// Player DISCARD on the HUD: abandon the current preparation's basket but KEEP the bench reservation,
-// the session and the HUD binding. The player stays at the bench, ready to start a new preparation.
-// Only the Release dialog (release(), below) actually leaves the bench.
-discardCraft(){
+// Player DISCARD on the HUD: abandon the current preparation but KEEP the bench lock and the player.
+// 'started' decides the stock fate. Only the Release dialog (release(), below) actually leaves the bench.
+discardCraft(integer started){
     string ticket = llLinksetDataRead("state:session");
     key holder = (key)llLinksetDataRead("state:lock");
     llLinksetDataWrite("state:craft", "0");
-    // lock/session KEPT: WS_Stock releases the reserved basket and refreshes the (still-bound) HUD.
-    llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, ticket, holder);
+    if(started){
+        // Cut already begun: CONSUME the reserved units (no product). The committed server ticket is dead,
+        // so rotate to a fresh session and re-bind the HUD. lock + heartbeat untouched: the player keeps
+        // the bench and can craft again at once. SELECTED clears on the new bind; NEARBY already shows the
+        // reduced quantity from the original reservation (COMMIT keeps it subtracted), so no rescan needed.
+        llMessageLinked(LINK_SET, STOCK_COMMIT_REQ, ticket, holder);
+        llLinksetDataWrite("state:session", (string)llGenerateKey());
+        gBound = FALSE;
+        offerHud(holder);
+    } else {
+        // Cut not begun: RETURN the reserved units. The server deletes the ticket on release, so the same
+        // session stays reusable; WS_Stock empties the HUD basket and refreshes NEARBY (stock restored).
+        llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, ticket, holder);
+    }
 }
 
 // Player leaves the bench (Release dialog): clear everything.
@@ -225,7 +237,7 @@ default
 
             if(verb == "DISCARD"){                         // player discard on the HUD -> drop the basket, keep the bench
                 if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
-                discardCraft();
+                discardCraft((integer)llList2String(f, 3));   // f[3] = started flag (1 = consume, 0 = return)
                 return;
             }
             if(verb == "HUDA"){                            // holder's HUD answered the heartbeat

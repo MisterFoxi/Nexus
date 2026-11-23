@@ -78,14 +78,16 @@ default
     {
         if(num == NEXUS_MEM_REPORT){ nexusMemReport(); return; }
         if(s != llGetLinkNumber()) return;
-        if(num == DISCARD_REQ && str == "DISCARD")
+        if(num == DISCARD_REQ && llGetSubString(str, 0, 6) == "DISCARD")
         {
-            // Player DISCARD on P1: tell the bench to release (consume the reserved basket). The bench then
-            // empties the SELECTED mirror and refreshes NEARBY while we are STILL bound (its NX|BASKET /
-            // NX|RESCAN are session-gated), so we must not clear the bind here. Close every HUD page
-            // locally; the now-stale bind self-heals on the next bench touch (re-OFFER with a new session).
+            // Player DISCARD on P1. str = "DISCARD|<started>". Forward to the bench with the started flag:
+            // the bench RETURNs (not started) or CONSUMEs (started) the reserved units, keeps the lock, and
+            // on a consume rotates to a fresh session and re-binds us. We only close the HUD pages here.
             if(gBench != NULL_KEY && gSession != "")
-                llRegionSayTo(gBench, NX_HUD, "NX|DISCARD|" + gSession);
+            {
+                string started = llList2String(llParseStringKeepNulls(str, ["|"], []), 1);
+                llRegionSayTo(gBench, NX_HUD, "NX|DISCARD|" + gSession + "|" + started);
+            }
             llMessageLinked(LINK_THIS, DISCARD_DONE, "DISCARD_DONE", llGenerateKey());
             return;
         }

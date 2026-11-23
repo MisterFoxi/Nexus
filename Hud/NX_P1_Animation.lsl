@@ -322,10 +322,10 @@ button(string name)
     if (name == "p1_later") { suspend(FALSE); return; }
     if (name == "p1_action3")
     {
-        // DISCARD: close the preparation and consume the committed resource. The bench release
-        // round-trip (NX|DISCARD -> WS_Core.release -> WS_Stock) and the local page reset
-        // (918317 DISCARD_DONE) are driven by NX_HudFace on this request. Available in every P1 state.
-        llMessageLinked(LINK_THIS, 918315, "DISCARD", llGenerateKey());
+        // DISCARD: close the preparation. The started flag tells the bench whether to RETURN the picked
+        // units (cut not begun) or CONSUME them (cut begun, no product). The bench round-trip and the
+        // local page reset (918317 DISCARD_DONE) are driven by NX_HudFace. Available in every P1 state.
+        llMessageLinked(LINK_THIS, 918315, "DISCARD|" + (string)gStarted, llGenerateKey());
     }
 }
 
