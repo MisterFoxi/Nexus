@@ -80,14 +80,12 @@ default
         if(s != llGetLinkNumber()) return;
         if(num == DISCARD_REQ && str == "DISCARD")
         {
-            // Player DISCARD on P1: tell the bench to release (consume the reserved basket) and unbind,
-            // then close every HUD page. Closure fires whether or not a bench is currently bound.
+            // Player DISCARD on P1: tell the bench to release (consume the reserved basket). The bench then
+            // empties the SELECTED mirror and refreshes NEARBY while we are STILL bound (its NX|BASKET /
+            // NX|RESCAN are session-gated), so we must not clear the bind here. Close every HUD page
+            // locally; the now-stale bind self-heals on the next bench touch (re-OFFER with a new session).
             if(gBench != NULL_KEY && gSession != "")
-            {
                 llRegionSayTo(gBench, NX_HUD, "NX|DISCARD|" + gSession);
-                gBench = NULL_KEY; gSession = ""; gBound = FALSE;
-                llMessageLinked(LINK_SET, BIND_INFO, "|", NULL_KEY);   // pick/basket scripts -> unbound
-            }
             llMessageLinked(LINK_THIS, DISCARD_DONE, "DISCARD_DONE", llGenerateKey());
             return;
         }

@@ -108,10 +108,21 @@ default
     {
         if(num == NEXUS_MEM_REPORT){ nexusMemReport(); return; }
         if(num == STOCK_RELEASE_REQ){                  // WS_Core: take/discard -> release + clear
-            string ticket = llLinksetDataRead("state:session");
+            // ticket/holder come in the message: WS_Core has already cleared state:lock/state:session,
+            // and this link_message is async, so they cannot be re-read from LinksetData here.
+            string ticket = str;
+            if(ticket == "") ticket = llLinksetDataRead("state:session");
+            key holder = id;
             if(ticket != "") llRegionSay(NX_STOCK, "NX|RELEASE|" + ticket);
             llLinksetDataDelete("state:stock");
             gPendSid = ""; llSetTimerEvent(0.0);
+            // Refresh the holder's HUD while it is still bound to this ticket: empty the SELECTED mirror
+            // and re-scan NEARBY so the returned stock reappears (the 2 s scan window absorbs the
+            // server->component NX|QTY propagation).
+            if(holder != NULL_KEY && ticket != ""){
+                llRegionSayTo(holder, NX_HUD, "NX|BASKET|" + ticket + "|0|");
+                llRegionSayTo(holder, NX_HUD, "NX|RESCAN|" + ticket);
+            }
             return;
         }
     }

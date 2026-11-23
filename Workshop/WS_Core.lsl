@@ -139,15 +139,30 @@ freeLock(string why){
     llOwnerSay("[Nexus] WS_Core: bench freed (" + why + ").");
 }
 
-// Player take/discard: clear everything.
+// Player DISCARD on the HUD: abandon the current preparation's basket but KEEP the bench reservation,
+// the session and the HUD binding. The player stays at the bench, ready to start a new preparation.
+// Only the Release dialog (release(), below) actually leaves the bench.
+discardCraft(){
+    string ticket = llLinksetDataRead("state:session");
+    key holder = (key)llLinksetDataRead("state:lock");
+    llLinksetDataWrite("state:craft", "0");
+    // lock/session KEPT: WS_Stock releases the reserved basket and refreshes the (still-bound) HUD.
+    llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, ticket, holder);
+}
+
+// Player leaves the bench (Release dialog): clear everything.
 release(){
+    string ticket = llLinksetDataRead("state:session");
+    key holder = (key)llLinksetDataRead("state:lock");
     llLinksetDataDelete("state:lock");
     llLinksetDataDelete("state:lockname");
     llLinksetDataDelete("state:session");
     llLinksetDataWrite("state:craft", "0");
     gBound = FALSE; gMisses = 0; gGiven = FALSE;
     llSetTimerEvent(0.0);
-    llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, "", NULL_KEY);   // WS_Stock releases the reserved basket
+    // Pass ticket+holder: state:* are cleared above and the link_message is async, so WS_Stock cannot
+    // re-read them. It needs both to release the server reservation and to refresh the holder's HUD.
+    llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, ticket, holder);   // WS_Stock releases the reserved basket
     status();
 }
 
@@ -208,9 +223,9 @@ default
             string holder = llLinksetDataRead("state:lock");
             if(holder == "" || id == NULL_KEY || llGetOwnerKey(id) != (key)holder) return;  // only the holder's HUD matters
 
-            if(verb == "DISCARD"){                         // player discard on the HUD -> release the craft + stock
+            if(verb == "DISCARD"){                         // player discard on the HUD -> drop the basket, keep the bench
                 if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
-                release();
+                discardCraft();
                 return;
             }
             if(verb == "HUDA"){                            // holder's HUD answered the heartbeat
