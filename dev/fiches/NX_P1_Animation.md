@@ -10,19 +10,21 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 
 ## Current version
 
-`v0.11.0 (SCRIPT_NAME "NX_P1_Animation")` — refonte migration: convention header/banner; craft START authorized locally (no removed-backend ACK); owns the `craft_started` flag.
+`v0.2.0 (SCRIPT_NAME "NX_P1_Animation")` — refonte: convention header/banner; craft START authorized locally (no removed-backend ACK); owns the `craft_started` flag; **`p1_action3` DISCARD** split from `p1_later` (pause) → emits `918315 DISCARD|<started>`. (The refonte define restarted at v0.1.0; earlier fiche mislabelled it v0.11.0 continuing the legacy count.)
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v0.10.0 | 2026-11-16 | legacy (pre-refonte): START sent `918315 CRAFT_STARTED` and waited for the basket's `918317 CRAFT_STARTED` before running the clock. |
-| v0.11.0 | 2026-11-18 | **migrated**: added `nexus_header` (banner + mem report), SemVer. **START authorized locally** — removed the `918315/918317 CRAFT_STARTED` handshake (the removed backend never answered, so CUT used to time out). This script now **owns `mc:simple:craft_started`** (writes it on start, clears it on DISCARD_DONE). Visual/clock/observation (SNAPSHOT, PAUSE→P4) kept intact. |
+| v0.1.0 | 2026-11-18 | **migrated** (define restarted from legacy v0.10.0): added `nexus_header` (banner + mem report), SemVer. **START authorized locally** — removed the `918315/918317 CRAFT_STARTED` handshake (the removed backend never answered, so CUT used to time out). This script now **owns `mc:simple:craft_started`** (writes it on start, clears it on DISCARD_DONE). Visual/clock/observation (SNAPSHOT, PAUSE→P4) kept intact. |
+| v0.2.0 | 2026-11-23 | **DISCARD split**: `p1_action3` no longer shares `suspend()` with `p1_later`. It emits `918315 DISCARD\|<gStarted>` (NX_HudFace relays `NX\|DISCARD` to the bench: RELEASE if not started, COMMIT if started). `p1_later` keeps the pause. The local reset still runs on the returning `918317 DISCARD_DONE`. |
 
 ## Dependencies
 
 - **Peers (same ROOT)**: `NX_Playback_Buttons` (button textures: LOAD 918340 / STATE 918342 / STATUS 918343), `NX_Atlas_Player` (chop animation: 918330–918336), `NX_Chop_Progress` (progress: 918350/918351/918353). Later: WS_Stock (will re-gate START), the craft/eval flow (918372 SNAPSHOT, 918371 finalize).
-- **Buttons (no script)**: `p1_action1` (CUT/CONT), `p1_action2` (PAUSE/TAKE), `p1_action3`/`p1_later` (suspend), `p1_heat_plus/minus`, `p1_test`.
+- **Buttons (no script)**: `p1_action1` (CUT/CONT), `p1_action2` (PAUSE/TAKE), `p1_action3` (**DISCARD** → `918315`), `p1_later` (pause/suspend), `p1_heat_plus/minus`, `p1_test`.
+- **Peer (same ROOT)**: `NX_HudFace` consumes `918315 DISCARD`; `NX_Nearby_Controller` queries `918372 INSPECT` (observation gesture).
 - **LinksetData**: `mc:chop:session` (own clock/heat state), `mc:simple:craft_started` (now owned here). Still reads the dead `mc:workshop:session` in the craft-flow paths (debt).
 - **Include**: `nexus_header` (no extension).
 
@@ -35,6 +37,7 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 | out | 918340 / 918342 | buttons LOAD / STATE |
 | out | 918350 / 918351 | progress LOAD / show |
 | out | 918411 OPEN | ask P4 observation (on PAUSE) |
+| out | 918315 DISCARD\|<started> | p1_action3 → NX_HudFace (relayed to bench) |
 | out | 918370 CONTAINER | TAKE (paused) → output path |
 | out | 918394 | cosmetic activity flag 0/1 |
 | in | 918360 START/CONT/STOP | explicit action requests |
@@ -58,7 +61,7 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 
 ## Test (in-world)
 
-1. HUD worn. At boot: banner `[Nexus] NX_P1_Animation v0.11.0 ...`; P1 buttons show their atlas textures (STOPPED state).
+1. HUD worn. At boot: banner `[Nexus] NX_P1_Animation v0.2.0 ...`; P1 buttons show their atlas textures (STOPPED state).
 2. On P1, click CUT (`p1_action1`) → clock runs, button goes to PLAYING, progress advances. (No 5s "start not confirmed" timeout.)
 3. Click PAUSE (`p1_action2`) → suspends and opens P4; BACK returns paused.
-4. Click DISCARD (`p1_action3`) → preparation resets, `mc:simple:craft_started` cleared.
+4. Click DISCARD (`p1_action3`) → emits `918315 DISCARD|<started>`; on the bench's `918317 DISCARD_DONE` the preparation resets and `mc:simple:craft_started` is cleared. (`p1_later` only pauses.)

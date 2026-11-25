@@ -10,13 +10,14 @@ HUD **basket mirror** (P0 SELECTED panel). The basket lives in the bench now; th
 
 ## Current version
 
-`v0.1.0 (SCRIPT_NAME "NX_Selected_Controller")` — BASKET → SELECTED view + CANCONT; pagination; P0_SEL_DEL → UNPICK.
+`v0.2.0 (SCRIPT_NAME "NX_Selected_Controller")` — BASKET → SELECTED view + CANCONT; pagination; P0_SEL_DEL → UNPICK; empties the basket on a **session change** (fresh bind after a consume-discard), not only on unbind.
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v0.1.0 | 2026-11-19 | created — the HUD side of the pick→reserve slice (option B). |
+| v0.2.0 | 2026-11-23 | **clear on session change**: `BIND_INFO` now empties the basket when the new session differs from the current one (or is empty/unbound), not only on unbind. Needed because a consume-discard rotates the bench to a fresh session + re-binds — SELECTED must start empty for the new craft. |
 
 ## Dependencies
 
@@ -29,7 +30,7 @@ HUD **basket mirror** (P0 SELECTED panel). The basket lives in the bench now; th
 
 | Dir | Msg | Effect |
 |---|---|---|
-| in link | `918260 BIND_INFO` `<bench>\|<session>` | learn the bench; cleared → empty basket |
+| in link | `918260 BIND_INFO` `<bench>\|<session>` | learn the bench; unbound OR new (different) session → empty basket |
 | in NX_HUD | `NX\|BASKET\|<session>\|<count>\|sid~name~qty~icon^…` | mirror the basket |
 | out link | `918290 VIEW` (key "SELECTED") | render the SELECTED panel |
 | out link | `918261 CANCONT` `<count>` | Continue gate to NX_HudNav |

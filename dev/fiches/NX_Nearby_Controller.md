@@ -10,7 +10,7 @@ ROOT controller for the P0 **nearby/available** zone: holds the scanned rows, pa
 
 ## Current version
 
-`v0.2.1 (SCRIPT_NAME "NX_Nearby_Controller")` — pick → bench (`NX|PICK`); listens on `NX_HUD` for `NX|RESCAN` → re-scan NEARBY (KEEP_PAGE) when server availability changes.
+`v0.3.0 (SCRIPT_NAME "NX_Nearby_Controller")` — pick → bench (`NX|PICK`); NEARBY re-scan on `NX|RESCAN`; **observation assembler**: mirrors `NX|BASKET`, on `OBS_REQ` (from P4) reads the cut gesture from NX_P1_Animation and sends a snapshot `NX|OBSERVE` to the bench, relays `NX|OBSERVED` back to P4 as `OBS_RESULT`.
 
 ## Changelog
 
@@ -18,11 +18,13 @@ ROOT controller for the P0 **nearby/available** zone: holds the scanned rows, pa
 |---|---|---|
 | v0.1.0 | 2026-11-19 | migrated from legacy `MC_Nearby_Controller`: added `nexus_header`, SemVer, renamed `NX_`. No behaviour change (pick still went through the legacy transaction backend). |
 | v0.2.0 | 2026-11-19 | **pick → bench wired** (refonte, socle §4): learns the bound bench + session from `918260 BIND_INFO` (emitted by `NX_HudFace` on BOUND); `P0_ADD_<n>` now sends `NX\|PICK\|<session>\|<sid>\|1\|<name>\|<icon>` to the bench over `NX_HUD` (refused with "HUD not bound" until bound). The legacy `TX_STATE` (918302) / `STOCK` (918305) gate is no longer on the pick path (those branches are vestigial — no producer in the refonte). |
-| v0.2.1 | 2026-11-20 | **NEARBY availability fix**: listen on `NX_HUD`; on `NX\|RESCAN\|<session>` (our session, bench owner) emit `REFRESH_REQUEST "KEEP_PAGE"` → a fresh scan refreshes the shown qty. Fixes the shown qty staying stale after a pick (the displayed number came from the scan snapshot and was never updated). Re-scan, not local decrement, because the same component can be reserved by another workshop — only a scan reads the authoritative server qty. |
+| v0.2.1 | 2026-11-20 | **NEARBY availability fix**: on `NX\|RESCAN\|<session>` emit `REFRESH_REQUEST "KEEP_PAGE"` → fresh scan refreshes the shown qty (the displayed number came from the scan snapshot and was never updated). Re-scan, not local decrement — only a scan reads the authoritative server qty. |
+| v0.3.0 | 2026-11-23 | **observation assembler** (P4 content). Mirrors the picked set from `NX\|BASKET`. On `OBS_REQ 918420` (from NX_P4_Controller) → `918372 INSPECT` to NX_P1_Animation; on `918399 OK\|elapsed\|heat`, `fab.grind = llRound(elapsed)` capped 10 (identical to `Workshop_Config.actionHeader`), joins the basket sids with their live `HERE` scan metadata into a snapshot `fab.grind=N\n\ntaxonomy\|count\|use\|stage\|props\|life\|eff\|organ`, and sends `NX\|OBSERVE\|<session>\|<nameEsc>\|<snapshotEsc>` to the bound bench. Relays the bench's `NX\|OBSERVED` to P4 as `OBS_RESULT 918421` (`STATUS\|nameEsc\|descEsc`). |
 
 ## Dependencies
 
-- **Peers (same ROOT)**: `NX_Scan_Refresh` (DISPLAY_* 918281–284), `NX_Render` (VIEW 918290 / RENDER_READY 918291), `NX_HudFace` (`918260 BIND_INFO` → bench + session).
+- **Peers (same ROOT)**: `NX_Scan_Refresh` (DISPLAY_* 918281–284), `NX_Render` (VIEW 918290 / RENDER_READY 918291), `NX_HudFace` (`918260 BIND_INFO` → bench + session), `NX_P4_Controller` (`OBS_REQ 918420` → / `OBS_RESULT 918421` ←), `NX_P1_Animation` (`918372 INSPECT` → / `918399` ← for the cut gesture).
+- **Bench peer (`NX_HUD`)**: `WS_Eval` — out `NX|OBSERVE`, in `NX|OBSERVED`.
 - **Bench (other object, `NX_HUD` -918282)**: out `NX|PICK` on a pick; in `NX|RESCAN` (from `WS_Stock` after a server availability change) → re-scan NEARBY. The bench's `WS_Stock` reserves and pushes the basket back.
 - **Buttons**: `P0_PREV`, `P0_NEXT`, `P0_ADD_0..3`.
 - **Include**: `nexus_header`.
@@ -35,6 +37,12 @@ ROOT controller for the P0 **nearby/available** zone: holds the scanned rows, pa
 | in | 918281–284 DISPLAY_* | build/refresh the nearby rows |
 | in | `918260 BIND_INFO` `<bench>\|<session>` | learn the bound bench (enables picks) |
 | in | NX_HUD `NX\|RESCAN\|<session>` | server qty changed → emit `REFRESH_REQUEST KEEP_PAGE` (fresh scan) |
+| in | NX_HUD `NX\|BASKET\|<session>\|…` | mirror the picked set (sid+qty) for the snapshot |
+| in | link `918420 OBS_REQ` | P4 asks to observe → INSPECT the gesture, then assemble + send `NX\|OBSERVE` |
+| out | link `918372 INSPECT` / in `918399` | read elapsed/heat from NX_P1_Animation |
+| out | NX_HUD `NX\|OBSERVE\|<session>\|<nameEsc>\|<snapshotEsc>` | snapshot to WS_Eval |
+| in | NX_HUD `NX\|OBSERVED\|<session>\|<STATUS>\|<descEsc>\|<nameEsc>` | result from WS_Eval |
+| out | link `918421 OBS_RESULT` (`STATUS\|nameEsc\|descEsc`) | result to P4 |
 | in | touch `P0_PREV`/`P0_NEXT` | paginate |
 | in | touch `P0_ADD_<n>` | pick → `NX\|PICK` to the bench (if bound) |
 | out | NX_HUD `NX\|PICK\|<session>\|<sid>\|1\|<name>\|<icon>` | pick to the bench (WS_Stock) |
@@ -47,6 +55,8 @@ ROOT controller for the P0 **nearby/available** zone: holds the scanned rows, pa
 - [ ] 2026-11-19 — `ADD` (918300) legacy emit is dead; the pick intent is now `NX|PICK` to the bench. Remove the unused `ADD` code when the P0 flow is settled.
 - [ ] 2026-11-19 — vestigial `TX_STATE`/`STOCK` branches + `gTxBusy` (initial TRUE) no longer gate the pick; prune them once the bench pick→stock round-trip is confirmed in-world.
 - [ ] 2026-11-19 — REVIEW (legacy): unbounded retained HERE payloads; no sender validation on scan requests.
+- [ ] 2026-11-23 — the observation action header is `fab.grind` hardcoded (cutting_board). For mortar/cauldron, derive the axis from the bench's `Action`/`HeatAction`/`DurationAction` (`ws:cfg:*`) like `Workshop_Config`.
+- [ ] 2026-11-23 — snapshot joins basket sids with the current scan; a picked component out of scan range yields no group for it (edge case).
 
 ## Test (in-world)
 

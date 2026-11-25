@@ -10,7 +10,7 @@ The bench-side state machine. **Current slice:** occupancy lock (reservation) + 
 
 ## Current version
 
-`v0.4.2 (SCRIPT_NAME "WS_Core")` — reservation lock (= craft lifetime, no TTL, persisted), HUD probe/give on `NX_HUD`, bind (`OFFER`/`ACCEPT`/`BOUND`), heartbeat-based HUD-gone detection, "in use"/force contention, `release()` wired to WS_Stock.
+`v0.5.0 (SCRIPT_NAME "WS_Core")` — reservation lock + HUD provisioning/bind + heartbeat + contention/force; **HUD discard wired**: `NX|DISCARD|<session>|<started>` → `discardCraft(started)` (not started → RELEASE/return; started → COMMIT/consume + fresh session + re-bind, lock kept); `release()` (leave-bench dialog) passes ticket+holder to WS_Stock.
 
 ## Changelog
 
@@ -21,6 +21,7 @@ The bench-side state machine. **Current slice:** occupancy lock (reservation) + 
 | v0.3.0 | 2026-11-19 | **takeover when HUD gone**: handle `NX\|UNBIND` from the holder's detaching HUD; a newcomer touching gets the Force dialog even if the holder is still in region. Craft kept on force (§8). |
 | v0.3.1 | 2026-11-19 | HUD-gone detection made reliable via a contention-time ping (detach `llRegionSayTo` is not reliably delivered). |
 | v0.4.0 | 2026-11-19 | **periodic heartbeat**: while locked, ping the holder's HUD every HEARTBEAT (5 s); MISS_MAX (3) unanswered pings → HUD gone → frees the lock on its own. The heartbeat also provisions (gives the HUD once) and binds (OFFER on first answer). Replaces the on-touch contention probe and `gHudGone`. |
+| v0.5.0 | 2026-11-23 | **discard flow** (HUD `p1_action3`): inbound `NX\|DISCARD\|<session>\|<started>`. `discardCraft(started)` **keeps the lock & heartbeat**: not started → `STOCK_RELEASE_REQ` (server RELEASE, stock returned, session kept); started → `STOCK_COMMIT_REQ 918251` (server COMMIT, stock consumed, no product) + rotate `state:session` + re-bind (`gBound=FALSE; offerHud`) since the committed server ticket is frozen (`C`). `release()` (Release dialog = leave bench) captures ticket+holder before clearing and passes them in `STOCK_RELEASE_REQ` (link_message is async, LSD already cleared). |
 | v0.4.2 | 2026-11-19 | **heartbeat detection refined** (commits "change the heartbeat detection" / "HB fixed once more"): `gPingAck`/`gMisses` reset at (re)arm, HUD given once while unbound (`gGiven`), holder re-touch while unbound re-pings ("Linking your HUD…") instead of re-probing. **`release()` wired to WS_Stock**: take/discard now emits `918250 STOCK_RELEASE_REQ` so WS_Stock releases the reserved basket. |
 
 ## Dependencies
@@ -43,8 +44,9 @@ The bench-side state machine. **Current slice:** occupancy lock (reservation) + 
 | in | `NX\|ACCEPT` (NX_HUD, from worn HUD) | session, kind | session match → confirm BOUND |
 | out | `NX\|BOUND` (NX_HUD, to holder) | session | confirm the bind |
 | in | `NX\|UNBIND` (NX_HUD, from worn HUD) | session | best-effort fast free on detach |
+| in | `NX\|DISCARD` (NX_HUD, from worn HUD) | session, started | discard the craft: RELEASE (not started) / COMMIT + new session (started); lock kept |
 | out | `llGiveInventory` | reference HUD | deliver HUD on absent/mismatch (once, while unbound) |
-| out | link `918250 STOCK_RELEASE_REQ` | — | take/discard → WS_Stock releases the basket |
+| out | link `918250 STOCK_RELEASE_REQ` / `918251 STOCK_COMMIT_REQ` | ticket, holder | discard-return / discard-consume → WS_Stock |
 | in | link `WS_OPR` (970110) | `OPR\|<ver>` | mark ready (accept reservations) |
 | in | link `970290` | — | memory report |
 
@@ -60,7 +62,7 @@ The bench-side state machine. **Current slice:** occupancy lock (reservation) + 
 
 - [ ] 2026-11-19 — version match is exact; a semver `>=` compare would avoid re-giving a newer HUD.
 - [ ] 2026-11-19 — `llSetText` shared with WS_Boot (socle §6); WS_HMI will own the text layer.
-- [ ] 2026-11-19 — `release()` now releases the basket via WS_Stock, but COMMIT (take vs discard distinction) is not modelled yet; wire with the craft take/output flow.
+- [x] 2026-11-23 — discard modelled (RELEASE vs COMMIT + session rotation). **TAKE** (craft output COMMIT with `OUT|sid|qty|dna`) still to wire.
 - [ ] 2026-11-19 — `freeLock` keeps a pending craft+session; `acquire()` does not yet prompt take/discard for an inherited craft (no craft tracking on the bench yet).
 - [ ] 2026-11-19 — `gBound` is not persisted; a WS_Core reset drops it and the heartbeat re-binds on the holder's next `HUDA`.
 
