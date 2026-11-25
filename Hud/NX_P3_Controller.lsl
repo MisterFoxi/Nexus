@@ -165,12 +165,12 @@ selectRow(integer i)
 
 transfer()
 {
-    if(gBusy){ llRegionSayTo(llGetOwner(), 0, "[Nexus] Transfert déjà en cours."); return; }
-    if(gSel == ""){ llRegionSayTo(llGetOwner(), 0, "[Nexus] Choisis un récipient d'abord."); return; }
-    if(gBench == NULL_KEY || gSession == ""){ llRegionSayTo(llGetOwner(), 0, "[Nexus] HUD non associé."); return; }
+    if(gBusy){ llRegionSayTo(llGetOwner(), 0, "[Nexus] Transfer already in progress."); return; }
+    if(gSel == ""){ llRegionSayTo(llGetOwner(), 0, "[Nexus] Choose a container first."); return; }
+    if(gBench == NULL_KEY || gSession == ""){ llRegionSayTo(llGetOwner(), 0, "[Nexus] HUD not bound."); return; }
     llRegionSayTo(gBench, NX_HUD, "NX|CONTAINER|" + gSession + "|" + gSel);
     gBusy = TRUE;
-    llRegionSayTo(llGetOwner(), 0, "[Nexus] Transfert en cours...");
+    llRegionSayTo(llGetOwner(), 0, "[Nexus] Transferring...");
 }
 
 button(string name)
@@ -284,7 +284,7 @@ default
         if(gScanning){
             gScanning = FALSE; gReceiving = FALSE; gPending = []; gPendingIcons = [];
             render();
-            llRegionSayTo(llGetOwner(), 0, "[Nexus] Scan des récipients interrompu. Clique Actualiser.");
+            llRegionSayTo(llGetOwner(), 0, "[Nexus] Container scan interrupted. Click Refresh.");
         }
     }
 }

@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Core"
-#define SCRIPT_VERSION "v0.7.2"
+#define SCRIPT_VERSION "v0.7.3"
 #include "nexus_header"
 
 // WS_Core — the bench-side state machine. First slice: reservation (occupancy lock) + HUD provisioning
@@ -54,7 +54,7 @@ integer gGiven;                        // reference HUD already handed to this h
 
 integer gDlgChan;
 key     gDlgAv = NULL_KEY;
-string  gDlgKind;                      // "force" | "locker"
+string  gDlgKind;                      // "force" | "locker" | "held" | "resume"
 
 // ---- take: forge the product, HOLD it on the bench, collect into a récipient (socle §7) ----
 // The product is a server stock SID; the bench keeps its reference in state:held until the lot is collected
@@ -73,7 +73,7 @@ status(){
     if(llLinksetDataRead("state:held") != ""){            // free but a forged product is waiting to be collected
         string by = llLinksetDataRead("state:heldby");
         if(by == "") by = "?";
-        llSetText("Nexus - produit de " + by + " en attente\n(toucher : collecter / jeter)", <0.9,0.9,0.5>, 1.0);
+        llSetText("Nexus - product by " + by + " waiting\n(touch: collect / discard)", <0.9,0.9,0.5>, 1.0);
         return;
     }
     llSetText("Nexus - bench FREE", <0.6,1.0,0.6>, 1.0);
@@ -243,7 +243,7 @@ openCollect(key holder){
     list h = llParseStringKeepNulls(llLinksetDataRead("state:held"), ["|"], []);
     if(llGetListLength(h) < 11) return;
     llRegionSayTo(holder, NX_HUD, "NX|OUTPUT|" + llLinksetDataRead("state:session") + "|WAIT_CONTAINER|" + llList2String(h, 1));
-    llRegionSayTo(holder, 0, "[Nexus] Produit prêt — choisis un récipient (ou laisse-le, il reste au bench).");
+    llRegionSayTo(holder, 0, "[Nexus] Product ready - choose a container (or leave it; it stays on the bench).");
 }
 
 // Collect the held product into the chosen récipient: CONFIG it with the held SID (no new commit; the SID
@@ -280,7 +280,7 @@ takeResult(string result, key holder){
         llLinksetDataDelete("state:takesrc");
         closeTake(holder, "give");
     } else {
-        llRegionSayTo(holder, 0, "[Nexus] Rien ne réagit avec cette préparation. Ajuste-la ou jette-la.");
+        llRegionSayTo(holder, 0, "[Nexus] Nothing reacts with this preparation. Adjust it or discard it.");
     }
 }
 
@@ -299,6 +299,20 @@ release(){
     // re-read them. It needs both to release the server reservation and to refresh the holder's HUD.
     llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, ticket, holder);   // WS_Stock releases the reserved basket
     status();
+}
+
+// Jeter a conserved (used) preparation left on a free bench: release its reserved basket and clear the
+// pending craft so the bench is truly free again. No holder present, so no HUD refresh.
+discardPending(){
+    string ticket = llLinksetDataRead("state:session");
+    if(llLinksetDataRead("state:stock") != "")
+        llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, ticket, NULL_KEY);   // WS_Stock releases + deletes state:stock
+    llLinksetDataDelete("state:stock");
+    llLinksetDataDelete("state:takesrc");
+    llLinksetDataWrite("state:craft", "0");
+    llLinksetDataDelete("state:session");
+    status();
+    llOwnerSay("[Nexus] WS_Core: pending preparation discarded.");
 }
 
 default
@@ -342,7 +356,7 @@ default
         if(num == OUTPUT_DONE){                         // collection result from WS_Output
             key doneHolder = (key)llLinksetDataRead("state:lock");
             if(llGetSubString(str, 0, 3) == "FAIL"){   // no récipient: keep the held lot, collect later
-                llRegionSayTo(doneHolder, 0, "[Nexus] Aucun récipient trouvé — le produit reste au bench (collecte plus tard).");
+                llRegionSayTo(doneHolder, 0, "[Nexus] No container found - the product stays on the bench (collect later).");
                 return;
             }
             if(llLinksetDataRead("state:held") == "") return;   // nothing held -> stale/duplicate
@@ -361,9 +375,15 @@ default
         if(holder == ""){
             if(llLinksetDataRead("state:held") != ""){     // free but holding a product -> collect / jeter / conserver
                 gDlgAv = av; gDlgKind = "held";
-                string by = llLinksetDataRead("state:heldby"); if(by == "") by = "quelqu'un";
-                llDialog(av, "Produit de " + by + " en attente sur ce bench.\nCollecter, jeter, ou laisser ?",
-                    ["Collecter", "Jeter", "Conserver"], gDlgChan);
+                string by = llLinksetDataRead("state:heldby"); if(by == "") by = "someone";
+                llDialog(av, "Product by " + by + " waiting on this bench.\nCollect, discard, or leave it?",
+                    ["Collect", "Discard", "Keep"], gDlgChan);
+                return;
+            }
+            if(llLinksetDataRead("state:craft") == "1"){   // conserved USED prep left behind -> prendre / jeter (§8)
+                gDlgAv = av; gDlgKind = "resume";
+                llDialog(av, "A preparation is waiting on this bench.\nTake it over or discard it?",
+                    ["Take", "Discard"], gDlgChan);
                 return;
             }
             acquire(av); return;
@@ -433,9 +453,13 @@ default
             if(gDlgKind == "force" && msg == "Force") forceTo(gDlgAv);
             else if(gDlgKind == "locker" && msg == "Release") release();
             else if(gDlgKind == "held"){
-                if(msg == "Collecter") acquire(gDlgAv);        // acquire -> bind -> openCollect (offered on BOUND)
-                else if(msg == "Jeter"){ purgeHeld(); status(); }
-                // "Conserver": leave the product untouched, bench stays free
+                if(msg == "Collect") acquire(gDlgAv);          // acquire -> bind -> openCollect (offered on BOUND)
+                else if(msg == "Discard"){ purgeHeld(); status(); }
+                // "Keep": leave the product untouched, bench stays free
+            }
+            else if(gDlgKind == "resume"){
+                if(msg == "Take") acquire(gDlgAv);             // take over the bench (reserved basket + session kept)
+                else if(msg == "Discard") discardPending();
             }
             gDlgAv = NULL_KEY; gDlgKind = "";
             return;
