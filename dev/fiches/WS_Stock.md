@@ -10,7 +10,7 @@ Bench **stock client**: holds the craft basket and reserves it with the server. 
 
 ## Current version
 
-`v0.2.0 (SCRIPT_NAME "WS_Stock")` — pick/unpick → declarative RESERVE; basket persisted; push BASKET / PICKNO; NEARBY re-scan on availability change; **discard closure**: `STOCK_RELEASE_REQ` (server RELEASE, return) and `STOCK_COMMIT_REQ` (server COMMIT, consume), both reading ticket+holder from the WS_Core message and refreshing the still-bound HUD.
+`v0.3.0` — pick/unpick → declarative RESERVE; basket persisted; push BASKET / PICKNO; NEARBY re-scan; discard closure; **take COMMIT|OUT** (forge the output SID, wait `COMMIT_OK` → `STOCK_COMMIT_DONE`) and **DISCARD** (purge a product SID on the server).
 
 ## Changelog
 
@@ -18,7 +18,8 @@ Bench **stock client**: holds the craft basket and reserves it with the server. 
 |---|---|---|
 | v0.1.0 | 2026-11-19 | created — the pick→reserve slice (socle option B). PICK/UNPICK from the HUD → declarative `RESERVE|<ticket>|sid:u^…` to the server; RES_OK → push BASKET; RES_NO → revert the pending pick + PICKNO; timeout (SRV_WAIT) → treat server as down, revert. RELEASE on WS_Core take/discard (`STOCK_RELEASE_REQ` link). Basket in `state:stock` survives reset/HUD loss (§8). |
 | v0.1.1 | 2026-11-20 | **NEARBY availability fix**: on `RES_OK` / `RES_NO` / `REL_OK` send `NX\|RESCAN\|<session>` to the holder's HUD. The server has just changed availability, so the HUD re-reads the authoritative qty from a fresh scan rather than decrement locally. |
-| v0.2.0 | 2026-11-23 | **discard closure** (from WS_Core). `STOCK_RELEASE_REQ` and new `STOCK_COMMIT_REQ 918251` now take `ticket` (payload) + `holder` (id) **from the message** — WS_Core has already cleared `state:lock`/`state:session` and the link_message is async, so they can't be re-read from LSD. RELEASE → `NX\|RELEASE` (stock returned) + empty `NX\|BASKET` + `NX\|RESCAN` to the still-bound holder. COMMIT → `NX\|COMMIT` (no OUT: consumed, no product); no HUD refresh (SELECTED clears on the session rotation, NEARBY already shows the reduced qty). |
+| v0.2.0 | 2026-11-23 | **discard closure** (from WS_Core). `STOCK_RELEASE_REQ` and `STOCK_COMMIT_REQ 918251` take `ticket` (payload) + `holder` (id) from the message (LSD already cleared, async). RELEASE → `NX\|RELEASE` + empty BASKET + RESCAN. COMMIT → `NX\|COMMIT` (no OUT). |
+| v0.3.0 | 2026-11-25 | **take output**: `STOCK_COMMIT_REQ` extended — `ticket\|newSid\|qty\|dnaHash` → `NX\|COMMIT\|OUT\|…`, then on `COMMIT_OK` (matched vs `gCommitTicket`, not `state:session` which may have rotated) emit `STOCK_COMMIT_DONE 918431` to WS_Core so the récipient CONFIG follows the server. New `STOCK_DISCARD_REQ 918252` → `NX\|DISCARD\|<sid>` (purge a held product's stock). |
 
 ## Dependencies
 
@@ -40,14 +41,16 @@ Bench **stock client**: holds the craft basket and reserves it with the server. 
 | out NX_STOCK | `NX\|RESERVE\|<ticket>\|sid:u^…` / `NX\|RELEASE\|<ticket>` | to the server |
 | in NX_STOCK | `NX\|RES_OK` / `NX\|RES_NO\|…sid:avail^…` / `NX\|REL_OK` | server verdicts (our ticket only) |
 | in link | `918250 STOCK_RELEASE_REQ` (ticket, holder) | discard-return: `NX\|RELEASE` + empty BASKET + RESCAN to holder |
-| in link | `918251 STOCK_COMMIT_REQ` (ticket, holder) | discard-consume: `NX\|COMMIT` (no OUT) + clear basket |
+| in link | `918251 STOCK_COMMIT_REQ` (`ticket` \| `ticket\|newSid\|qty\|dna`) | consume (no OUT) / take `COMMIT\|OUT`; on OK → `STOCK_COMMIT_DONE` |
+| out link | `918431 STOCK_COMMIT_DONE` (ticket) | take COMMIT\|OUT confirmed → WS_Core CONFIGs the récipient |
+| in link | `918252 STOCK_DISCARD_REQ` (sid) | purge a held product SID → `NX\|DISCARD\|<sid>` |
 | in link | `970290` | memory report |
 
 ## Open points / debt
 
 - [ ] 2026-11-19 — SRV_WAIT (3 s) timeout treats any missing reply as server-down; a slow server could drop a valid pick (redo on next pick).
 - [ ] 2026-11-19 — RES_NO reverts only the last pending pick (one HUD per bench, no concurrent picks expected).
-- [ ] 2026-11-23 — COMMIT is wired for **discard-consume** (no OUT). The **TAKE** path (COMMIT with `OUT|sid|qty|dna` → product) still comes with the craft output flow. `freeLock` (HUD gone) keeps the basket; only take/discard releases.
+- [x] 2026-11-25 — **TAKE** `COMMIT|OUT` wired (forge output SID, wait COMMIT_OK → STOCK_COMMIT_DONE) + `STOCK_DISCARD_REQ`.
 - [ ] 2026-11-19 — no explicit server discovery; relies on broadcast RESERVE + directed reply (+ timeout for degraded mode).
 
 ## Test (in-world)

@@ -10,7 +10,7 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 
 ## Current version
 
-`v0.2.0 (SCRIPT_NAME "NX_P1_Animation")` — refonte: convention header/banner; craft START authorized locally (no removed-backend ACK); owns the `craft_started` flag; **`p1_action3` DISCARD** split from `p1_later` (pause) → emits `918315 DISCARD|<started>`. (The refonte define restarted at v0.1.0; earlier fiche mislabelled it v0.11.0 continuing the legacy count.)
+`v0.2.2` — local START; owns `craft_started`; `p1_action3` DISCARD → `918315`; TAKE (paused) → `918370 CONTAINER`; **first Cut → `918318 CRAFTSTART`** (bench marks the prep started); **`attach` (re-wear) = RAZ** (clears the persisted cut session so the HUD opens clean).
 
 ## Changelog
 
@@ -18,7 +18,9 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 |---|---|---|
 | v0.10.0 | 2026-11-16 | legacy (pre-refonte): START sent `918315 CRAFT_STARTED` and waited for the basket's `918317 CRAFT_STARTED` before running the clock. |
 | v0.1.0 | 2026-11-18 | **migrated** (define restarted from legacy v0.10.0): added `nexus_header` (banner + mem report), SemVer. **START authorized locally** — removed the `918315/918317 CRAFT_STARTED` handshake (the removed backend never answered, so CUT used to time out). This script now **owns `mc:simple:craft_started`** (writes it on start, clears it on DISCARD_DONE). Visual/clock/observation (SNAPSHOT, PAUSE→P4) kept intact. |
-| v0.2.0 | 2026-11-23 | **DISCARD split**: `p1_action3` no longer shares `suspend()` with `p1_later`. It emits `918315 DISCARD\|<gStarted>` (NX_HudFace relays `NX\|DISCARD` to the bench: RELEASE if not started, COMMIT if started). `p1_later` keeps the pause. The local reset still runs on the returning `918317 DISCARD_DONE`. |
+| v0.2.0 | 2026-11-23 | **DISCARD split**: `p1_action3` emits `918315 DISCARD\|<gStarted>`; `p1_later` keeps the pause. Local reset on the returning `918317 DISCARD_DONE`. |
+| v0.2.1 | 2026-11-25 | **re-wear RAZ**: `attach(id != NULL)` deletes `mc:chop:session` + `mc:simple:craft_started` then `llResetScript` → the HUD opens clean instead of restoring a stale cut. (LSD persists otherwise so a sim restart keeps the prep; only a re-wear forces the RAZ.) |
+| v0.2.2 | 2026-11-25 | **CRAFTSTART**: the first Cut (`startPreparation`) emits `918318 CRAFTSTART` (NX_HudFace → `NX\|CRAFTSTART` → bench `state:craft="1"`), so the bench knows the prep is started (no refund on a started discard/leave). |
 
 ## Dependencies
 
@@ -38,7 +40,8 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 | out | 918350 / 918351 | progress LOAD / show |
 | out | 918411 OPEN | ask P4 observation (on PAUSE) |
 | out | 918315 DISCARD\|<started> | p1_action3 → NX_HudFace (relayed to bench) |
-| out | 918370 CONTAINER | TAKE (paused) → output path |
+| out | 918370 CONTAINER | TAKE (paused) → NX_Nearby assembles `NX\|TAKE` to the bench |
+| out | 918318 CRAFTSTART | first Cut → NX_HudFace → bench marks prep started |
 | out | 918394 | cosmetic activity flag 0/1 |
 | in | 918360 START/CONT/STOP | explicit action requests |
 | in | 918310 CONTINUE | navigation → suspend (not a new prep) |
@@ -56,7 +59,8 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 
 - [ ] 2026-11-18 — START has no stock gate yet; WS_Stock must re-gate it (reserve/commit) when the stock flow exists. Today START always succeeds locally.
 - [ ] 2026-11-18 — still reads the dead store `mc:workshop:session` in the SNAPSHOT/finalize paths; harmless (empty → not finalizing) but to be repointed with the craft/eval flow.
-- [ ] 2026-11-18 — `918317 DISCARD_DONE` / `918371 finalize` / `918372 SNAPSHOT` have no refonte emitter yet (craft/output not built); kept for when that flow is wired.
+- [x] 2026-11-25 — `918317 DISCARD_DONE`/`CRAFT_DONE` now emitted (NX_HudFace, on discard and on bench `NX|TAKEDONE`); `918371/918372 SNAPSHOT` legacy paths still unused.
+- [ ] 2026-11-25 — re-wear RAZ clears the local cut; a cut-in-progress is not resumable after a re-wear (grind is HUD-local). The bench re-drives the right page on re-bind (held → P3).
 - [ ] 2026-11-18 — `gStartTicket`/`gStartAt` now unused by START (kept for state resets); prune when the craft flow is finalized.
 
 ## Test (in-world)

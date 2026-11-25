@@ -10,7 +10,7 @@ The worn HUD's thin face toward the bench. **Built so far:** provisioning probe 
 
 ## Current version
 
-`v0.4.0 (SCRIPT_NAME "NX_HudFace")` — probe responder + bind handshake + `BIND_INFO` publish; **discard relay**: on local `918315/DISCARD|<started>` from NX_P1_Animation, forwards `NX|DISCARD|<session>|<started>` to the bound bench and fires `918317/DISCARD_DONE` to reset the HUD pages (does not clear the bind — the bench drives the refresh while bound).
+`v0.5.1` — probe responder + bind + `BIND_INFO` publish + **discard relay**; **TAKEDONE** (bench says the craft finished → local `918317 CRAFT_DONE` resets P1); **CRAFTSTART relay** (cut began → `NX|CRAFTSTART|<session>` so the bench marks the prep started).
 
 ## Changelog
 
@@ -20,7 +20,9 @@ The worn HUD's thin face toward the bench. **Built so far:** provisioning probe 
 | v0.2.0 | 2026-11-18 | **bind** — ported `OFFER`/`ACCEPT`/`BOUND` from `docs/README_workshop_link.md` onto `NX_HUD`: on `NX\|OFFER` (speaker = named bench, kind = our model) store bench+session, reply `NX\|ACCEPT\|<session>\|<kind>`; on `NX\|BOUND` mark bound. One bench at a time (OFFERs from other benches ignored while bound); reset (re-wear) clears the bind. session = the bench lock (§8); single/keep carried but not stored yet. |
 | v0.3.0 | 2026-11-19 | **unbind on detach**: `attach(NULL_KEY)` sends `NX\|UNBIND\|<session>` to the bound bench, so WS_Core can let another avatar take over (Force) when the HUD is removed but the holder stays in region. |
 | v0.3.1 | 2026-11-19 | **publish the bind to the linkset**: on `NX\|BOUND`, broadcast `918260 BIND_INFO` = `<bench>\|<session>` to `LINK_SET` so the pick (`NX_Nearby_Controller`) and basket mirror (`NX_Selected_Controller`) learn the bound bench + session and can address it. |
-| v0.4.0 | 2026-11-23 | **discard relay**: on local `918315 DISCARD` (`"DISCARD\|<started>"` from `NX_P1_Animation`'s `p1_action3`), forward `NX\|DISCARD\|<session>\|<started>` to the bound bench, then emit `918317 DISCARD_DONE` to `LINK_THIS` (P1 reset / P0 rotation / P4 close). **Bind is NOT cleared** here: the bench keeps the lock and (on consume) rotates to a new session + re-binds, so its session-gated refresh must still reach us. |
+| v0.4.0 | 2026-11-23 | **discard relay**: on local `918315 DISCARD` (`"DISCARD\|<started>"`), forward `NX\|DISCARD\|<session>\|<started>` to the bench, then emit `918317 DISCARD_DONE`. Bind NOT cleared (bench keeps the lock, re-binds on consume). |
+| v0.5.0 | 2026-11-25 | **TAKEDONE**: on `NX\|TAKEDONE\|<newSession>\|<note>` from the bound bench (craft finished, product delivered), emit local `918317 CRAFT_DONE` to reset P1; the bench re-binds us (new session) via OFFER right after. |
+| v0.5.1 | 2026-11-25 | **CRAFTSTART relay**: on local `918318 CRAFTSTART` (from NX_P1_Animation's first Cut), forward `NX\|CRAFTSTART\|<session>` to the bench so it sets `state:craft="1"` (started → no refund). |
 
 ## Dependencies
 
@@ -42,6 +44,9 @@ The worn HUD's thin face toward the bench. **Built so far:** provisioning probe 
 | in | link `918315 DISCARD` (LINK_THIS) | `"DISCARD\|<started>"` | from NX_P1_Animation's p1_action3 |
 | out | `NX\|DISCARD` (NX_HUD, to bench) | session, started | relay the discard to the bound bench |
 | out | link `918317 DISCARD_DONE` (LINK_THIS) | — | reset all HUD pages after a discard |
+| in | `NX\|TAKEDONE` (NX_HUD, from bench) | newSession, note | craft finished → emit local `918317 CRAFT_DONE` (reset P1) |
+| in | link `918318 CRAFTSTART` (LINK_THIS) | — | from NX_P1_Animation's first Cut |
+| out | `NX\|CRAFTSTART` (NX_HUD, to bench) | session | prep started → bench marks `state:craft="1"` |
 | in | `attach` / `on_rez` / `changed` | — | reset / re-parse / clear bind |
 | in | link `970290` | — | memory report |
 

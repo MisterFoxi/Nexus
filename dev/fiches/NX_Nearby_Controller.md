@@ -10,7 +10,7 @@ ROOT controller for the P0 **nearby/available** zone: holds the scanned rows, pa
 
 ## Current version
 
-`v0.3.0 (SCRIPT_NAME "NX_Nearby_Controller")` — pick → bench (`NX|PICK`); NEARBY re-scan on `NX|RESCAN`; **observation assembler**: mirrors `NX|BASKET`, on `OBS_REQ` (from P4) reads the cut gesture from NX_P1_Animation and sends a snapshot `NX|OBSERVE` to the bench, relays `NX|OBSERVED` back to P4 as `OBS_RESULT`.
+`v0.4.0` — pick → bench (`NX|PICK`); NEARBY re-scan; observation assembler (`NX|OBSERVE`); **TAKE assembler**: on `918370 CONTAINER` (P1 TAKE while paused) reuses the same INSPECT+snapshot assembly and sends `NX|TAKE` (+ the picked sources' object keys `srcKeys`, for the bench give path).
 
 ## Changelog
 
@@ -19,7 +19,8 @@ ROOT controller for the P0 **nearby/available** zone: holds the scanned rows, pa
 | v0.1.0 | 2026-11-19 | migrated from legacy `MC_Nearby_Controller`: added `nexus_header`, SemVer, renamed `NX_`. No behaviour change (pick still went through the legacy transaction backend). |
 | v0.2.0 | 2026-11-19 | **pick → bench wired** (refonte, socle §4): learns the bound bench + session from `918260 BIND_INFO` (emitted by `NX_HudFace` on BOUND); `P0_ADD_<n>` now sends `NX\|PICK\|<session>\|<sid>\|1\|<name>\|<icon>` to the bench over `NX_HUD` (refused with "HUD not bound" until bound). The legacy `TX_STATE` (918302) / `STOCK` (918305) gate is no longer on the pick path (those branches are vestigial — no producer in the refonte). |
 | v0.2.1 | 2026-11-20 | **NEARBY availability fix**: on `NX\|RESCAN\|<session>` emit `REFRESH_REQUEST "KEEP_PAGE"` → fresh scan refreshes the shown qty (the displayed number came from the scan snapshot and was never updated). Re-scan, not local decrement — only a scan reads the authoritative server qty. |
-| v0.3.0 | 2026-11-23 | **observation assembler** (P4 content). Mirrors the picked set from `NX\|BASKET`. On `OBS_REQ 918420` (from NX_P4_Controller) → `918372 INSPECT` to NX_P1_Animation; on `918399 OK\|elapsed\|heat`, `fab.grind = llRound(elapsed)` capped 10 (identical to `Workshop_Config.actionHeader`), joins the basket sids with their live `HERE` scan metadata into a snapshot `fab.grind=N\n\ntaxonomy\|count\|use\|stage\|props\|life\|eff\|organ`, and sends `NX\|OBSERVE\|<session>\|<nameEsc>\|<snapshotEsc>` to the bound bench. Relays the bench's `NX\|OBSERVED` to P4 as `OBS_RESULT 918421` (`STATUS\|nameEsc\|descEsc`). |
+| v0.3.0 | 2026-11-23 | **observation assembler** (P4 content). Mirrors the picked set from `NX\|BASKET`. On `OBS_REQ 918420` → `918372 INSPECT`; on `918399 OK\|elapsed\|heat`, `fab.grind = llRound(elapsed)` capped 10, joins basket sids with live `HERE` scan into the snapshot, sends `NX\|OBSERVE`. Relays `NX\|OBSERVED` to P4 as `OBS_RESULT 918421`. |
+| v0.4.0 | 2026-11-25 | **TAKE assembler**: `918370 CONTAINER` (from NX_P1_Animation, TAKE while paused) sets take-mode and runs the same INSPECT → snapshot assembly, then sends `NX\|TAKE\|<session>\|<nameEsc>\|<snapshotEsc>\|<srcKeysEsc>` to the bench (WS_Take). `srcKeys` = the picked sources' object keys (HERE field 1), carried alongside the aggregated snapshot for the give/harvest path. OBSERVE path unchanged. |
 
 ## Dependencies
 
@@ -44,6 +45,8 @@ ROOT controller for the P0 **nearby/available** zone: holds the scanned rows, pa
 | in | NX_HUD `NX\|OBSERVED\|<session>\|<STATUS>\|<descEsc>\|<nameEsc>` | result from WS_Eval |
 | out | link `918421 OBS_RESULT` (`STATUS\|nameEsc\|descEsc`) | result to P4 |
 | in | touch `P0_PREV`/`P0_NEXT` | paginate |
+| in | link `918370 CONTAINER` | P1 TAKE (paused) → take-mode INSPECT + assemble → `NX\|TAKE` |
+| out | NX_HUD `NX\|TAKE\|<session>\|<nameEsc>\|<snapshotEsc>\|<srcKeysEsc>` | snapshot + source keys to WS_Take |
 | in | touch `P0_ADD_<n>` | pick → `NX\|PICK` to the bench (if bound) |
 | out | NX_HUD `NX\|PICK\|<session>\|<sid>\|1\|<name>\|<icon>` | pick to the bench (WS_Stock) |
 | out | 918290 VIEW (NEARBY) | page view to NX_Render |
