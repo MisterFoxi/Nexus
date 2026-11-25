@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_HudFace"
-#define SCRIPT_VERSION "v0.5.0"
+#define SCRIPT_VERSION "v0.5.1"
 #include "nexus_header"
 
 // NX_HudFace — the worn HUD's thin face toward the bench.
@@ -25,6 +25,7 @@ integer NX_HUD = -918282;              // bench <-> worn HUD
 integer BIND_INFO = 918260;            // -> HUD linkset: "<bench>|<session>" so pick/basket scripts know the bench
 integer DISCARD_REQ  = 918315;         // <- NX_P1_Animation (P1 DISCARD button): "DISCARD"
 integer DISCARD_DONE = 918317;         // -> HUD linkset: "DISCARD_DONE" closes every page
+integer CRAFTSTART_REQ = 918318;       // <- NX_P1_Animation: the cut has begun -> tell the bench (prep now "used")
 
 string  gModel;                        // parsed model (name before " v") = our kind
 string  gVersion;                      // parsed version ("vX.Y.Z")
@@ -89,6 +90,13 @@ default
                 llRegionSayTo(gBench, NX_HUD, "NX|DISCARD|" + gSession + "|" + started);
             }
             llMessageLinked(LINK_THIS, DISCARD_DONE, "DISCARD_DONE", llGenerateKey());
+            return;
+        }
+        if(num == CRAFTSTART_REQ && str == "CRAFTSTART")
+        {
+            // The cut has begun: tell the bench so it marks the prep used and keeps it if we leave.
+            if(gBench != NULL_KEY && gSession != "")
+                llRegionSayTo(gBench, NX_HUD, "NX|CRAFTSTART|" + gSession);
             return;
         }
     }

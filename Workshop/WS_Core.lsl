@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Core"
-#define SCRIPT_VERSION "v0.6.0"
+#define SCRIPT_VERSION "v0.7.2"
 #include "nexus_header"
 
 // WS_Core — the bench-side state machine. First slice: reservation (occupancy lock) + HUD provisioning
@@ -69,8 +69,14 @@ integer inRegion(key k){ return llListFindList(llGetAgentList(AGENT_LIST_REGION,
 status(){
     if(!ready()) return;                                   // WS_Boot owns the floating text until OPR
     string h = llLinksetDataRead("state:lock");
-    if(h == "") llSetText("Nexus - bench FREE", <0.6,1.0,0.6>, 1.0);
-    else        llSetText("Nexus - held by " + llLinksetDataRead("state:lockname"), <1.0,0.8,0.4>, 1.0);
+    if(h != ""){ llSetText("Nexus - held by " + llLinksetDataRead("state:lockname"), <1.0,0.8,0.4>, 1.0); return; }
+    if(llLinksetDataRead("state:held") != ""){            // free but a forged product is waiting to be collected
+        string by = llLinksetDataRead("state:heldby");
+        if(by == "") by = "?";
+        llSetText("Nexus - produit de " + by + " en attente\n(toucher : collecter / jeter)", <0.9,0.9,0.5>, 1.0);
+        return;
+    }
+    llSetText("Nexus - bench FREE", <0.6,1.0,0.6>, 1.0);
 }
 
 parseHud(){
@@ -142,8 +148,20 @@ forceTo(key av){
     startMonitor();
 }
 
-// Free the lock but KEEP a pending craft (§8: never auto-discard). No craft -> also clear the session.
+// Free the lock (HUD removed / unresponsive). An unused basket — picked but never forged into a product —
+// is RELEASED: keeping it would make no sense and leaving it reserved orphans the server ticket. A forged
+// product (state:held) is kept (the bench holds it until collected or purged).
 freeLock(string why){
+    key holder = (key)llLinksetDataRead("state:lock");
+    string ticket = llLinksetDataRead("state:session");
+    // Release ONLY an UNUSED basket (picked, never cut). A used preparation (state:craft="1", the cut began)
+    // or a forged product (state:held) is KEPT — socle §8: never auto-discard a started craft.
+    if(llLinksetDataRead("state:held") == "" && llLinksetDataRead("state:stock") != ""
+        && llLinksetDataRead("state:craft") != "1"){
+        // WS_Stock releases the server reservation (using the passed ticket) and deletes state:stock.
+        llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, ticket, holder);
+        llLinksetDataDelete("state:takesrc");
+    }
     llLinksetDataDelete("state:lock");
     llLinksetDataDelete("state:lockname");
     if(llLinksetDataRead("state:craft") != "1") llLinksetDataDelete("state:session");
@@ -160,6 +178,7 @@ purgeHeld(){
     string sid = llList2String(llParseStringKeepNulls(held, ["|"], []), 0);
     if(sid != "") llMessageLinked(LINK_SET, STOCK_DISCARD_REQ, sid, NULL_KEY);
     llLinksetDataDelete("state:held");
+    llLinksetDataDelete("state:heldby");
 }
 
 // Player DISCARD on the HUD: abandon the current preparation but KEEP the bench lock and the player.
@@ -213,6 +232,7 @@ forgeProduct(string result, key holder){
     llLinksetDataWrite("state:held", (string)nsid + "|" + (string)qty + "|" + dna
         + "|" + llList2String(f, 2) + "|" + llList2String(f, 4) + "|" + llList2String(f, 5)
         + "|" + tax + "|" + stage + "|" + props + "|" + llList2String(f, 9) + "|" + llList2String(f, 10));
+    llLinksetDataWrite("state:heldby", llLinksetDataRead("state:lockname"));   // crafter name, shown while the lot waits
     gForgeTicket = ticket;
     llMessageLinked(LINK_SET, STOCK_COMMIT_REQ, ticket + "|" + (string)nsid + "|" + (string)qty + "|" + dna, holder);
 }
@@ -264,11 +284,11 @@ takeResult(string result, key holder){
     }
 }
 
-// Player leaves the bench (Release dialog): clear everything.
+// Player leaves the bench (Release dialog): free the lock. A forged product is NOT purged — leaving keeps it
+// held at the bench (collectable later); only an explicit Jeter/discard purges it.
 release(){
     string ticket = llLinksetDataRead("state:session");
     key holder = (key)llLinksetDataRead("state:lock");
-    purgeHeld();
     llLinksetDataDelete("state:lock");
     llLinksetDataDelete("state:lockname");
     llLinksetDataDelete("state:session");
@@ -326,7 +346,8 @@ default
                 return;
             }
             if(llLinksetDataRead("state:held") == "") return;   // nothing held -> stale/duplicate
-            llLinksetDataDelete("state:held");         // collected: forget the lot and close the craft
+            llLinksetDataDelete("state:held");         // collected: forget the lot (stock now lives in the récipient)
+            llLinksetDataDelete("state:heldby");
             closeTake(doneHolder, "done");
             return;
         }
@@ -337,7 +358,16 @@ default
         key av = llDetectedKey(0);
         if(!ready()){ llRegionSayTo(av, 0, "[Nexus] Bench not ready (still booting)."); return; }
         string holder = llLinksetDataRead("state:lock");
-        if(holder == ""){ acquire(av); return; }
+        if(holder == ""){
+            if(llLinksetDataRead("state:held") != ""){     // free but holding a product -> collect / jeter / conserver
+                gDlgAv = av; gDlgKind = "held";
+                string by = llLinksetDataRead("state:heldby"); if(by == "") by = "quelqu'un";
+                llDialog(av, "Produit de " + by + " en attente sur ce bench.\nCollecter, jeter, ou laisser ?",
+                    ["Collecter", "Jeter", "Conserver"], gDlgChan);
+                return;
+            }
+            acquire(av); return;
+        }
         if((key)holder == av){                             // the holder
             if(!gBound){ pingHolder(); llRegionSayTo(av, 0, "[Nexus] Linking your HUD..."); return; }
             gDlgAv = av; gDlgKind = "locker";
@@ -362,6 +392,11 @@ default
             string holder = llLinksetDataRead("state:lock");
             if(holder == "" || id == NULL_KEY || llGetOwnerKey(id) != (key)holder) return;  // only the holder's HUD matters
 
+            if(verb == "CRAFTSTART"){                      // HUD: the cut has begun -> prep is now USED (kept on a leave)
+                if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
+                llLinksetDataWrite("state:craft", "1");
+                return;
+            }
             if(verb == "DISCARD"){                         // player discard on the HUD -> drop the basket, keep the bench
                 if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
                 discardCraft((integer)llList2String(f, 3));   // f[3] = started flag (1 = consume, 0 = return)
@@ -384,6 +419,7 @@ default
                 llRegionSayTo((key)holder, NX_HUD, "NX|BOUND|" + llLinksetDataRead("state:session"));
                 gBound = TRUE;
                 llOwnerSay("[Nexus] WS_Core: HUD bound (" + llLinksetDataRead("state:lockname") + ").");
+                if(llLinksetDataRead("state:held") != "") openCollect((key)holder);   // resume: go straight to collection
                 return;
             }
             if(verb == "UNBIND"){                          // best-effort fast free on detach
@@ -396,6 +432,11 @@ default
         if(chan == gDlgChan && id == gDlgAv){
             if(gDlgKind == "force" && msg == "Force") forceTo(gDlgAv);
             else if(gDlgKind == "locker" && msg == "Release") release();
+            else if(gDlgKind == "held"){
+                if(msg == "Collecter") acquire(gDlgAv);        // acquire -> bind -> openCollect (offered on BOUND)
+                else if(msg == "Jeter"){ purgeHeld(); status(); }
+                // "Conserver": leave the product untouched, bench stays free
+            }
             gDlgAv = NULL_KEY; gDlgKind = "";
             return;
         }

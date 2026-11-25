@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_P1_Animation"
-#define SCRIPT_VERSION "v0.2.0"
+#define SCRIPT_VERSION "v0.2.2"
 #include "nexus_header"
 
 // ROOT. P1 playback + active-time clock + atlas/button/progress bring-up for the worn HUD.
@@ -242,6 +242,7 @@ startPreparation()
     gWanted = "PLAYING";
     gStarted = TRUE;
     llLinksetDataWrite("mc:simple:craft_started", "1"); // this script now owns the used-preparation flag
+    llMessageLinked(LINK_THIS, 918318, "CRAFTSTART", llGenerateKey()); // tell the bench the prep is now USED (keep it on a leave)
     gElapsed = 0.0;                                      // sole first-start initialization
     gClockAt = llGetTime();
     gClockActive = !gSpoiled && !gFinalizing;
@@ -547,4 +548,16 @@ default
         }
     }
     on_rez(integer parameter) { llResetScript(); }
+    attach(key id)
+    {
+        // (Re)worn = full RAZ. mc:chop:session / mc:simple:craft_started persist in LSD to survive a sim
+        // restart (scripts are not reset then), but a re-attach must start clean: the bench is the craft
+        // authority and re-drives the right page on re-bind. llResetScript alone would restore the stale cut.
+        if(id != NULL_KEY)
+        {
+            llLinksetDataDelete(SESSION_KEY);
+            llLinksetDataDelete("mc:simple:craft_started");
+            llResetScript();
+        }
+    }
 }
