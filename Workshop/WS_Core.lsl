@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Core"
-#define SCRIPT_VERSION "v0.4.2"
+#define SCRIPT_VERSION "v0.6.0"
 #include "nexus_header"
 
 // WS_Core — the bench-side state machine. First slice: reservation (occupancy lock) + HUD provisioning
@@ -28,7 +28,13 @@
 integer NX_HUD = -918282;              // bench <-> worn HUD
 integer WS_OPR = 970110;               // link_message from WS_Boot: "OPR|<ver>"
 integer STOCK_RELEASE_REQ = 918250;    // -> WS_Stock: discard before start -> release (return) the basket
-integer STOCK_COMMIT_REQ  = 918251;    // -> WS_Stock: discard after start -> commit (consume) the basket
+integer STOCK_COMMIT_REQ  = 918251;    // -> WS_Stock: commit (consume) the basket, optional output SID
+integer EVAL_TAKE_RES     = 918430;    // <- WS_Eval: transformation result "1|..."/"2[|..]"/"0" (holder in id)
+integer STOCK_COMMIT_DONE = 918431;    // <- WS_Stock: a take COMMIT|OUT was confirmed by the server (str = ticket)
+integer OUTPUT_CONFIG     = 918440;    // -> WS_Output: CONFIG the récipient with the product DNA
+integer OUTPUT_DONE       = 918441;    // <- WS_Output: CONFIG dispatched ("OK|<container>") / "FAIL|<reason>"
+integer OUTPUT_GIVE       = 918442;    // -> WS_Output: hand source mesh(es) to the holder (give/harvest)
+integer STOCK_DISCARD_REQ = 918252;    // -> WS_Stock: purge a held product SID on the server
 float   HEARTBEAT = 5.0;               // seconds between holder-HUD pings while locked
 integer MISS_MAX  = 3;                 // consecutive unanswered pings before the bench frees itself (~15 s)
 
@@ -49,6 +55,13 @@ integer gGiven;                        // reference HUD already handed to this h
 integer gDlgChan;
 key     gDlgAv = NULL_KEY;
 string  gDlgKind;                      // "force" | "locker"
+
+// ---- take: forge the product, HOLD it on the bench, collect into a récipient (socle §7) ----
+// The product is a server stock SID; the bench keeps its reference in state:held until the lot is collected
+// into a récipient or purged (discard / leave). This is the universal "the bench keeps the product until it
+// is collected or purged" model — KEEP needs no product object, the bench itself is the holder.
+//   state:held = newSid|qty|dnaHash|name|use|life|tax|stage|props|med|eff   (persists across reset)
+string  gForgeTicket;                  // ticket awaiting the forge COMMIT|OUT confirmation ("" = none)
 
 integer ready(){ return gReady || llLinksetDataRead("ws:worldver") != ""; }
 integer inRegion(key k){ return llListFindList(llGetAgentList(AGENT_LIST_REGION, []), [k]) != -1; }
@@ -140,11 +153,21 @@ freeLock(string why){
     llOwnerSay("[Nexus] WS_Core: bench freed (" + why + ").");
 }
 
+// Purge a held product (discard / leave): tell the server to drop its stock, then forget the lot.
+purgeHeld(){
+    string held = llLinksetDataRead("state:held");
+    if(held == "") return;
+    string sid = llList2String(llParseStringKeepNulls(held, ["|"], []), 0);
+    if(sid != "") llMessageLinked(LINK_SET, STOCK_DISCARD_REQ, sid, NULL_KEY);
+    llLinksetDataDelete("state:held");
+}
+
 // Player DISCARD on the HUD: abandon the current preparation but KEEP the bench lock and the player.
 // 'started' decides the stock fate. Only the Release dialog (release(), below) actually leaves the bench.
 discardCraft(integer started){
     string ticket = llLinksetDataRead("state:session");
     key holder = (key)llLinksetDataRead("state:lock");
+    purgeHeld();                                           // a held, uncollected product is purged with the craft
     llLinksetDataWrite("state:craft", "0");
     if(started){
         // Cut already begun: CONSUME the reserved units (no product). The committed server ticket is dead,
@@ -162,10 +185,90 @@ discardCraft(integer started){
     }
 }
 
+// The take is done (product collected, or given): close the craft like a discard-commit — rotate to a fresh
+// session, re-bind the HUD, and tell the HUD to reset P1 / close P3 (NX|TAKEDONE).
+closeTake(key holder, string note){
+    llLinksetDataWrite("state:craft", "0");
+    llLinksetDataWrite("state:session", (string)llGenerateKey());
+    gBound = FALSE;
+    string ns = llLinksetDataRead("state:session");
+    if(holder != NULL_KEY){
+        llRegionSayTo(holder, NX_HUD, "NX|TAKEDONE|" + ns + "|" + note);
+        offerHud(holder);
+    }
+}
+
+// Forge the product SID and HOLD it on the bench (state:held, persists across reset). COMMIT|OUT consumes
+// the reserved inputs and creates the server stock; collection opens once the server confirms (COMMIT_DONE).
+forgeProduct(string result, key holder){
+    list f = llParseStringKeepNulls(result, ["|"], []);
+    string ticket = llLinksetDataRead("state:session");
+    key nsid = llGenerateKey();
+    string tax   = llList2String(f, 6);
+    string stage = llList2String(f, 7);
+    string props = llList2String(f, 8);
+    integer qty  = (integer)llList2String(f, 3);
+    string dna = llMD5String(tax + "|" + stage + "|" + props, 0);   // matches NX_Component.dnaHash()
+    // state:held = newSid|qty|dna|name|use|life|tax|stage|props|med|eff
+    llLinksetDataWrite("state:held", (string)nsid + "|" + (string)qty + "|" + dna
+        + "|" + llList2String(f, 2) + "|" + llList2String(f, 4) + "|" + llList2String(f, 5)
+        + "|" + tax + "|" + stage + "|" + props + "|" + llList2String(f, 9) + "|" + llList2String(f, 10));
+    gForgeTicket = ticket;
+    llMessageLinked(LINK_SET, STOCK_COMMIT_REQ, ticket + "|" + (string)nsid + "|" + (string)qty + "|" + dna, holder);
+}
+
+// Offer collection of the held product: open the récipient page. If the player leaves without collecting,
+// the lot stays held at the bench; the next take re-opens this instead of forging again.
+openCollect(key holder){
+    list h = llParseStringKeepNulls(llLinksetDataRead("state:held"), ["|"], []);
+    if(llGetListLength(h) < 11) return;
+    llRegionSayTo(holder, NX_HUD, "NX|OUTPUT|" + llLinksetDataRead("state:session") + "|WAIT_CONTAINER|" + llList2String(h, 1));
+    llRegionSayTo(holder, 0, "[Nexus] Produit prêt — choisis un récipient (ou laisse-le, il reste au bench).");
+}
+
+// Collect the held product into the chosen récipient: CONFIG it with the held SID (no new commit; the SID
+// already carries the server stock forged at take). WS_Output confirms with OUTPUT_DONE.
+collectInto(string container, key holder){
+    list h = llParseStringKeepNulls(llLinksetDataRead("state:held"), ["|"], []);
+    if(llGetListLength(h) < 11) return;
+    // OUTPUT_CONFIG payload: container|sid|name|use|life|tax|stage|props|med|eff
+    string cfg = container + "|" + llList2String(h, 0) + "|" + llList2String(h, 3) + "|" + llList2String(h, 4)
+        + "|" + llList2String(h, 5) + "|" + llList2String(h, 6) + "|" + llList2String(h, 7)
+        + "|" + llList2String(h, 8) + "|" + llList2String(h, 9) + "|" + llList2String(h, 10);
+    llMessageLinked(LINK_SET, OUTPUT_CONFIG, cfg, NULL_KEY);
+}
+
+// A transformation result came back from WS_Eval (holder already validated).
+//   code 1 (reaction) -> forge the product and hold it on the bench (collection opens on COMMIT_DONE).
+//   code 2 (give)     -> consume the inputs and hand out the source mesh(es) directly, then close.
+//   code 0 (inert)    -> nothing to deliver; keep the craft so the player can adjust or discard.
+takeResult(string result, key holder){
+    if(llLinksetDataRead("state:held") != ""){ openCollect(holder); return; }   // collect/purge the held lot first
+    list f = llParseStringKeepNulls(result, ["|"], []);
+    string code = llList2String(f, 0);
+    if(code == "1"){
+        forgeProduct(result, holder);
+    } else if(code == "2"){
+        // give/harvest: "2" (each source's single mesh) or "2|leaf^root" (listed organs). Consume the
+        // reserved inputs (no product SID), hand the mesh(es) over, then close like a discard-commit.
+        string ticket = llLinksetDataRead("state:session");
+        string organs = "";
+        if(llGetListLength(f) >= 2) organs = llList2String(f, 1);
+        string srcs = llLinksetDataRead("state:takesrc");
+        llMessageLinked(LINK_SET, STOCK_COMMIT_REQ, ticket, holder);                 // consume, no OUT
+        llMessageLinked(LINK_SET, OUTPUT_GIVE, (string)holder + "|" + organs + "|" + srcs, NULL_KEY);
+        llLinksetDataDelete("state:takesrc");
+        closeTake(holder, "give");
+    } else {
+        llRegionSayTo(holder, 0, "[Nexus] Rien ne réagit avec cette préparation. Ajuste-la ou jette-la.");
+    }
+}
+
 // Player leaves the bench (Release dialog): clear everything.
 release(){
     string ticket = llLinksetDataRead("state:session");
     key holder = (key)llLinksetDataRead("state:lock");
+    purgeHeld();
     llLinksetDataDelete("state:lock");
     llLinksetDataDelete("state:lockname");
     llLinksetDataDelete("state:session");
@@ -202,7 +305,31 @@ default
     link_message(integer s, integer num, string str, key id)
     {
         if(num == WS_OPR){ gReady = TRUE; status(); return; }
-        if(num == NEXUS_MEM_REPORT) nexusMemReport();
+        if(num == NEXUS_MEM_REPORT){ nexusMemReport(); return; }
+        if(num == EVAL_TAKE_RES){                       // WS_Eval transformation result
+            key holder = (key)llLinksetDataRead("state:lock");
+            if(holder == NULL_KEY || id != holder) return;
+            takeResult(str, holder);
+            return;
+        }
+        if(num == STOCK_COMMIT_DONE){                   // product forged on the server -> open its collection
+            if(str == gForgeTicket && gForgeTicket != ""){
+                gForgeTicket = "";
+                openCollect((key)llLinksetDataRead("state:lock"));
+            }
+            return;
+        }
+        if(num == OUTPUT_DONE){                         // collection result from WS_Output
+            key doneHolder = (key)llLinksetDataRead("state:lock");
+            if(llGetSubString(str, 0, 3) == "FAIL"){   // no récipient: keep the held lot, collect later
+                llRegionSayTo(doneHolder, 0, "[Nexus] Aucun récipient trouvé — le produit reste au bench (collecte plus tard).");
+                return;
+            }
+            if(llLinksetDataRead("state:held") == "") return;   // nothing held -> stale/duplicate
+            llLinksetDataDelete("state:held");         // collected: forget the lot and close the craft
+            closeTake(doneHolder, "done");
+            return;
+        }
     }
 
     touch_start(integer n)
@@ -238,6 +365,11 @@ default
             if(verb == "DISCARD"){                         // player discard on the HUD -> drop the basket, keep the bench
                 if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
                 discardCraft((integer)llList2String(f, 3));   // f[3] = started flag (1 = consume, 0 = return)
+                return;
+            }
+            if(verb == "CONTAINER"){                       // player chose a récipient on P3 -> collect the held product
+                if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
+                collectInto(llList2String(f, 3), (key)holder);
                 return;
             }
             if(verb == "HUDA"){                            // holder's HUD answered the heartbeat

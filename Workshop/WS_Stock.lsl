@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Stock"
-#define SCRIPT_VERSION "v0.1.1"
+#define SCRIPT_VERSION "v0.3.0"
 #include "nexus_header"
 
 // WS_Stock — bench stock client. Holds the craft basket and reserves it with the server. The HUD never
@@ -23,7 +23,10 @@
 integer NX_HUD   = -918282;
 integer NX_STOCK = -918280;
 integer STOCK_RELEASE_REQ = 918250;   // link from WS_Core: discard before start -> release (return) the ticket
-integer STOCK_COMMIT_REQ  = 918251;   // link from WS_Core: discard after start -> commit (consume) the ticket
+integer STOCK_COMMIT_REQ  = 918251;   // link from WS_Core: commit (consume) the ticket, optional output SID
+integer STOCK_COMMIT_DONE = 918431;   // -> WS_Core: a take COMMIT|OUT was confirmed by the server (str = ticket)
+integer STOCK_DISCARD_REQ = 918252;   // link from WS_Core: purge a held product SID on the server (str = sid)
+string  gCommitTicket = "";            // take ticket awaiting COMMIT_OK (so the récipient CONFIG follows the server)
 
 float   SRV_WAIT = 3.0;                // seconds to wait for a server reply before giving up
 string  gPendSid = "";                 // sid of a pick awaiting a server reply ("" = idle)
@@ -126,9 +129,23 @@ default
             }
             return;
         }
-        if(num == STOCK_COMMIT_REQ){                   // WS_Core: discard after start -> consume the basket
-            string ticket = str;                       // held units already subtracted at reserve time
-            if(ticket != "") llRegionSay(NX_STOCK, "NX|COMMIT|" + ticket);   // no OUT: consumed, no product
+        if(num == STOCK_DISCARD_REQ){                  // WS_Core: purge a held product SID (its stock -> 0)
+            if(str != "") llRegionSay(NX_STOCK, "NX|DISCARD|" + str);
+            return;
+        }
+        if(num == STOCK_COMMIT_REQ){                   // WS_Core: consume the basket (held units already subtracted)
+            // str = "<ticket>"                             discard-after-cut: consume inputs, no product
+            //     | "<ticket>|<newSid>|<qty>|<dnaHash>"    take: consume inputs + forge the output SID
+            list cf = llParseStringKeepNulls(str, ["|"], []);
+            string ticket = llList2String(cf, 0);
+            if(ticket == "") return;
+            if(llGetListLength(cf) >= 4){
+                llRegionSay(NX_STOCK, "NX|COMMIT|" + ticket + "|OUT|"
+                    + llList2String(cf, 1) + "|" + llList2String(cf, 2) + "|" + llList2String(cf, 3));
+                gCommitTicket = ticket;                // await COMMIT_OK before the récipient CONFIG (server must create sv:q first)
+            } else {
+                llRegionSay(NX_STOCK, "NX|COMMIT|" + ticket);   // no OUT: consumed, no product
+            }
             llLinksetDataDelete("state:stock");
             gPendSid = ""; llSetTimerEvent(0.0);
             // No HUD refresh: SELECTED clears on the session rotation (re-bind), and NEARBY already shows
@@ -181,6 +198,17 @@ default
         }
 
         if(chan == NX_STOCK){
+            // take COMMIT|OUT confirmation is matched against gCommitTicket (state:session may have rotated)
+            if(verb == "COMMIT_OK" && llGetListLength(f) >= 3 && gCommitTicket != "" && llList2String(f, 2) == gCommitTicket){
+                llMessageLinked(LINK_SET, STOCK_COMMIT_DONE, gCommitTicket, NULL_KEY);
+                gCommitTicket = "";
+                return;
+            }
+            if(verb == "COMMIT_NO" && llGetListLength(f) >= 3 && gCommitTicket != "" && llList2String(f, 2) == gCommitTicket){
+                llOwnerSay("[Nexus] WS_Stock: server refused COMMIT for " + gCommitTicket + " (take aborted).");
+                gCommitTicket = "";
+                return;
+            }
             if(llGetListLength(f) < 3 || llList2String(f, 2) != ticket) return;  // our ticket only
             if(verb == "RES_OK"){ gPendSid = ""; llSetTimerEvent(0.0); rescanHud(); return; }
             if(verb == "RES_NO"){

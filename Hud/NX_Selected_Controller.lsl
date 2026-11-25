@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_Selected_Controller"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.2.0"
 #include "nexus_header"
 
 // HUD basket (SELECTED panel) mirror. The basket LIVES IN THE BENCH now; this script only reflects it:

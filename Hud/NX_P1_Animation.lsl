@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_P1_Animation"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.2.0"
 #include "nexus_header"
 
 // ROOT. P1 playback + active-time clock + atlas/button/progress bring-up for the worn HUD.

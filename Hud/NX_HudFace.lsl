@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_HudFace"
-#define SCRIPT_VERSION "v0.3.1"
+#define SCRIPT_VERSION "v0.5.0"
 #include "nexus_header"
 
 // NX_HudFace — the worn HUD's thin face toward the bench.
@@ -125,6 +125,13 @@ default
             gBound = TRUE;
             llMessageLinked(LINK_SET, BIND_INFO, (string)gBench + "|" + gSession, NULL_KEY);
             llOwnerSay("[Nexus] HUD bound to the bench.");
+            return;
+        }
+
+        if(verb == "TAKEDONE"){                             // craft finished on the bench (product delivered)
+            if(id != gBench) return;
+            // Reset P1 to a fresh preparation; the bench re-binds us (new session) via OFFER right after.
+            llMessageLinked(LINK_THIS, DISCARD_DONE, "CRAFT_DONE", llGenerateKey());
             return;
         }
     }

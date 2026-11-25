@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_Nearby_Controller"
-#define SCRIPT_VERSION "v0.2.1"
+#define SCRIPT_VERSION "v0.4.0"
 #include "nexus_header"
 
 // Nearby data and independent pagination controller. Install in ROOT with NX_Render.
@@ -45,6 +45,8 @@ list gPending;
 // --- observation assembly (feeds P4 via NX_Eval; see docs) ---
 integer OBS_REQ = 918420;        // <- NX_P4_Controller: assemble a snapshot and observe
 integer OBS_RESULT = 918421;     // -> NX_P4_Controller: "<name>|<escaped description>" or "ERROR|<reason>"
+integer P1_TAKE = 918370;        // <- NX_P1_Animation: TAKE pressed while paused -> assemble + send NX|TAKE
+integer gTakeMode;               // the in-flight assembly is a committing TAKE (not an observation)
 integer INSPECT = 918372;        // -> NX_P1_Animation: "INSPECT" (read the live cut gesture)
 integer INSPECT_REPLY = 918399;  // <- NX_P1_Animation: "OK|<elapsed>|<heat>" or "NO"
 float   CHOP_FULL = 10.0;        // active seconds for a full cut; fab.grind = round(elapsed) capped here (per Workshop_Config)
@@ -156,6 +158,24 @@ string obsHere(string sid)
     return "";
 }
 
+// Source object keys of the picked basket, "uuid^uuid..." — needed by the bench give/harvest path
+// (the aggregated snapshot drops object identity, so the keys travel alongside it on a TAKE).
+string obsSrcKeys()
+{
+    string out = "";
+    integer i;
+    for (i = 0; i < llGetListLength(gBasket); i += 2)
+    {
+        string here = obsHere(llList2String(gBasket, i));
+        if (here != "")
+        {
+            string k = llList2String(llParseStringKeepNulls(here, ["|"], []), 1);   // HERE field 1 = objkey
+            if (k != "") { if (out != "") out += "^"; out += k; }
+        }
+    }
+    return out;
+}
+
 // Build the eval snapshot: "fab.grind=N" + blank line + groups "taxonomy|count|use|stage|props|life|eff|organ",
 // grouped by taxonomy/stage, joining the picked basket with the live scan metadata.
 string obsSnapshot(integer grind)
@@ -252,8 +272,17 @@ default
         if (number == BIND_INFO) { list bi = llParseStringKeepNulls(payload, ["|"], []); gBench = (key)llList2String(bi, 0); gSession = llList2String(bi, 1); return; }
         if (number == OBS_REQ && sender == llGetLinkNumber())
         {
+            gTakeMode = FALSE;
             gObsTicket = llGenerateKey();
             llMessageLinked(LINK_THIS, INSPECT, "INSPECT", gObsTicket);   // fetch the live cut gesture first
+            return;
+        }
+        if (number == P1_TAKE && sender == llGetLinkNumber())
+        {
+            // P1 TAKE (paused action2): assemble the same snapshot as observation, then send it as a TAKE.
+            gTakeMode = TRUE;
+            gObsTicket = llGenerateKey();
+            llMessageLinked(LINK_THIS, INSPECT, "INSPECT", gObsTicket);
             return;
         }
         if (number == INSPECT_REPLY && request == gObsTicket && gObsTicket != NULL_KEY)
@@ -270,8 +299,17 @@ default
                 if (grind < 0) grind = 0;
             }
             if (gBench != NULL_KEY && gSession != "")
-                llRegionSayTo(gBench, NX_HUD, "NX|OBSERVE|" + gSession + "|"
-                    + llEscapeURL(gBasketName) + "|" + llEscapeURL(obsSnapshot(grind)));
+            {
+                if (gTakeMode)
+                    // TAKE carries the source keys (field 5) for the generic give/harvest path.
+                    llRegionSayTo(gBench, NX_HUD, "NX|TAKE|" + gSession + "|"
+                        + llEscapeURL(gBasketName) + "|" + llEscapeURL(obsSnapshot(grind))
+                        + "|" + llEscapeURL(obsSrcKeys()));
+                else
+                    llRegionSayTo(gBench, NX_HUD, "NX|OBSERVE|" + gSession + "|"
+                        + llEscapeURL(gBasketName) + "|" + llEscapeURL(obsSnapshot(grind)));
+            }
+            gTakeMode = FALSE;
             return;
         }
         if (sender == llGetLinkNumber() && number == REFRESH_REQUEST)
