@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_P1_Animation"
-#define SCRIPT_VERSION "v0.2.3"
+#define SCRIPT_VERSION "v0.2.4"
 #include "nexus_header"
 
 // ROOT. P1 playback + active-time clock + atlas/button/progress bring-up for the worn HUD.
@@ -11,7 +11,10 @@
 // 918360 START/CONT/STOP: explicit preparation actions, unique non-null request id.
 // ACTION1 is CUT/CONT. ACTION2 is PAUSE -> P4 while active, TAKE while paused.
 // Explicit START on an already used preparation spoils it; CONT never restarts it.
-string ATLAS = "atlas_chop";
+// Per-tool animation atlas. Default = chop; set at runtime by the SET_ATLAS link message (918319)
+// so one HUD serves several tools (cutting board, mortar, ...). The source of the name (bench at bind,
+// or the tool-select menu) is wired separately; until it fires, the fallback keeps current behaviour.
+string gAtlas = "atlas_chop";
 string CUT_BUTTON = "p1_action1";
 string SESSION_KEY = "mc:chop:session";
 float TICK = 0.25;
@@ -178,7 +181,7 @@ loadAtlas()
     gWanted = "STOPPED"; // A visual reset must never restart a used component.
     gCommandTicket = NULL_KEY;
     gLoadTicket = llGenerateKey();
-    llMessageLinked(LINK_THIS, 918330, ATLAS, gLoadTicket);
+    llMessageLinked(LINK_THIS, 918330, gAtlas, gLoadTicket);
     updateTimer();
     showVisuals();
 }
@@ -379,6 +382,11 @@ default
     {
         if (number == NEXUS_MEM_REPORT) { nexusMemReport(); return; }
         if (sender != llGetLinkNumber()) return;
+        if (number == 918319)   // SET_ATLAS: per-tool animation atlas (from the bench at bind, or the tool-select menu)
+        {
+            if (text != "" && text != gAtlas) { gAtlas = text; loadAtlas(); }   // switch tool -> reload its atlas
+            return;
+        }
         if (number == 918412 && text == "RESET" && ticket == NULL_KEY)
         {
             gObservationOpen = FALSE; gObservationTicket = NULL_KEY; gObservationDeadline = 0.0;
