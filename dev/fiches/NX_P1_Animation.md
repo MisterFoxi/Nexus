@@ -10,7 +10,7 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 
 ## Current version
 
-`v0.2.2` — local START; owns `craft_started`; `p1_action3` DISCARD → `918315`; TAKE (paused) → `918370 CONTAINER`; **first Cut → `918318 CRAFTSTART`** (bench marks the prep started); **`attach` (re-wear) = RAZ** (clears the persisted cut session so the HUD opens clean).
+`v0.2.4` — local START; owns `craft_started`; `p1_action3` DISCARD → `918315`; TAKE (paused) → `918370 CONTAINER`; **first Cut → `918318 CRAFTSTART`**; **`attach` (re-wear) = RAZ**; **per-tool animation atlas** (`gAtlas`, default `atlas_chop`) settable at runtime via `918319 SET_ATLAS` → one HUD serves several tools (board, mortar, …).
 
 ## Changelog
 
@@ -21,6 +21,7 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 | v0.2.0 | 2026-11-23 | **DISCARD split**: `p1_action3` emits `918315 DISCARD\|<gStarted>`; `p1_later` keeps the pause. Local reset on the returning `918317 DISCARD_DONE`. |
 | v0.2.1 | 2026-11-25 | **re-wear RAZ**: `attach(id != NULL)` deletes `mc:chop:session` + `mc:simple:craft_started` then `llResetScript` → the HUD opens clean instead of restoring a stale cut. (LSD persists otherwise so a sim restart keeps the prep; only a re-wear forces the RAZ.) |
 | v0.2.2 | 2026-11-25 | **CRAFTSTART**: the first Cut (`startPreparation`) emits `918318 CRAFTSTART` (NX_HudFace → `NX\|CRAFTSTART` → bench `state:craft="1"`), so the bench knows the prep is started (no refund on a started discard/leave). |
+| v0.2.4 | 2026-11-26 | **dynamic atlas**: `ATLAS` constant → `gAtlas` variable (default `atlas_chop`), reloadable at runtime by `918319 SET_ATLAS\|<name>` (fallback keeps current behaviour). Lets a single HUD serve several tools by swapping the animation atlas per genre/tool. **Source not wired yet** (bench at bind, or the tool-select menu — pending). Texture/atlas swap validated in-world. |
 
 ## Dependencies
 
@@ -43,6 +44,7 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 | out | 918370 CONTAINER | TAKE (paused) → NX_Nearby assembles `NX\|TAKE` to the bench |
 | out | 918318 CRAFTSTART | first Cut → NX_HudFace → bench marks prep started |
 | out | 918394 | cosmetic activity flag 0/1 |
+| in | 918319 SET_ATLAS\|<name> | set the per-tool animation atlas and reload it (fallback `atlas_chop`) |
 | in | 918360 START/CONT/STOP | explicit action requests |
 | in | 918310 CONTINUE | navigation → suspend (not a new prep) |
 | in | 918317 DISCARD_DONE/CRAFT_DONE | reset the preparation, clear the flag |
@@ -62,6 +64,7 @@ ROOT script of the worn HUD: P1 **playback + active-time clock**, and **bring-up
 - [x] 2026-11-25 — `918317 DISCARD_DONE`/`CRAFT_DONE` now emitted (NX_HudFace, on discard and on bench `NX|TAKEDONE`); `918371/918372 SNAPSHOT` legacy paths still unused.
 - [ ] 2026-11-25 — re-wear RAZ clears the local cut; a cut-in-progress is not resumable after a re-wear (grind is HUD-local). The bench re-drives the right page on re-bind (held → P3).
 - [ ] 2026-11-18 — `gStartTicket`/`gStartAt` now unused by START (kept for state resets); prune when the craft flow is finalized.
+- [ ] 2026-11-26 — `918319 SET_ATLAS` has **no sender yet**: wire the source once the tool-selection design is settled (bench pushes the genre/atlas at bind, or the furniture's sit-menu). HUD must also carry every tool's atlas in inventory.
 
 ## Test (in-world)
 
