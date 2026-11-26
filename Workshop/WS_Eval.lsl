@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Eval"
-#define SCRIPT_VERSION "v0.2.1"
+#define SCRIPT_VERSION "v0.2.2"
 #include "nexus_header"
 
 // WS_Eval — bench-local OBSERVATION engine (refonte option 1). Observe-only consult of the observe_when
@@ -319,6 +319,11 @@ default
 
         string name = llList2String(f, 3);                        // kept URL-escaped, echoed as-is
         string snapshot = llUnescapeURL(llList2String(f, 4));
+        // Cache the last known craft stage (snapshot + name) so the bench can validate/forge an abandoned
+        // started craft on leave (WS_Core forge-on-leave → WS_Take). Observe carries no source keys.
+        llLinksetDataWrite("state:lastsnap", snapshot);
+        llLinksetDataWrite("state:lastname", llUnescapeURL(name));
+        llLinksetDataWrite("state:lastsrc", "");
         string r = consult(snapshot);
         string status = llList2String(llParseStringKeepNulls(r, ["|"], []), 0);
         if(status == "OK")

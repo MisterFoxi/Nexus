@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_P1_Animation"
-#define SCRIPT_VERSION "v0.2.2"
+#define SCRIPT_VERSION "v0.2.3"
 #include "nexus_header"
 
 // ROOT. P1 playback + active-time clock + atlas/button/progress bring-up for the worn HUD.
@@ -547,12 +547,18 @@ default
             if (!gLoaded && gLoadTicket == NULL_KEY) loadAtlas();
         }
     }
-    on_rez(integer parameter) { llResetScript(); }
+    on_rez(integer parameter)
+    {
+        // Rez/attach-from-inventory = fresh wear -> RAZ (clear the persisted cut before reset). on_rez does
+        // NOT fire on a sim restart, so the sim-restart persistence of mc:chop:session is preserved.
+        llLinksetDataDelete(SESSION_KEY);
+        llLinksetDataDelete("mc:simple:craft_started");
+        llResetScript();
+    }
     attach(key id)
     {
-        // (Re)worn = full RAZ. mc:chop:session / mc:simple:craft_started persist in LSD to survive a sim
-        // restart (scripts are not reset then), but a re-attach must start clean: the bench is the craft
-        // authority and re-drives the right page on re-bind. llResetScript alone would restore the stale cut.
+        // (Re)worn = full RAZ too (whichever of on_rez/attach fires on this viewer). The bench is the craft
+        // authority and re-drives the right page on re-bind; llResetScript alone would restore the stale cut.
         if(id != NULL_KEY)
         {
             llLinksetDataDelete(SESSION_KEY);

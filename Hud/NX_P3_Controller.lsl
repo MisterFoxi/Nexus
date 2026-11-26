@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_P3_Controller"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.1.1"
 #include "nexus_header"
 
 // NX_P3_Controller — ROOT. Récipient-selection page of the refonte take flow. Replaces MC_P3_Controller
@@ -34,6 +34,9 @@ key     gBench = NULL_KEY;
 string  gSession = "";
 integer gOpen;
 integer gBusy;                         // a container was sent; waiting for TAKEDONE
+// A resume's NX|OUTPUT can arrive before BIND_INFO sets gSession (fresh bind race): buffer it, flush on bind.
+string  gPendOutSession = "";
+string  gPendOutQty = "";
 
 // scan buffers
 key     gScan = NULL_KEY;
@@ -141,6 +144,7 @@ openP3(string qty)
 closeP3()
 {
     gOpen = FALSE; gBusy = FALSE; gSel = ""; gSelName = ""; gSelIcon = "";
+    gPendOutSession = ""; gPendOutQty = "";
     gNear = []; gIcons = []; gScanning = FALSE; gReceiving = FALSE;
     llSetTimerEvent(0.0);
     llMessageLinked(LINK_SET, OUTPUT_PHASE, "CLOSED|0|", NULL_KEY);                     // NX_Turn_Z -> P0
@@ -221,9 +225,10 @@ default
         if(who != NULL_KEY && gBench != NULL_KEY && llGetOwnerKey(who) != llGetOwnerKey(gBench)) return;
 
         if(verb == "OUTPUT"){
-            if(llList2String(f, 2) != gSession) return;
             if(llList2String(f, 3) != "WAIT_CONTAINER") return;
-            openP3(llList2String(f, 4));
+            string s = llList2String(f, 2);
+            if(s == gSession && gSession != "") openP3(llList2String(f, 4));
+            else { gPendOutSession = s; gPendOutQty = llList2String(f, 4); }   // bind not settled -> flush on BIND_INFO
             return;
         }
         if(verb == "TAKEDONE"){                 // new session in f[2]; accept from our bench, close the page
@@ -239,6 +244,10 @@ default
         if(number == BIND_INFO){
             list bi = llParseStringKeepNulls(payload, ["|"], []);
             gBench = (key)llList2String(bi, 0); gSession = llList2String(bi, 1);
+            if(gPendOutSession != "" && gPendOutSession == gSession){   // a buffered OUTPUT was waiting for this bind
+                string q = gPendOutQty; gPendOutSession = ""; gPendOutQty = "";
+                openP3(q);
+            }
             return;
         }
         if(number == RENDER_READY && sender == llGetLinkNumber()

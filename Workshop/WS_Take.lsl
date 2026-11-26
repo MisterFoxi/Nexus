@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Take"
-#define SCRIPT_VERSION "v0.1.0"
+#define SCRIPT_VERSION "v0.1.1"
 #include "nexus_header"
 
 // WS_Take — bench transformation engine (split out of WS_Eval for Mono memory: observe and transform in
@@ -19,6 +19,7 @@
 
 integer NX_HUD = -918282;
 integer EVAL_TAKE_RES = 918430;      // -> WS_Core: transformation result (holder in id)
+integer FORGE_CACHED  = 918432;      // <- WS_Core: forge from the cached last-known snapshot (validate on leave)
 integer GS = 8;
 integer NOTOK = -999999;
 
@@ -518,7 +519,15 @@ default
     }
     link_message(integer s, integer num, string str, key id)
     {
-        if(num == NEXUS_MEM_REPORT) nexusMemReport();
+        if(num == NEXUS_MEM_REPORT){ nexusMemReport(); return; }
+        if(num == FORGE_CACHED){           // validate an abandoned started craft at its last known stage
+            string snap = llLinksetDataRead("state:lastsnap");
+            if(snap == "") return;
+            gTakeName = llLinksetDataRead("state:lastname");
+            llLinksetDataWrite("state:takesrc", llLinksetDataRead("state:lastsrc"));
+            takeEval(snap, id);            // id = holder passed by WS_Core
+            return;
+        }
     }
     listen(integer chan, string nm, key who, string msg)
     {
@@ -532,7 +541,13 @@ default
         if(holder == "" || who == NULL_KEY || llGetOwnerKey(who) != (key)holder) return;
 
         gTakeName = llUnescapeURL(llList2String(f, 3));
-        llLinksetDataWrite("state:takesrc", llUnescapeURL(llList2String(f, 5)));   // source keys for the give path
-        takeEval(llUnescapeURL(llList2String(f, 4)), (key)holder);
+        string srcs = llUnescapeURL(llList2String(f, 5));
+        string snap = llUnescapeURL(llList2String(f, 4));
+        llLinksetDataWrite("state:takesrc", srcs);   // source keys for the give path
+        // cache the last known craft stage so WS_Core can forge-on-leave an abandoned started craft
+        llLinksetDataWrite("state:lastsnap", snap);
+        llLinksetDataWrite("state:lastname", gTakeName);
+        llLinksetDataWrite("state:lastsrc", srcs);
+        takeEval(snap, (key)holder);
     }
 }

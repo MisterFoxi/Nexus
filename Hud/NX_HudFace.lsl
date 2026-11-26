@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "NX_HudFace"
-#define SCRIPT_VERSION "v0.5.1"
+#define SCRIPT_VERSION "v0.5.2"
 #include "nexus_header"
 
 // NX_HudFace — the worn HUD's thin face toward the bench.
@@ -59,6 +59,10 @@ default
         llListen(NX_HUD, "", NULL_KEY, "");
         gBench = NULL_KEY; gSession = ""; gBound = FALSE;
         parseSelf();
+        // Announce our presence region-wide. A bench holding a product for us (HELD-FREE) hears this and
+        // auto-resumes us (acquire → bind → openCollect → P3), so a re-attached HUD recovers its waiting
+        // product without a touch. state_entry runs after attach's llResetScript, so this fires on every wear.
+        if(gVersion != "") llRegionSay(NX_HUD, "NX|HERE|" + gModel);
     }
 
     attach(key id)

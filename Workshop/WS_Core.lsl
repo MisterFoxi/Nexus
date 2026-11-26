@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Core"
-#define SCRIPT_VERSION "v0.7.8"
+#define SCRIPT_VERSION "v0.7.11"
 #include "nexus_header"
 
 // WS_Core — the bench-side state machine. First slice: reservation (occupancy lock) + HUD provisioning
@@ -35,6 +35,7 @@ integer OUTPUT_CONFIG     = 918440;    // -> WS_Output: CONFIG the récipient wi
 integer OUTPUT_DONE       = 918441;    // <- WS_Output: CONFIG dispatched ("OK|<container>") / "FAIL|<reason>"
 integer OUTPUT_GIVE       = 918442;    // -> WS_Output: hand source mesh(es) to the holder (give/harvest)
 integer STOCK_DISCARD_REQ = 918252;    // -> WS_Stock: purge a held product SID on the server
+integer FORGE_CACHED      = 918432;    // -> WS_Take: forge from the cached last-known snapshot (validate on leave)
 float   HEARTBEAT = 5.0;               // seconds between holder-HUD pings while locked
 integer MISS_MAX  = 3;                 // consecutive unanswered pings before the bench frees itself (~15 s)
 
@@ -71,9 +72,7 @@ status(){
     string h = llLinksetDataRead("state:lock");
     if(h != ""){ llSetText("Nexus - held by " + llLinksetDataRead("state:lockname"), <1.0,0.8,0.4>, 1.0); return; }
     if(llLinksetDataRead("state:held") != ""){            // free but a forged product is waiting to be collected
-        string by = llLinksetDataRead("state:heldby");
-        if(by == "") by = "?";
-        llSetText("Nexus - product by " + by + " waiting\n(touch: collect / discard)", <0.9,0.9,0.5>, 1.0);
+        llSetText("Nexus - product waiting\n(re-attach your HUD, or touch)", <0.9,0.9,0.5>, 1.0);
         return;
     }
     llSetText("Nexus - bench FREE", <0.6,1.0,0.6>, 1.0);
@@ -148,24 +147,35 @@ forceTo(key av){
     startMonitor();
 }
 
-// Free the lock (HUD removed / unresponsive). An unused basket — picked but never forged into a product —
-// is RELEASED: keeping it would make no sense and leaving it reserved orphans the server ticket. A forged
-// product (state:held) is kept (the bench holds it until collected or purged).
+// Free the lock (HUD removed / Release). What happens to the craft on leave:
+//   forged product (state:held)      -> kept as-is (collect/purge later); session kept.
+//   started craft with a known stage -> VALIDATED at its last known stage: forge from the cached snapshot
+//                                       (→ becomes a held product). No refund; session kept for the forge.
+//   started craft, no known stage    -> consumed, no product, no refund (nothing was paused/observed).
+//   never started (reserved only)    -> refund the picks.
 freeLock(string why){
     key holder = (key)llLinksetDataRead("state:lock");
     string ticket = llLinksetDataRead("state:session");
-    // Restitution rule: a craft that never STARTED (no cut) only reserved its picks -> return them. Once the
-    // cut has begun (state:craft="1") the ingredients are committed -> NO restitution; a forged product
-    // (state:held) is likewise kept. So release only an unstarted, un-forged basket.
-    if(llLinksetDataRead("state:held") == "" && llLinksetDataRead("state:stock") != ""
-        && llLinksetDataRead("state:craft") != "1"){
-        // WS_Stock releases the server reservation (using the passed ticket) and deletes state:stock.
-        llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, ticket, holder);
+    integer keepSession = FALSE;
+    if(llLinksetDataRead("state:held") != ""){
+        keepSession = TRUE;
+    } else if(llLinksetDataRead("state:craft") == "1"){
+        if(llLinksetDataRead("state:lastsnap") != ""){
+            llMessageLinked(LINK_SET, FORGE_CACHED, "", holder);   // validate at last known stage (forge → held)
+            keepSession = TRUE;                                   // the forge's COMMIT|OUT needs the ticket
+        } else {
+            if(ticket != "") llMessageLinked(LINK_SET, STOCK_COMMIT_REQ, ticket, holder);   // consume, no refund
+            llLinksetDataDelete("state:stock");
+            llLinksetDataDelete("state:takesrc");
+            llLinksetDataWrite("state:craft", "0");
+        }
+    } else if(llLinksetDataRead("state:stock") != ""){
+        llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, ticket, holder);   // never started -> refund
         llLinksetDataDelete("state:takesrc");
     }
     llLinksetDataDelete("state:lock");
     llLinksetDataDelete("state:lockname");
-    if(llLinksetDataRead("state:craft") != "1") llLinksetDataDelete("state:session");
+    if(!keepSession) llLinksetDataDelete("state:session");
     gBound = FALSE; gMisses = 0; gGiven = FALSE;
     llSetTimerEvent(0.0);
     status();
@@ -179,7 +189,6 @@ purgeHeld(){
     string sid = llList2String(llParseStringKeepNulls(held, ["|"], []), 0);
     if(sid != "") llMessageLinked(LINK_SET, STOCK_DISCARD_REQ, sid, NULL_KEY);
     llLinksetDataDelete("state:held");
-    llLinksetDataDelete("state:heldby");
 }
 
 // Player DISCARD on the HUD: abandon the current preparation but KEEP the bench lock and the player.
@@ -207,6 +216,7 @@ discardCraft(integer started){
 // session, re-bind the HUD, and tell the HUD to reset P1 / close P3 (NX|TAKEDONE).
 closeTake(key holder, string note){
     llLinksetDataWrite("state:craft", "0");
+    llLinksetDataDelete("state:lastsnap"); llLinksetDataDelete("state:lastname"); llLinksetDataDelete("state:lastsrc");
     llLinksetDataWrite("state:session", (string)llGenerateKey());
     gBound = FALSE;
     string ns = llLinksetDataRead("state:session");
@@ -231,7 +241,6 @@ forgeProduct(string result, key holder){
     llLinksetDataWrite("state:held", (string)nsid + "|" + (string)qty + "|" + dna
         + "|" + llList2String(f, 2) + "|" + llList2String(f, 4) + "|" + llList2String(f, 5)
         + "|" + tax + "|" + stage + "|" + props + "|" + llList2String(f, 9) + "|" + llList2String(f, 10));
-    llLinksetDataWrite("state:heldby", llLinksetDataRead("state:lockname"));   // crafter name, shown while the lot waits
     gForgeTicket = ticket;
     llMessageLinked(LINK_SET, STOCK_COMMIT_REQ, ticket + "|" + (string)nsid + "|" + (string)qty + "|" + dna, holder);
 }
@@ -283,34 +292,10 @@ takeResult(string result, key holder){
     }
 }
 
-// Player leaves the bench (Release dialog): free the lock. A forged product is NOT purged — leaving keeps it
-// held at the bench (collectable later); only an explicit Jeter/discard purges it.
+// Player leaves the bench (Release dialog): same leave rules as freeLock (refund if unstarted, validate a
+// started craft at its last known stage, keep a forged product).
 release(){
-    string ticket = llLinksetDataRead("state:session");
-    key holder = (key)llLinksetDataRead("state:lock");
-    llLinksetDataDelete("state:lock");
-    llLinksetDataDelete("state:lockname");
-    llLinksetDataDelete("state:session");
-    llLinksetDataWrite("state:craft", "0");
-    gBound = FALSE; gMisses = 0; gGiven = FALSE;
-    llSetTimerEvent(0.0);
-    // Pass ticket+holder: state:* are cleared above and the link_message is async, so WS_Stock cannot
-    // re-read them. It needs both to release the server reservation and to refresh the holder's HUD.
-    llMessageLinked(LINK_SET, STOCK_RELEASE_REQ, ticket, holder);   // WS_Stock releases the reserved basket
-    status();
-}
-
-// Discard a started-but-not-taken preparation left on a free bench: the cut began, so the ingredients are
-// CONSUMED (COMMIT, no OUT) with NO restitution — not released. Then clear the pending craft.
-discardPending(){
-    string ticket = llLinksetDataRead("state:session");
-    if(ticket != "") llMessageLinked(LINK_SET, STOCK_COMMIT_REQ, ticket, NULL_KEY);   // consume, no product, no refund
-    llLinksetDataDelete("state:stock");
-    llLinksetDataDelete("state:takesrc");
-    llLinksetDataWrite("state:craft", "0");
-    llLinksetDataDelete("state:session");
-    status();
-    llOwnerSay("[Nexus] WS_Core: started preparation discarded (consumed, no refund).");
+    freeLock("released by player");
 }
 
 default
@@ -338,10 +323,8 @@ default
     {
         if(num == WS_OPR){ gReady = TRUE; status(); return; }
         if(num == NEXUS_MEM_REPORT){ nexusMemReport(); return; }
-        if(num == EVAL_TAKE_RES){                       // WS_Eval transformation result
-            key holder = (key)llLinksetDataRead("state:lock");
-            if(holder == NULL_KEY || id != holder) return;
-            takeResult(str, holder);
+        if(num == EVAL_TAKE_RES){                       // WS_Take result; id = holder (may be gone on forge-on-leave, so no lock check)
+            takeResult(str, id);
             return;
         }
         if(num == STOCK_COMMIT_DONE){                   // product forged on the server -> open its collection
@@ -359,7 +342,6 @@ default
             }
             if(llLinksetDataRead("state:held") == "") return;   // nothing held -> stale/duplicate
             llLinksetDataDelete("state:held");         // collected: forget the lot (stock now lives in the récipient)
-            llLinksetDataDelete("state:heldby");
             closeTake(doneHolder, "done");
             return;
         }
@@ -373,17 +355,13 @@ default
         if(holder == ""){
             if(llLinksetDataRead("state:held") != ""){     // free but holding a product -> collect / jeter / conserver
                 gDlgAv = av; gDlgKind = "held";
-                string by = llLinksetDataRead("state:heldby"); if(by == "") by = "someone";
-                llDialog(av, "Product by " + by + " waiting on this bench.\nDiscard it, or keep it (choose a container)?",
+                llDialog(av, "A product is waiting on this bench.\nDiscard it, or keep it (choose a container)?",
                     ["Discard", "Keep"], gDlgChan);
                 return;
             }
-            if(llLinksetDataRead("state:craft") == "1"){   // started prep left behind -> keep (resume) / discard (no refund)
-                gDlgAv = av; gDlgKind = "resume";
-                llDialog(av, "A started preparation is waiting on this bench.\nKeep it, or discard it (no refund)?",
-                    ["Keep", "Discard"], gDlgChan);
-                return;
-            }
+            // A started craft left behind was validated on leave (freeLock → forge-on-leave) and is now a held
+            // product, handled by the branch above. A bare craft=1 here means it had no known stage to forge
+            // from; just take the bench so the player can re-cut and take.
             acquire(av); return;
         }
         if((key)holder == av){                             // the holder
@@ -407,12 +385,21 @@ default
             list f = llParseStringKeepNulls(msg, ["|"], []);
             if(llList2String(f, 0) != "NX") return;
             string verb = llList2String(f, 1);
+            if(verb == "HERE"){                            // a (re)attached HUD announces itself (handled before the holder guard)
+                if(ready() && llLinksetDataRead("state:lock") == "" && llLinksetDataRead("state:held") != ""
+                    && id != NULL_KEY)
+                    acquire(llGetOwnerKey(id));            // HELD-FREE -> auto-resume this avatar (bind -> openCollect -> P3)
+                return;
+            }
             string holder = llLinksetDataRead("state:lock");
             if(holder == "" || id == NULL_KEY || llGetOwnerKey(id) != (key)holder) return;  // only the holder's HUD matters
 
             if(verb == "CRAFTSTART"){                      // HUD: the cut has begun -> prep is started (committed, no refund)
                 if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
                 llLinksetDataWrite("state:craft", "1");
+                llLinksetDataDelete("state:lastsnap");     // scope the cached stage to THIS craft (re-cached on observe/take)
+                llLinksetDataDelete("state:lastname");
+                llLinksetDataDelete("state:lastsrc");
                 return;
             }
             if(verb == "DISCARD"){                         // player discard on the HUD -> drop the basket, keep the bench
@@ -454,10 +441,6 @@ default
                 // Keep -> take the bench; the HUD opens the container page on re-bind (openCollect). Discard -> purge.
                 if(msg == "Keep") acquire(gDlgAv);
                 else if(msg == "Discard"){ purgeHeld(); status(); }
-            }
-            else if(gDlgKind == "resume"){
-                if(msg == "Keep") acquire(gDlgAv);             // take over the bench and continue (reserved basket kept)
-                else if(msg == "Discard") discardPending();    // started craft -> consumed, no refund
             }
             gDlgAv = NULL_KEY; gDlgKind = "";
             return;
