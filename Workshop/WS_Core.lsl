@@ -1,5 +1,5 @@
 #define SCRIPT_NAME    "WS_Core"
-#define SCRIPT_VERSION "v0.7.11"
+#define SCRIPT_VERSION "v0.8.1"
 #include "nexus_header"
 
 // WS_Core — the bench-side state machine. First slice: reservation (occupancy lock) + HUD provisioning
@@ -67,10 +67,32 @@ string  gForgeTicket;                  // ticket awaiting the forge COMMIT|OUT c
 integer ready(){ return gReady || llLinksetDataRead("ws:worldver") != ""; }
 integer inRegion(key k){ return llListFindList(llGetAgentList(AGENT_LIST_REGION, []), [k]) != -1; }
 
+// ---- FSM phase (persisted in state:phase). FREE/RESERVED/CRAFTING/FORGING/COLLECTING/HELD.
+// FORGING is transient (await COMMIT|OUT) and is never persisted at boot, so derivePhase never yields it.
+string phase(){ return llLinksetDataRead("state:phase"); }
+setPhase(string p){ llLinksetDataWrite("state:phase", p); }
+
+// Derive the phase once from the legacy implicit tuple (lock, craft, held) so live benches migrate on the
+// first boot after recompile and none stay stuck without a state:phase.
+string derivePhase(){
+    string lock = llLinksetDataRead("state:lock");
+    if(llLinksetDataRead("state:held") != ""){
+        if(lock != "") return "COLLECTING";
+        return "HELD";
+    }
+    if(lock == "") return "FREE";
+    if(llLinksetDataRead("state:craft") == "1") return "CRAFTING";
+    return "RESERVED";
+}
+
 status(){
     if(!ready()) return;                                   // WS_Boot owns the floating text until OPR
     string h = llLinksetDataRead("state:lock");
     if(h != ""){ llSetText("Nexus - held by " + llLinksetDataRead("state:lockname"), <1.0,0.8,0.4>, 1.0); return; }
+    if(phase() == "FORGING"){                             // free + forge in flight (validate-on-leave): product incoming
+        llSetText("Nexus - product waiting\n(re-attach your HUD, or touch)", <0.9,0.9,0.5>, 1.0);
+        return;
+    }
     if(llLinksetDataRead("state:held") != ""){            // free but a forged product is waiting to be collected
         llSetText("Nexus - product waiting\n(re-attach your HUD, or touch)", <0.9,0.9,0.5>, 1.0);
         return;
@@ -292,10 +314,74 @@ takeResult(string result, key holder){
     }
 }
 
-// Player leaves the bench (Release dialog): same leave rules as freeLock (refund if unstarted, validate a
-// started craft at its last known stage, keep a forged product).
-release(){
-    freeLock("released by player");
+// ================= FSM: single validated transition point (the one place state:phase changes) =================
+// Validate the event against state:phase, run the primitive, write the new phase, redraw once.
+// Phases: FREE RESERVED CRAFTING FORGING COLLECTING HELD. Finishing or discarding a craft KEEPS the lock
+// (-> RESERVED, idle); the bench is freed only when the HUD stops answering (the "leave" event).
+// derivePhase() covers the settled tuples; FORGING (awaiting COMMIT|OUT) has no stable tuple, so it is set
+// explicitly. Not called yet: the handlers are folded onto it at step 4 (this is here to compile + measure).
+transition(string ev, key who, string data){
+    string ph = phase();
+
+    if(ev == "touch_free"){                         // touch an empty free bench
+        if(ph == "FREE"){ acquire(who); setPhase("RESERVED"); }
+    }
+    else if(ev == "resume"){                        // NX|HERE auto-resume, or HELD-touch "Keep"
+        if(ph == "HELD"){ acquire(who); setPhase("COLLECTING"); }
+    }
+    else if(ev == "bind"){                          // ACCEPT handshake confirmed
+        if(ph == "COLLECTING") openCollect(who);    // resume -> (re)open the récipient page
+    }
+    else if(ev == "craftstart"){                    // first cut
+        if(ph == "RESERVED"){
+            llLinksetDataWrite("state:craft", "1");
+            llLinksetDataDelete("state:lastsnap"); llLinksetDataDelete("state:lastname"); llLinksetDataDelete("state:lastsrc");
+            setPhase("CRAFTING");                    // scope the cached stage to THIS craft
+        }
+    }
+    else if(ev == "take"){                          // WS_Take result; data = "code|..." (CRAFTING take, or FORGING forge-on-leave)
+        if(ph == "CRAFTING" || ph == "FORGING"){
+            string code = llList2String(llParseStringKeepNulls(data, ["|"], []), 0);
+            takeResult(data, who);
+            if(code == "1") setPhase("FORGING");    // forge dispatched, await COMMIT|OUT
+            else setPhase(derivePhase());           // give -> RESERVED (lock kept) / inert -> CRAFTING
+        }
+    }
+    else if(ev == "commit_done"){                   // server forged the SID
+        if(ph == "FORGING"){
+            if(llLinksetDataRead("state:lock") != ""){ openCollect(who); setPhase("COLLECTING"); }
+            else setPhase("HELD");                  // forged on leave, nobody present
+        }
+    }
+    else if(ev == "container"){                     // player chose a récipient on P3 -> dispatch to WS_Output
+        if(ph == "COLLECTING") collectInto(data, who);    // phase holds at COLLECTING until OUTPUT_DONE
+    }
+    else if(ev == "collected"){                     // OUTPUT_DONE ok: lot moved into the récipient
+        if(ph == "COLLECTING"){
+            llLinksetDataDelete("state:held");
+            closeTake(who, "done");                 // keeps the lock -> RESERVED
+            setPhase(derivePhase());
+        }
+    }
+    else if(ev == "discard"){                       // HUD discard button; data = started flag. Keeps the lock.
+        if(ph == "RESERVED" || ph == "CRAFTING"){
+            discardCraft((integer)data);
+            setPhase(derivePhase());                // -> RESERVED (idle)
+        }
+    }
+    else if(ev == "discard_held"){                  // discard a waiting product (free held bench)
+        if(ph == "HELD"){ purgeHeld(); setPhase(derivePhase()); }   // -> FREE
+    }
+    else if(ev == "leave"){                         // HUD not pingable / UNBIND / Release dialog
+        integer forgeCase = (ph == "CRAFTING" && llLinksetDataRead("state:lastsnap") != "");
+        freeLock("leave");
+        if(forgeCase) setPhase("FORGING");          // validate at last stage -> held
+        else setPhase(derivePhase());               // RESERVED->FREE, CRAFTING(no snap)->FREE, COLLECTING->HELD
+    }
+    else if(ev == "force"){                         // takeover; phase unchanged
+        forceTo(who);
+    }
+    status();
 }
 
 default
@@ -308,6 +394,7 @@ default
         llListen(gDlgChan, "", NULL_KEY, "");
         parseHud();
         gReady = (llLinksetDataRead("ws:worldver") != "");
+        if(llLinksetDataRead("state:phase") == "") setPhase(derivePhase());   // migrate live benches once
         gDlgAv = NULL_KEY; gBound = FALSE; gMisses = 0; gGiven = FALSE;
         if(llLinksetDataRead("state:lock") != "") startMonitor();   // resume monitoring after a reset
         status();
@@ -323,14 +410,14 @@ default
     {
         if(num == WS_OPR){ gReady = TRUE; status(); return; }
         if(num == NEXUS_MEM_REPORT){ nexusMemReport(); return; }
-        if(num == EVAL_TAKE_RES){                       // WS_Take result; id = holder (may be gone on forge-on-leave, so no lock check)
-            takeResult(str, id);
+        if(num == EVAL_TAKE_RES){                       // WS_Take result; id = holder (may be gone on forge-on-leave)
+            transition("take", id, str);
             return;
         }
         if(num == STOCK_COMMIT_DONE){                   // product forged on the server -> open its collection
             if(str == gForgeTicket && gForgeTicket != ""){
                 gForgeTicket = "";
-                openCollect((key)llLinksetDataRead("state:lock"));
+                transition("commit_done", (key)llLinksetDataRead("state:lock"), "");
             }
             return;
         }
@@ -341,8 +428,7 @@ default
                 return;
             }
             if(llLinksetDataRead("state:held") == "") return;   // nothing held -> stale/duplicate
-            llLinksetDataDelete("state:held");         // collected: forget the lot (stock now lives in the récipient)
-            closeTake(doneHolder, "done");
+            transition("collected", doneHolder, "");
             return;
         }
     }
@@ -359,10 +445,9 @@ default
                     ["Discard", "Keep"], gDlgChan);
                 return;
             }
-            // A started craft left behind was validated on leave (freeLock → forge-on-leave) and is now a held
-            // product, handled by the branch above. A bare craft=1 here means it had no known stage to forge
-            // from; just take the bench so the player can re-cut and take.
-            acquire(av); return;
+            // A started craft left behind was validated on leave (forge-on-leave) and is now a held product,
+            // handled by the branch above. A bare craft=1 here means no known stage to forge from; just take it.
+            transition("touch_free", av, ""); return;
         }
         if((key)holder == av){                             // the holder
             if(!gBound){ pingHolder(); llRegionSayTo(av, 0, "[Nexus] Linking your HUD..."); return; }
@@ -388,7 +473,7 @@ default
             if(verb == "HERE"){                            // a (re)attached HUD announces itself (handled before the holder guard)
                 if(ready() && llLinksetDataRead("state:lock") == "" && llLinksetDataRead("state:held") != ""
                     && id != NULL_KEY)
-                    acquire(llGetOwnerKey(id));            // HELD-FREE -> auto-resume this avatar (bind -> openCollect -> P3)
+                    transition("resume", llGetOwnerKey(id), "");   // HELD-FREE -> auto-resume (-> COLLECTING)
                 return;
             }
             string holder = llLinksetDataRead("state:lock");
@@ -396,20 +481,17 @@ default
 
             if(verb == "CRAFTSTART"){                      // HUD: the cut has begun -> prep is started (committed, no refund)
                 if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
-                llLinksetDataWrite("state:craft", "1");
-                llLinksetDataDelete("state:lastsnap");     // scope the cached stage to THIS craft (re-cached on observe/take)
-                llLinksetDataDelete("state:lastname");
-                llLinksetDataDelete("state:lastsrc");
+                transition("craftstart", (key)holder, "");
                 return;
             }
             if(verb == "DISCARD"){                         // player discard on the HUD -> drop the basket, keep the bench
                 if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
-                discardCraft((integer)llList2String(f, 3));   // f[3] = started flag (1 = consume, 0 = return)
+                transition("discard", (key)holder, llList2String(f, 3));   // f[3] = started flag
                 return;
             }
             if(verb == "CONTAINER"){                       // player chose a récipient on P3 -> collect the held product
                 if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
-                collectInto(llList2String(f, 3), (key)holder);
+                transition("container", (key)holder, llList2String(f, 3));
                 return;
             }
             if(verb == "HUDA"){                            // holder's HUD answered the heartbeat
@@ -424,23 +506,22 @@ default
                 llRegionSayTo((key)holder, NX_HUD, "NX|BOUND|" + llLinksetDataRead("state:session"));
                 gBound = TRUE;
                 llOwnerSay("[Nexus] WS_Core: HUD bound (" + llLinksetDataRead("state:lockname") + ").");
-                if(llLinksetDataRead("state:held") != "") openCollect((key)holder);   // resume: go straight to collection
+                transition("bind", (key)holder, "");       // resume: if COLLECTING, (re)open the récipient page
                 return;
             }
             if(verb == "UNBIND"){                          // best-effort fast free on detach
                 if(llList2String(f, 2) != llLinksetDataRead("state:session")) return;
-                freeLock("HUD detached");
+                transition("leave", (key)holder, "");
                 return;
             }
             return;
         }
         if(chan == gDlgChan && id == gDlgAv){
-            if(gDlgKind == "force" && msg == "Force") forceTo(gDlgAv);
-            else if(gDlgKind == "locker" && msg == "Release") release();
+            if(gDlgKind == "force" && msg == "Force") transition("force", gDlgAv, "");
+            else if(gDlgKind == "locker" && msg == "Release") transition("leave", gDlgAv, "");
             else if(gDlgKind == "held"){
-                // Keep -> take the bench; the HUD opens the container page on re-bind (openCollect). Discard -> purge.
-                if(msg == "Keep") acquire(gDlgAv);
-                else if(msg == "Discard"){ purgeHeld(); status(); }
+                if(msg == "Keep") transition("resume", gDlgAv, "");       // -> COLLECTING (reopens P3 on re-bind)
+                else if(msg == "Discard") transition("discard_held", gDlgAv, "");
             }
             gDlgAv = NULL_KEY; gDlgKind = "";
             return;
@@ -455,7 +536,7 @@ default
             ++gMisses;
             if(!gBound && !gGiven){ giveHud((key)holder); gGiven = TRUE; }   // provision once while unbound
         }
-        if(gMisses >= MISS_MAX){ freeLock("holder HUD not responding"); return; }
+        if(gMisses >= MISS_MAX){ transition("leave", (key)holder, ""); return; }
         pingHolder();                                      // next heartbeat ping
     }
 }
