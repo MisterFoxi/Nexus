@@ -10,7 +10,7 @@ Bench-local **observation engine** (observe-only). Reads the cached world + benc
 
 ## Current version
 
-`v0.2.1` — observe-only; transform extracted to `WS_Take`. Batch curve is CONFIG, not baked (empty default = ×1.0).
+`v0.2.2` — observe-only; transform extracted to `WS_Take`. Batch curve is CONFIG, not baked (empty default = ×1.0). Caches the last observed snapshot for leave-time validation.
 
 ## Changelog
 
@@ -19,12 +19,13 @@ Bench-local **observation engine** (observe-only). Reads the cached world + benc
 | v0.1.0 | 2026-11-23 | created — observe-only extraction of `Workshop_Eval`. `llListen` first in `state_entry`. |
 | v0.2.0 | 2026-11-25 | (transient) added the transformation path — overran 64 KB → stack-heap collision. |
 | v0.2.1 | 2026-11-25 | reverted to observe-only (transform moved to `WS_Take`). `BATCH_MULT=[]` by default (no genre data baked in); `batchMult` returns 1000 (×1.0) when no `ws:cfg:Batch`. |
+| v0.2.2 | 2026-11-26 | **cache the last known stage**: on each OBSERVE, write `state:lastsnap`=snapshot, `state:lastname`=name, `state:lastsrc`="" so WS_Core can forge an abandoned started craft at its last known stage (validate-on-leave). |
 
 ## Dependencies
 
 - **HUD peer** (`NX_HUD` -918282): in `NX|OBSERVE`, out `NX|OBSERVED`.
 - **Same linkset**: WS_Boot (world + `ws:genre`/`ws:cfg:*`), WS_Core (`state:session`, `state:lock`).
-- **LinksetData (read)**: `tok:*`, `tax:*`, `law:observations:*`, `law:<genre>:*:observe_when|description`, `ws:genre`, `ws:cfg:Batch`/`NMax`, `state:session`, `state:lock`.
+- **LinksetData (read)**: `tok:*`, `tax:*`, `law:observations:*`, `law:<genre>:*:observe_when|description`, `ws:genre`, `ws:cfg:Batch`/`NMax`, `state:session`, `state:lock`. (write) `state:lastsnap`/`lastname`/`lastsrc` (cache for validate-on-leave).
 - **Include**: `nexus_header`.
 
 ## Interfaces

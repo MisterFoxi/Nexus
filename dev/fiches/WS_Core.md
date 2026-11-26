@@ -10,9 +10,9 @@ The bench-side state machine. **Current slice:** occupancy lock (reservation) + 
 
 ## Current version
 
-`v0.7.8` — lock + provisioning/bind + heartbeat + contention/force + **take flow** (forge→held→collect), **discard/restitution chain**, and **resume** of a held product or a started prep.
+`v0.7.11` — lock + provisioning/bind + heartbeat + contention/force + **take flow** (forge→held→collect), **discard/restitution chain**, **validate-on-leave** (a started prep left behind is forged at its last known stage), and **auto-resume** (`NX|HERE` → a held-product bench re-binds the returning HUD → P3).
 
-**Chain (validated in-world):** craft **not started** (no cut) → passive leave restitutes (RELEASE), discard button restitutes; craft **started** (`state:craft="1"`, set by `CRAFTSTART`) → ingredients committed, **no refund** (leave keeps it; discard consumes); **forged product** (`state:held`) → kept until collected or purged. Restitution happens only on a passive leave of an unstarted prep (`freeLock`), never on an explicit discard of a started prep.
+**Chain (validated in-world):** craft **not started** (no cut) → passive leave restitutes (RELEASE), discard button restitutes; craft **started** (`state:craft="1"`, set by `CRAFTSTART`) → ingredients committed, **no refund** — passive leave **validates** it (forge from the cached last stage → becomes a held product) if a stage is known, else consumes it; discard button consumes; **forged product** (`state:held`) → kept until collected or purged.
 
 ## Changelog
 
@@ -28,6 +28,9 @@ The bench-side state machine. **Current slice:** occupancy lock (reservation) + 
 | v0.6.0 | 2026-11-25 | **TAKE flow**: `EVAL_TAKE_RES 918430` from WS_Take → `takeResult` (code 1 forge / 2 give / 0 inert). Forge-then-collect model: `COMMIT|OUT` (via `STOCK_COMMIT_REQ` extended) → `STOCK_COMMIT_DONE 918431` → `openCollect` (NX\|OUTPUT → P3) → `NX\|CONTAINER` → `collectInto` (`OUTPUT_CONFIG 918440` → WS_Output) → `OUTPUT_DONE 918441` → close (rotate session + re-bind + `NX\|TAKEDONE`). give → `OUTPUT_GIVE 918442`. held-product dialog on touch of a free held bench. |
 | v0.7.0-0.7.6 | 2026-11-25 | **held/reprise + restitution rule**: `state:held`(+`state:heldby`) persists the forged product; `freeLock`/`release` keep it (leave ≠ purge). `CRAFTSTART`→`state:craft="1"`; `freeLock` restitutes only an unstarted, un-forged basket. Resume dialogs **Discard/Keep** (held: Keep→P3) and **Keep/Discard** (started prep). `STOCK_DISCARD_REQ 918252` purges a held SID. English in-world strings. |
 | v0.7.7-0.7.8 | 2026-11-25 | discard button: **consume only if started** (COMMIT, no refund + rotate + re-bind); **not started → release** (restitute). |
+| v0.7.9 | 2026-11-26 | **validate-on-leave**: `freeLock` rewritten — held→kept; started+`state:lastsnap`≠""→`FORGE_CACHED 918432` (forge from cache → held, session kept); started+no snapshot→consume (no refund); unstarted→release. `CRAFTSTART` clears the cache (scoped to this craft). `EVAL_TAKE_RES` no longer checks the lock (forge-on-leave has none). `release()`→`freeLock`. Removed the resume dialog + `discardPending`. |
+| v0.7.10 | 2026-11-26 | **auto-resume**: `NX\|HERE` handler (before the holder guard) — a free bench holding a product `acquire`s the announcing avatar → bind → `openCollect` → P3. Floating text simplified to "product waiting". |
+| v0.7.11 | 2026-11-26 | **removed `state:heldby`** (no reader left after dropping the name from the text and the held dialog). |
 
 ## Dependencies
 
@@ -35,7 +38,7 @@ The bench-side state machine. **Current slice:** occupancy lock (reservation) + 
 - **Peer (other object)**: the worn HUD (`NX_HudFace`) — answers `NX|HUDA`, accepts the `OFFER`.
 - **Channels**: `NX_HUD = -918282` (bench ↔ worn HUD). Dialog on a random negative channel.
 - **Inventory**: the reference HUD object, named **`<model> v<X.Y.Z>`**. Given via `llGiveInventory` when the holder lacks it.
-- **LinksetData**: `state:lock` (holder avatar key, "" = free), `state:lockname`, `state:craft` ("0"/"1" pending craft), `state:session` (bind/craft session, minted at acquire). Config (from WS_Boot): `ws:genre`, `ws:cfg:HUDKind`, `ws:cfg:SingleIngredient`, `ws:cfg:AllowKeep`. Persistent.
+- **LinksetData**: `state:lock` (holder avatar key, "" = free), `state:lockname`, `state:craft` ("0"/"1" pending craft), `state:session` (bind/craft session, minted at acquire), `state:held` (forged product tenu), `state:stock`/`state:takesrc`, and the validate-on-leave cache `state:lastsnap`/`lastname`/`lastsrc` (written by WS_Eval/WS_Take, read by `FORGE_CACHED`, cleared by `CRAFTSTART`/`closeTake`). Config (from WS_Boot): `ws:genre`, `ws:cfg:HUDKind`, `ws:cfg:SingleIngredient`, `ws:cfg:AllowKeep`. Persistent. *(`state:heldby` removed in v0.7.11.)*
 - **Include**: `nexus_header` (no extension).
 
 ## Interfaces
@@ -49,6 +52,8 @@ The bench-side state machine. **Current slice:** occupancy lock (reservation) + 
 | in | `NX\|ACCEPT` (NX_HUD, from worn HUD) | session, kind | session match → confirm BOUND |
 | out | `NX\|BOUND` (NX_HUD, to holder) | session | confirm the bind |
 | in | `NX\|UNBIND` (NX_HUD, from worn HUD) | session | best-effort fast free on detach |
+| in | `NX\|HERE` (NX_HUD, region-wide) | model | free bench holding a product → `acquire` the announcer → bind → P3 (handled before the holder guard) |
+| out | link `FORGE_CACHED 918432` (to WS_Take, id=holder) | — | validate a started prep on leave: forge from the cached snapshot |
 | in | `NX\|DISCARD` (NX_HUD, from worn HUD) | session, started | discard the craft: RELEASE (not started) / COMMIT + new session (started); lock kept |
 | out | `llGiveInventory` | reference HUD | deliver HUD on absent/mismatch (once, while unbound) |
 | out | link `918250 STOCK_RELEASE_REQ` / `918251 STOCK_COMMIT_REQ` | ticket, holder | discard-return / discard-consume → WS_Stock |
@@ -68,8 +73,10 @@ The bench-side state machine. **Current slice:** occupancy lock (reservation) + 
 - [ ] 2026-11-19 — version match is exact; a semver `>=` compare would avoid re-giving a newer HUD.
 - [ ] 2026-11-19 — `llSetText` shared with WS_Boot (socle §6); WS_HMI will own the text layer.
 - [x] 2026-11-25 — **TAKE** wired (forge `COMMIT|OUT` → held → collect into récipient → close).
-- [ ] 2026-11-25 — after a **Keep** (held or started prep), the reserved basket isn't re-pushed to SELECTED (HUD mirror empty on re-bind); add a basket re-sync from the bench.
-- [ ] 2026-11-25 — `release()` (leave dialog) still releases the basket regardless of started/held; align it on the `freeLock` restitution rule.
+- [ ] 2026-11-26 — **floating text lags at validate-on-leave**: `freeLock` calls `status()` before the async forge writes `state:held`, so the bench shows "bench FREE" instead of "product waiting" (recovery still works). Fix: call `status()` at the end of `forgeProduct`. *(reported, awaiting go.)*
+- [ ] 2026-11-25 — after a **Keep** (held product), the reserved basket isn't re-pushed to SELECTED (HUD mirror empty on re-bind); add a basket re-sync from the bench.
+- [x] 2026-11-26 — `release()` now delegates to `freeLock` (same restitution/validate rule).
+- [ ] 2026-11-26 — a held product is **not person-locked**: any HUD of the right owner returning to range auto-resumes it (acceptable; storing the crafter key would reserve it to one person).
 - [ ] 2026-11-19 — `freeLock` keeps a pending craft+session; `acquire()` does not yet prompt take/discard for an inherited craft (no craft tracking on the bench yet).
 - [ ] 2026-11-19 — `gBound` is not persisted; a WS_Core reset drops it and the heartbeat re-binds on the holder's next `HUDA`.
 

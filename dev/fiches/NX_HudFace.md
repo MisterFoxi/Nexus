@@ -10,7 +10,7 @@ The worn HUD's thin face toward the bench. **Built so far:** provisioning probe 
 
 ## Current version
 
-`v0.5.1` — probe responder + bind + `BIND_INFO` publish + **discard relay**; **TAKEDONE** (bench says the craft finished → local `918317 CRAFT_DONE` resets P1); **CRAFTSTART relay** (cut began → `NX|CRAFTSTART|<session>` so the bench marks the prep started).
+`v0.5.2` — probe responder + bind + `BIND_INFO` publish + **discard relay**; **TAKEDONE** (bench says the craft finished → local `918317 CRAFT_DONE` resets P1); **CRAFTSTART relay** (cut began → `NX|CRAFTSTART|<session>` so the bench marks the prep started); **HERE announce** (each wear → `NX|HERE|<model>` region-wide so a bench holding a product auto-resumes us → P3).
 
 ## Changelog
 
@@ -23,6 +23,7 @@ The worn HUD's thin face toward the bench. **Built so far:** provisioning probe 
 | v0.4.0 | 2026-11-23 | **discard relay**: on local `918315 DISCARD` (`"DISCARD\|<started>"`), forward `NX\|DISCARD\|<session>\|<started>` to the bench, then emit `918317 DISCARD_DONE`. Bind NOT cleared (bench keeps the lock, re-binds on consume). |
 | v0.5.0 | 2026-11-25 | **TAKEDONE**: on `NX\|TAKEDONE\|<newSession>\|<note>` from the bound bench (craft finished, product delivered), emit local `918317 CRAFT_DONE` to reset P1; the bench re-binds us (new session) via OFFER right after. |
 | v0.5.1 | 2026-11-25 | **CRAFTSTART relay**: on local `918318 CRAFTSTART` (from NX_P1_Animation's first Cut), forward `NX\|CRAFTSTART\|<session>` to the bench so it sets `state:craft="1"` (started → no refund). |
+| v0.5.2 | 2026-11-26 | **HERE announce**: in `state_entry` (runs after `attach`'s reset, i.e. every wear) emit `llRegionSay(NX_HUD, "NX\|HERE\|<model>")`. A bench that is free and holds a forged product (HELD-FREE) hears it, `acquire`s us, and the normal bind chain opens P3 — recovery of a waiting product without touching the bench. |
 
 ## Dependencies
 
@@ -40,6 +41,7 @@ The worn HUD's thin face toward the bench. **Built so far:** provisioning probe 
 | in | `NX\|OFFER` (NX_HUD) | benchKey, session, kind, single, keep | bind offer; accepted only if kind = our model and not bound elsewhere |
 | out | `NX\|ACCEPT` (NX_HUD, to benchKey) | session, own model | accept the offer |
 | in | `NX\|BOUND` (NX_HUD) | session | bench confirms → bound |
+| out | `NX\|HERE` (NX_HUD, region-wide) | own model | announced on every wear; a bench holding a product auto-resumes us |
 | out | link `918260 BIND_INFO` (LINK_SET) | `<bench>\|<session>` | on BOUND, tell the pick/basket scripts which bench is bound |
 | in | link `918315 DISCARD` (LINK_THIS) | `"DISCARD\|<started>"` | from NX_P1_Animation's p1_action3 |
 | out | `NX\|DISCARD` (NX_HUD, to bench) | session, started | relay the discard to the bound bench |

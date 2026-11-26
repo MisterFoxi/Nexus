@@ -10,26 +10,28 @@ Bench-local **transformation engine**. Resolves the react/yield laws of this ben
 
 ## Current version
 
-`v0.1.0` — full craft draw (random batch `m(n)` + natural flux + oversaturation spoil, unlike `WS_Eval`'s deterministic observe). Memory-bounded law scan (`llLinksetDataFindKeys` paged by 32). No genre data baked in (all from `ws:cfg:*`).
+`v0.1.1` — full craft draw (random batch `m(n)` + natural flux + oversaturation spoil, unlike `WS_Eval`'s deterministic observe). Memory-bounded law scan (`llLinksetDataFindKeys` paged by 32). No genre data baked in (all from `ws:cfg:*`). Caches the snapshot on TAKE and can forge from the cache on `FORGE_CACHED` (validate-on-leave).
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v0.1.0 | 2026-11-25 | created — port of `Workshop_Eval`'s `resolve()`+`buildOutput()` with random flux/batch/spoil. `resolve()` reads law keys in pages of 32 (bounded heap regardless of law count). `BATCH_MULT`/`N_MAX`/`gMaxEffect`/`SPOIL_*`/`FLUX_ABS` all from `ws:cfg:*` with neutral fallbacks. |
+| v0.1.1 | 2026-11-26 | **cache + forge-from-cache**: on TAKE, write `state:lastsnap`/`lastname`/`lastsrc`; new link handler `FORGE_CACHED 918432` reads the cache (`lastsnap`/`lastname`/`lastsrc`) and runs `takeEval` with the holder in `id` → lets WS_Core validate an abandoned started craft at its last known stage. |
 
 ## Dependencies
 
 - **HUD peer** (`NX_HUD` -918282): in `NX|TAKE`.
-- **WS_Core** (same linkset, link `EVAL_TAKE_RES 918430`): out the result; holder key in `id`.
-- **LinksetData (read)**: `tok:*`, `tok:#<id>`, `tax:*`, `law:<genre>:*:when|verdict|do|seq|cap`, `ws:genre`, `ws:cfg:Batch|NMax|MaxEffect|SpoilMin|SpoilMax|FluxAbs`, `state:session`, `state:lock`. (write) `state:takesrc`.
+- **WS_Core** (same linkset, link `EVAL_TAKE_RES 918430` out, `FORGE_CACHED 918432` in): out the result; holder key in `id`. `FORGE_CACHED` (id=holder) forges from the cached snapshot.
+- **LinksetData (read)**: `tok:*`, `tok:#<id>`, `tax:*`, `law:<genre>:*:when|verdict|do|seq|cap`, `ws:genre`, `ws:cfg:Batch|NMax|MaxEffect|SpoilMin|SpoilMax|FluxAbs`, `state:session`, `state:lock`, `state:lastsnap`/`lastname`/`lastsrc` (on FORGE_CACHED). (write) `state:takesrc`, `state:lastsnap`/`lastname`/`lastsrc` (cache on TAKE).
 - **Include**: `nexus_header`.
 
 ## Interfaces
 
 | Dir | Msg | Effect |
 |---|---|---|
-| in NX_HUD | `NX\|TAKE\|<session>\|<nameEsc>\|<snapshotEsc>\|<srcKeysEsc>` | validate session+holder → store `state:takesrc` → `takeEval` |
+| in NX_HUD | `NX\|TAKE\|<session>\|<nameEsc>\|<snapshotEsc>\|<srcKeysEsc>` | validate session+holder → store `state:takesrc` + cache (`lastsnap`/`lastname`/`lastsrc`) → `takeEval` |
+| in link | `FORGE_CACHED 918432` (id=holder) | forge from the cached snapshot (`lastsnap`/`lastname`/`lastsrc`) → `takeEval` → `EVAL_TAKE_RES` |
 | out link | `EVAL_TAKE_RES 918430` (id=holder) | `1\|verdict\|name\|qty\|use\|life\|tax\|stage\|props\|med\|eff` / `2[\|leaf^root]` / `0` |
 | in link | `970290` | memory report |
 
